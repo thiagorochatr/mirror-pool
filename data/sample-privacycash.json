@@ -1,0 +1,1984 @@
+{
+  "manifest": {
+    "endpoint": "https://api.mainnet-beta.solana.com",
+    "first_available_block": 0,
+    "archival_probe_ok": true,
+    "collected_at": 1784973206,
+    "config": {
+      "scope": "Sol",
+      "depth_max": 5,
+      "min_edge_lamports": 500000,
+      "sig_page_cap": 20,
+      "page_size": 1000
+    },
+    "thresholds_hub_signatures": 5000,
+    "thresholds_distributor_fanout": 20,
+    "thresholds_cluster_min_size": 3,
+    "rpc_calls": 590,
+    "excluded_non_wallet": [
+      "BU6qqvJ4Lr9rb6QiPyhs9cr6aUc69MKsGPr63n2WVmj4",
+      "AxG818LtyEa88dJDoHeYHW2WyNXrCLYUzr6ifL5qn4KB",
+      "2WQCfa31y6Qid5aBAbDE6arARchEochqGufAM6Y9Nsuy"
+    ],
+    "ambiguous_attribution_rate": 0.28846153846153844
+  },
+  "chains": [
+    {
+      "seed": "B5eHbv7xrBhjvA2NFYr7hP8LDwJmEVdnfDzVkEKUDXqc",
+      "visited": [
+        "B5eHbv7xrBhjvA2NFYr7hP8LDwJmEVdnfDzVkEKUDXqc"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "75ccPySyKNxYxeAW4EHmu2qhkeGR9e8EWocme3mSRMn7",
+      "visited": [
+        "75ccPySyKNxYxeAW4EHmu2qhkeGR9e8EWocme3mSRMn7",
+        "HWjmoUNYckccg9Qrwi43JTzBcGcM1nbdAtATf9GXmz16"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "HVZXVsbsnvNJuHj5xBCUppm2c5i2gVuryFGMRpFRu165",
+      "visited": [
+        "HVZXVsbsnvNJuHj5xBCUppm2c5i2gVuryFGMRpFRu165"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "7BBMr88hUcH2HQ1YPW9om9WF5TAH8SdhbqTsyvjStDt4",
+      "visited": [
+        "7BBMr88hUcH2HQ1YPW9om9WF5TAH8SdhbqTsyvjStDt4",
+        "fr6yQkDmWy6R6pecbUsxXaw6EvRJznZ2HsK5frQgud8"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "DdAS1xeVfShiyL9GkZjFjS2az4mtBDqFE5vQoJZnWcxS",
+      "visited": [
+        "DdAS1xeVfShiyL9GkZjFjS2az4mtBDqFE5vQoJZnWcxS",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "8bn7JfKdDRVgPvE5iQvQPAVKyWyVeSr7bGbqC7VURB3z",
+      "visited": [
+        "8bn7JfKdDRVgPvE5iQvQPAVKyWyVeSr7bGbqC7VURB3z",
+        "EfTXGDatPDADBzrkXF4UDceXfZomfZapkVtWNxRqiadi",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "FuasKFTCGY2EodUE7vDXkEf6a8TC3gFjCrW6DyLWyxSw",
+      "visited": [
+        "FuasKFTCGY2EodUE7vDXkEf6a8TC3gFjCrW6DyLWyxSw",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "HnPk9tMejhS4atsn9WWXjphkdQDqEfkgh782r1N31G8u",
+      "visited": [
+        "HnPk9tMejhS4atsn9WWXjphkdQDqEfkgh782r1N31G8u",
+        "8QsoN6vuzSC68BmpnYc7a1bnEBKTg6LGyKjsnRbFjy6L",
+        "3F7LpWtX1vnPTMPrtRsj5kf888WHQxEYrEEfNx1i9TNM",
+        "6LY1JzAFVZsP2a2xKrtU6znQMQ5h4i7tocWdgrkZzkzF"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "5WhtGkw1u3uC9LxS1CNYsNQqMrkLp5xajmAeJUufNAQ9",
+      "visited": [
+        "5WhtGkw1u3uC9LxS1CNYsNQqMrkLp5xajmAeJUufNAQ9",
+        "J5fR73GQgDErMSYWU4ZhqdCQMAv4ATKHRYgQRmmeDgwd",
+        "G2YxRa6wt1qePMwfJzdXZG62ej4qaTC7YURzuh2Lwd3t"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "HhWpXSYWqpqL5SndpynYX6bhyCPakVgSEdBYKHeVB7qq",
+      "visited": [
+        "HhWpXSYWqpqL5SndpynYX6bhyCPakVgSEdBYKHeVB7qq"
+      ],
+      "stop": "NoIncomingEdge"
+    },
+    {
+      "seed": "sVwhzH6DgSNuc8q5uBDCrwbSQAEwYub42DrjgMqQehB",
+      "visited": [
+        "sVwhzH6DgSNuc8q5uBDCrwbSQAEwYub42DrjgMqQehB",
+        "9xxr2L8nTGGaoa2LVEen4GGTdFB5585kHAVPftAhLzF2",
+        "9L6aT5vj92HvC1M2U63RpihHeJqdJn4ZkqDCwSUJVSWS",
+        "1xxAAZZjmZXg4LyhZus3D2GyWD5CQxi7UH5RMm8gqix",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "DnpSR1A1gDByxC7X1YWYQDLzZtMxVgLyrH13o9fVVUZX",
+      "visited": [
+        "DnpSR1A1gDByxC7X1YWYQDLzZtMxVgLyrH13o9fVVUZX"
+      ],
+      "stop": "NoIncomingEdge"
+    },
+    {
+      "seed": "FPhsUG4FtDmSZCAv16fhdGquQvymnN8uXUUzuWJLsP6M",
+      "visited": [
+        "FPhsUG4FtDmSZCAv16fhdGquQvymnN8uXUUzuWJLsP6M",
+        "HyBcKtGzikuaGKKxdbH6r6a76Rxf4ep71QeDcKGoTUXh",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "Bqqa46ZcQKQn4Rj8nCV7hgPYWJ3TLaSbrP3HCUwbzWWw",
+      "visited": [
+        "Bqqa46ZcQKQn4Rj8nCV7hgPYWJ3TLaSbrP3HCUwbzWWw",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "4XXUvTDdke6d4hJQ7XF9KwkkkUMYsTbjrNF3tSizbYjr",
+      "visited": [
+        "4XXUvTDdke6d4hJQ7XF9KwkkkUMYsTbjrNF3tSizbYjr",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "6UCU24ZM5tYrj3vgobuc2TH4Fgf45Pdo4R5YV1cTwKbs",
+      "visited": [
+        "6UCU24ZM5tYrj3vgobuc2TH4Fgf45Pdo4R5YV1cTwKbs",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "8GBakVqHS5ZwjGHUVQJNp38LoHBmykhmzz94ygqqS9me",
+      "visited": [
+        "8GBakVqHS5ZwjGHUVQJNp38LoHBmykhmzz94ygqqS9me",
+        "Dui7P69ZGxj7XDqa4WUWHFSfQQJhJ4WQYfvaDu6epJDb",
+        "5nfmtYyBWfqgPCa7Q268Z5KvxNN7suoBg335vYJ1f9xR",
+        "HG9AMzxAyU57FcKSfGxoiZLEaj25Lp4os3h2C1J1pthB",
+        "3G7g4bbapfEggBJ2zYVCAMfdEGCHeFWmV6Q1R2Y6iYCE",
+        "B4PcoH3JyxhbFuq6UUHtdeAJZdPja84imJq3V34xGLnb"
+      ],
+      "stop": "DepthExceeded"
+    },
+    {
+      "seed": "CrAWByBbF5qNRLS67cshtjenGvRmgSLCmAno9GRJqLqz",
+      "visited": [
+        "CrAWByBbF5qNRLS67cshtjenGvRmgSLCmAno9GRJqLqz"
+      ],
+      "stop": "RpcFailure"
+    },
+    {
+      "seed": "FX1veGSHZV1U88iDn4Tj9Jqsfk4Qru8wyWpJ6piR3GFz",
+      "visited": [
+        "FX1veGSHZV1U88iDn4Tj9Jqsfk4Qru8wyWpJ6piR3GFz",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "8fenZTDtD27NgQoApjRVTPnZyTEgdjuxkWcQZiPVRS4E",
+      "visited": [
+        "8fenZTDtD27NgQoApjRVTPnZyTEgdjuxkWcQZiPVRS4E"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "Cp5dcC6LJcZ8KCfbDpXoCurHgds92qDMr49ovRJcHZRX",
+      "visited": [
+        "Cp5dcC6LJcZ8KCfbDpXoCurHgds92qDMr49ovRJcHZRX",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "65hBBDbKSmcpLtKcWHkdamVscqPMaTwPkhQ2SieZwo5G",
+      "visited": [
+        "65hBBDbKSmcpLtKcWHkdamVscqPMaTwPkhQ2SieZwo5G",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "SPHLgtPvqwnpETAnq5b8X9Evqj5g4BLzDFWNZuBFpPw",
+      "visited": [
+        "SPHLgtPvqwnpETAnq5b8X9Evqj5g4BLzDFWNZuBFpPw",
+        "HVFUeQwehwmbtwMhrJ7Y7ZRvUtCkC1MSfJTz1aaZerfG",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "BwEqAJZcZfP1qi4pu5ud6ArHaQqZZ7o454H4UVhFY2B7",
+      "visited": [
+        "BwEqAJZcZfP1qi4pu5ud6ArHaQqZZ7o454H4UVhFY2B7"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "6K21Da3WJ69MjAQAguwQpMfaPFqJE8fku8USd8yoY6Jo",
+      "visited": [
+        "6K21Da3WJ69MjAQAguwQpMfaPFqJE8fku8USd8yoY6Jo",
+        "EhYvkhV8sciC6JtoSLeQ3SPcuuHtSCPdBGV6Zpgjce3L",
+        "B2pLXgxo7pw6zWCHwtcAB8TKTkLn2JscPQ1wE9LbCCp6",
+        "6WY85YarfLbVcys9pYjCPPbtafy8NywxZ2f2dqwEauug",
+        "AC5RDfQFmDS1deWZos921JfqscXdByf8BKHs5ACWjtW2"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "isU3XW1Fc8wobkR1nPL1itv9UaknRbFpTNU2bkYJV6h",
+      "visited": [
+        "isU3XW1Fc8wobkR1nPL1itv9UaknRbFpTNU2bkYJV6h",
+        "51JyiaMJn8BvSMspReePnX5uDiPqfMM4WSKkaPK6o83s"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "BKQqoatcqyoWoiUnHDJM2FW23rtwoMiCNnVbMECASGPM",
+      "visited": [
+        "BKQqoatcqyoWoiUnHDJM2FW23rtwoMiCNnVbMECASGPM"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "3UwX8m3zCdepWUCnttRVZDXMzn6u32KK1SqPeBHSqPB3",
+      "visited": [
+        "3UwX8m3zCdepWUCnttRVZDXMzn6u32KK1SqPeBHSqPB3",
+        "EvGpkcSBfhp5K9SNP48wVtfNXdKYRBiK3kvMkB66kU3Q"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "6cTWeEoKH3ZXLtaopZ2w8f3tAYHa1aZ955F7Be3v2JjJ",
+      "visited": [
+        "6cTWeEoKH3ZXLtaopZ2w8f3tAYHa1aZ955F7Be3v2JjJ",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "EJnp7CWmmEmnVtm4nmCRX384VxpAYb4hx5WRR41EKkE6",
+      "visited": [
+        "EJnp7CWmmEmnVtm4nmCRX384VxpAYb4hx5WRR41EKkE6",
+        "WTFsXATVeP2hYL9k95TVH8wwotPdxVLmkZsNLhq9xsW",
+        "BmFdpraQhkiDQE6SnfG5omcA1VwzqfXrwtNYBwWTymy6"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "3pmWhU2m9g5t7gY6sm5mMfGe5fo6nZJ2rbGc1cXZWbDL",
+      "visited": [
+        "3pmWhU2m9g5t7gY6sm5mMfGe5fo6nZJ2rbGc1cXZWbDL",
+        "7aGvYPiRiJL2gp6hiNkm1orjzZwwoa1PfCGZ8UMCgzY2"
+      ],
+      "stop": "NoIncomingEdge"
+    },
+    {
+      "seed": "CtNS8YptrA5Rif1iaemwGozwJBxFYKiyGF2K5a27UNm1",
+      "visited": [
+        "CtNS8YptrA5Rif1iaemwGozwJBxFYKiyGF2K5a27UNm1",
+        "5otWRyzcb7D7DEGZoRJrn2RQ8mbGDDpWCntjh45fFKH1"
+      ],
+      "stop": "LocalTerminal"
+    },
+    {
+      "seed": "xukyMmDrvUreyVX2stb5DyFD7MopGzYfTisLFwg6Tf6",
+      "visited": [
+        "xukyMmDrvUreyVX2stb5DyFD7MopGzYfTisLFwg6Tf6",
+        "8hKxzjzh34MNV9WWvQs2XY98aNRSdi7TUPU2LCNDZjk1",
+        "ASTyfSima4LLAdDgoFGkgqoKowG1LZFDr9fAQrg7iaJZ"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "2net6etAtTe3Rbq2gKECmQwnzcKVXRaLcHy2Zy1iCiWz",
+      "visited": [
+        "2net6etAtTe3Rbq2gKECmQwnzcKVXRaLcHy2Zy1iCiWz"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "HvHgoPZxfcBgyWjmSUaByC9WMmDwpZj8qm9rp1cVQ5AU",
+      "visited": [
+        "HvHgoPZxfcBgyWjmSUaByC9WMmDwpZj8qm9rp1cVQ5AU",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "CBgkzioYTK6Esxjyt2LeFtbzdWKJALdq7rydGSDiA2jr",
+      "visited": [
+        "CBgkzioYTK6Esxjyt2LeFtbzdWKJALdq7rydGSDiA2jr",
+        "E9HSTWen7vEE42qLWKvVuS3ToWiEsXvmt2vzhgG76FnW",
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "stop": "PageCapHit"
+    },
+    {
+      "seed": "9j4kVYJwqp8pTGtoWYdmoio4tf6nagJP6hiZwJNHwwcP",
+      "visited": [
+        "9j4kVYJwqp8pTGtoWYdmoio4tf6nagJP6hiZwJNHwwcP",
+        "Hqu3WpZ3NFi5JUkuPQ9KvDPNenApHSKfRu6Xxgced362",
+        "EEHTjhZdVh4PSW9Cj3ifufUWjU5thLHuSHRU6vAfrvXw",
+        "FLpcQHCyZHTt5RE9e2CwdC9KrjsAhjn2MJUm1sbiAhoG",
+        "HY5YfhKFC8yv14VUWAxdjpDP84cgwPqHuFFPmP85AJUU",
+        "FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5"
+      ],
+      "stop": "DepthExceeded"
+    }
+  ],
+  "facts": {
+    "1xxAAZZjmZXg4LyhZus3D2GyWD5CQxi7UH5RMm8gqix": {
+      "address": "1xxAAZZjmZXg4LyhZus3D2GyWD5CQxi7UH5RMm8gqix",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 189
+      },
+      "first_seen": 1784608146,
+      "birth_edge": {
+        "sink": "1xxAAZZjmZXg4LyhZus3D2GyWD5CQxi7UH5RMm8gqix",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 153680469685,
+        "signature": "3ck9PBEzhy46jBLUWfaeoeEDLPFcC7wNpHzceyNWtzEte9HSiG3NafZb69iAZQHwAXpV5x6qFGWchcvH7QA4auJf",
+        "slot": 434235044,
+        "block_time": 1784608146,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": [
+        "9L6aT5vj92HvC1M2U63RpihHeJqdJn4ZkqDCwSUJVSWS"
+      ]
+    },
+    "2WQCfa31y6Qid5aBAbDE6arARchEochqGufAM6Y9Nsuy": {
+      "address": "2WQCfa31y6Qid5aBAbDE6arARchEochqGufAM6Y9Nsuy",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 0
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": []
+    },
+    "2net6etAtTe3Rbq2gKECmQwnzcKVXRaLcHy2Zy1iCiWz": {
+      "address": "2net6etAtTe3Rbq2gKECmQwnzcKVXRaLcHy2Zy1iCiWz",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": []
+    },
+    "3F7LpWtX1vnPTMPrtRsj5kf888WHQxEYrEEfNx1i9TNM": {
+      "address": "3F7LpWtX1vnPTMPrtRsj5kf888WHQxEYrEEfNx1i9TNM",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 2857
+      },
+      "first_seen": 1769191683,
+      "birth_edge": {
+        "sink": "3F7LpWtX1vnPTMPrtRsj5kf888WHQxEYrEEfNx1i9TNM",
+        "sources": [
+          "6LY1JzAFVZsP2a2xKrtU6znQMQ5h4i7tocWdgrkZzkzF"
+        ],
+        "value": 4502430000,
+        "signature": "5wKGv3SouFHh7HBkxVeJiR1H2gmEv4k8tm8xMAwGLMSEe8yGWUZn8jE36GDyZTQQ3PyPV1YhhSR7ELpa3JXYY3cA",
+        "slot": 395454220,
+        "block_time": 1769191683,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "6LY1JzAFVZsP2a2xKrtU6znQMQ5h4i7tocWdgrkZzkzF"
+      ],
+      "funded": [
+        "8QsoN6vuzSC68BmpnYc7a1bnEBKTg6LGyKjsnRbFjy6L"
+      ]
+    },
+    "3G7g4bbapfEggBJ2zYVCAMfdEGCHeFWmV6Q1R2Y6iYCE": {
+      "address": "3G7g4bbapfEggBJ2zYVCAMfdEGCHeFWmV6Q1R2Y6iYCE",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 64
+      },
+      "first_seen": 1784607959,
+      "birth_edge": {
+        "sink": "3G7g4bbapfEggBJ2zYVCAMfdEGCHeFWmV6Q1R2Y6iYCE",
+        "sources": [
+          "B4PcoH3JyxhbFuq6UUHtdeAJZdPja84imJq3V34xGLnb"
+        ],
+        "value": 6000000000,
+        "signature": "2Bk6Vw6dmU8KDMvoyXeMbN5jmF7Rq2C2DkxMxjG4mkFvwfNFttNdAuPT5TkomyEipZ3Rbkh1tXHCACyKsgELM75N",
+        "slot": 434234594,
+        "block_time": 1784607959,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "B4PcoH3JyxhbFuq6UUHtdeAJZdPja84imJq3V34xGLnb"
+      ],
+      "funded": [
+        "HG9AMzxAyU57FcKSfGxoiZLEaj25Lp4os3h2C1J1pthB"
+      ]
+    },
+    "3UwX8m3zCdepWUCnttRVZDXMzn6u32KK1SqPeBHSqPB3": {
+      "address": "3UwX8m3zCdepWUCnttRVZDXMzn6u32KK1SqPeBHSqPB3",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 1274
+      },
+      "first_seen": 1766003500,
+      "birth_edge": {
+        "sink": "3UwX8m3zCdepWUCnttRVZDXMzn6u32KK1SqPeBHSqPB3",
+        "sources": [
+          "EvGpkcSBfhp5K9SNP48wVtfNXdKYRBiK3kvMkB66kU3Q"
+        ],
+        "value": 5000000000,
+        "signature": "2rKL8XiedJnXjJc1CkwpiQSxST2KARnr3BbLMn9zVmJb617A61cj9NJah2QxJz4GiV82ER4vinr6KJqGRNKboW1k",
+        "slot": 387377211,
+        "block_time": 1766003500,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "EvGpkcSBfhp5K9SNP48wVtfNXdKYRBiK3kvMkB66kU3Q"
+      ],
+      "funded": []
+    },
+    "3pmWhU2m9g5t7gY6sm5mMfGe5fo6nZJ2rbGc1cXZWbDL": {
+      "address": "3pmWhU2m9g5t7gY6sm5mMfGe5fo6nZJ2rbGc1cXZWbDL",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 8
+      },
+      "first_seen": 1784717266,
+      "birth_edge": {
+        "sink": "3pmWhU2m9g5t7gY6sm5mMfGe5fo6nZJ2rbGc1cXZWbDL",
+        "sources": [
+          "7aGvYPiRiJL2gp6hiNkm1orjzZwwoa1PfCGZ8UMCgzY2"
+        ],
+        "value": 150000000,
+        "signature": "GQw3x4cEkSMcwjTFMoxpJj25Rx21VinHRVhn5bcqACf1VxXLE4tMpCcScGZYspCfe2MVostgEU4fqix9SwcgVHr",
+        "slot": 434494932,
+        "block_time": 1784717266,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "7aGvYPiRiJL2gp6hiNkm1orjzZwwoa1PfCGZ8UMCgzY2"
+      ],
+      "funded": []
+    },
+    "4XXUvTDdke6d4hJQ7XF9KwkkkUMYsTbjrNF3tSizbYjr": {
+      "address": "4XXUvTDdke6d4hJQ7XF9KwkkkUMYsTbjrNF3tSizbYjr",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 9764
+      },
+      "first_seen": 1781265894,
+      "birth_edge": {
+        "sink": "4XXUvTDdke6d4hJQ7XF9KwkkkUMYsTbjrNF3tSizbYjr",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 209692102518,
+        "signature": "2WnT866FtZdcXqRvfQoypXGhWSQRtqa4cCg453yjkGSuZA9fs8LJviugPbbGP9GYu3TDJhohtJeDwq1AuoeqJBFi",
+        "slot": 425977688,
+        "block_time": 1781265894,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "51JyiaMJn8BvSMspReePnX5uDiPqfMM4WSKkaPK6o83s": {
+      "address": "51JyiaMJn8BvSMspReePnX5uDiPqfMM4WSKkaPK6o83s",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "isU3XW1Fc8wobkR1nPL1itv9UaknRbFpTNU2bkYJV6h"
+      ]
+    },
+    "5WhtGkw1u3uC9LxS1CNYsNQqMrkLp5xajmAeJUufNAQ9": {
+      "address": "5WhtGkw1u3uC9LxS1CNYsNQqMrkLp5xajmAeJUufNAQ9",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 5445
+      },
+      "first_seen": 1718412672,
+      "birth_edge": {
+        "sink": "5WhtGkw1u3uC9LxS1CNYsNQqMrkLp5xajmAeJUufNAQ9",
+        "sources": [
+          "J5fR73GQgDErMSYWU4ZhqdCQMAv4ATKHRYgQRmmeDgwd"
+        ],
+        "value": 86090000000,
+        "signature": "53RCfHfFHr7YhKq4wdNzoFBeMfwW1LFk7D2MRY2sXmkHKEdW1fqXFe5UHu9bkwnjxHFqmWC9rsQpF4quxzgrmirL",
+        "slot": 271894160,
+        "block_time": 1718412672,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "J5fR73GQgDErMSYWU4ZhqdCQMAv4ATKHRYgQRmmeDgwd"
+      ],
+      "funded": []
+    },
+    "5nfmtYyBWfqgPCa7Q268Z5KvxNN7suoBg335vYJ1f9xR": {
+      "address": "5nfmtYyBWfqgPCa7Q268Z5KvxNN7suoBg335vYJ1f9xR",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 8
+      },
+      "first_seen": 1784677471,
+      "birth_edge": {
+        "sink": "5nfmtYyBWfqgPCa7Q268Z5KvxNN7suoBg335vYJ1f9xR",
+        "sources": [
+          "HG9AMzxAyU57FcKSfGxoiZLEaj25Lp4os3h2C1J1pthB"
+        ],
+        "value": 6000000000,
+        "signature": "BgHQ66wJZyJ8Ku1X6nLcW3wTjWrz2tu3kXacjCxvFPmZqMyvZUPA6enxobD3mh4V7vF5AeyP3MCEzmP1Fp3aejo",
+        "slot": 434400144,
+        "block_time": 1784677471,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "HG9AMzxAyU57FcKSfGxoiZLEaj25Lp4os3h2C1J1pthB"
+      ],
+      "funded": [
+        "Dui7P69ZGxj7XDqa4WUWHFSfQQJhJ4WQYfvaDu6epJDb"
+      ]
+    },
+    "5otWRyzcb7D7DEGZoRJrn2RQ8mbGDDpWCntjh45fFKH1": {
+      "address": "5otWRyzcb7D7DEGZoRJrn2RQ8mbGDDpWCntjh45fFKH1",
+      "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "executable": false,
+      "signatures": {
+        "Exact": 0
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "CtNS8YptrA5Rif1iaemwGozwJBxFYKiyGF2K5a27UNm1"
+      ]
+    },
+    "65hBBDbKSmcpLtKcWHkdamVscqPMaTwPkhQ2SieZwo5G": {
+      "address": "65hBBDbKSmcpLtKcWHkdamVscqPMaTwPkhQ2SieZwo5G",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 1675
+      },
+      "first_seen": 1781912647,
+      "birth_edge": {
+        "sink": "65hBBDbKSmcpLtKcWHkdamVscqPMaTwPkhQ2SieZwo5G",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 8341210350,
+        "signature": "66yx9Y9Kx2kDn414U79FzGUmHKqC6yjs2pwHYGVyKU7Hz78xoERgzk3aRLu6ER2Lsf8WSoYgKV5XmRBUoBjN1uCi",
+        "slot": 427608057,
+        "block_time": 1781912647,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "6K21Da3WJ69MjAQAguwQpMfaPFqJE8fku8USd8yoY6Jo": {
+      "address": "6K21Da3WJ69MjAQAguwQpMfaPFqJE8fku8USd8yoY6Jo",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 1455
+      },
+      "first_seen": 1777633794,
+      "birth_edge": {
+        "sink": "6K21Da3WJ69MjAQAguwQpMfaPFqJE8fku8USd8yoY6Jo",
+        "sources": [
+          "EhYvkhV8sciC6JtoSLeQ3SPcuuHtSCPdBGV6Zpgjce3L"
+        ],
+        "value": 258994628,
+        "signature": "5xTJvzkJ4KLtr61BQu17Zw5s48piQVRNqGfYW6uEF9Chz3pbYKKWj9SgEXgZqXZzwoWTWxfQwx1pk7pfmVk8xpea",
+        "slot": 416863953,
+        "block_time": 1777633794,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "EhYvkhV8sciC6JtoSLeQ3SPcuuHtSCPdBGV6Zpgjce3L"
+      ],
+      "funded": []
+    },
+    "6LY1JzAFVZsP2a2xKrtU6znQMQ5h4i7tocWdgrkZzkzF": {
+      "address": "6LY1JzAFVZsP2a2xKrtU6znQMQ5h4i7tocWdgrkZzkzF",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "3F7LpWtX1vnPTMPrtRsj5kf888WHQxEYrEEfNx1i9TNM"
+      ]
+    },
+    "6UCU24ZM5tYrj3vgobuc2TH4Fgf45Pdo4R5YV1cTwKbs": {
+      "address": "6UCU24ZM5tYrj3vgobuc2TH4Fgf45Pdo4R5YV1cTwKbs",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 1798
+      },
+      "first_seen": 1782249772,
+      "birth_edge": {
+        "sink": "6UCU24ZM5tYrj3vgobuc2TH4Fgf45Pdo4R5YV1cTwKbs",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 214667850,
+        "signature": "2uBFoGA742GiVkxExn7xvJwoswYHXze3H14E5jxJiPZVkSntt2nhG4awCL2jShRr7Dap88nokh7rahWEWf9N8BPx",
+        "slot": 428455127,
+        "block_time": 1782249772,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "6WY85YarfLbVcys9pYjCPPbtafy8NywxZ2f2dqwEauug": {
+      "address": "6WY85YarfLbVcys9pYjCPPbtafy8NywxZ2f2dqwEauug",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 164
+      },
+      "first_seen": 1730137646,
+      "birth_edge": {
+        "sink": "6WY85YarfLbVcys9pYjCPPbtafy8NywxZ2f2dqwEauug",
+        "sources": [
+          "AC5RDfQFmDS1deWZos921JfqscXdByf8BKHs5ACWjtW2"
+        ],
+        "value": 274487000,
+        "signature": "2DWsZNYcSuEfFqWocAACHHGpMFjNJjSFM6Af7tCd7qK7MvUVrT5zS3RTrMbQVS8DiNFyFZxn4d1KHbfJmXHH6Re3",
+        "slot": 298217842,
+        "block_time": 1730137646,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "AC5RDfQFmDS1deWZos921JfqscXdByf8BKHs5ACWjtW2"
+      ],
+      "funded": [
+        "B2pLXgxo7pw6zWCHwtcAB8TKTkLn2JscPQ1wE9LbCCp6"
+      ]
+    },
+    "6cTWeEoKH3ZXLtaopZ2w8f3tAYHa1aZ955F7Be3v2JjJ": {
+      "address": "6cTWeEoKH3ZXLtaopZ2w8f3tAYHa1aZ955F7Be3v2JjJ",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 2540
+      },
+      "first_seen": 1774048122,
+      "birth_edge": {
+        "sink": "6cTWeEoKH3ZXLtaopZ2w8f3tAYHa1aZ955F7Be3v2JjJ",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 2684550000,
+        "signature": "5JGkx4gLFdFnb8RyE1i2vHX8YhnXpf3jKopxGQJLt2W71QTbq9V8C5WWB1uUVgjVDemFL2Cr9hg7E7ovMD6br4SC",
+        "slot": 407765285,
+        "block_time": 1774048122,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "75ccPySyKNxYxeAW4EHmu2qhkeGR9e8EWocme3mSRMn7": {
+      "address": "75ccPySyKNxYxeAW4EHmu2qhkeGR9e8EWocme3mSRMn7",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 12414
+      },
+      "first_seen": 1773423037,
+      "birth_edge": {
+        "sink": "75ccPySyKNxYxeAW4EHmu2qhkeGR9e8EWocme3mSRMn7",
+        "sources": [
+          "HWjmoUNYckccg9Qrwi43JTzBcGcM1nbdAtATf9GXmz16"
+        ],
+        "value": 74999986000,
+        "signature": "5z7rRaVncRKAr8uKafQww17wURn5r1Nrso6rrjX33uWt4RcNDhZwJ3WnUzjQLrhPLvvarQUHiyF43yATFSwmngpR",
+        "slot": 406181631,
+        "block_time": 1773423037,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "9WL2A89YBr6X47ABKYNzPentWiBA3H8tpaiuf5CaYHx6"
+      ],
+      "funded": []
+    },
+    "7BBMr88hUcH2HQ1YPW9om9WF5TAH8SdhbqTsyvjStDt4": {
+      "address": "7BBMr88hUcH2HQ1YPW9om9WF5TAH8SdhbqTsyvjStDt4",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 75
+      },
+      "first_seen": 1777418100,
+      "birth_edge": {
+        "sink": "7BBMr88hUcH2HQ1YPW9om9WF5TAH8SdhbqTsyvjStDt4",
+        "sources": [
+          "fr6yQkDmWy6R6pecbUsxXaw6EvRJznZ2HsK5frQgud8"
+        ],
+        "value": 1535976910,
+        "signature": "4QqKxxNWo8aMdnVwxt2HAZhr971T9NoiEoUrLLpao8iE6UYJP5P5v6Phpr6Dhmvr5CL8eC2gScqDPjNnRHdvxeig",
+        "slot": 416317031,
+        "block_time": 1777418100,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "fr6yQkDmWy6R6pecbUsxXaw6EvRJznZ2HsK5frQgud8"
+      ],
+      "funded": []
+    },
+    "7aGvYPiRiJL2gp6hiNkm1orjzZwwoa1PfCGZ8UMCgzY2": {
+      "address": "7aGvYPiRiJL2gp6hiNkm1orjzZwwoa1PfCGZ8UMCgzY2",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 846
+      },
+      "first_seen": 1737286757,
+      "birth_edge": null,
+      "fee_payers": [
+        "87XFc4oRJNVCihAhexTcDhr9CqZJcD5WafPecRJxY7Fh"
+      ],
+      "funded": [
+        "3pmWhU2m9g5t7gY6sm5mMfGe5fo6nZJ2rbGc1cXZWbDL"
+      ]
+    },
+    "8GBakVqHS5ZwjGHUVQJNp38LoHBmykhmzz94ygqqS9me": {
+      "address": "8GBakVqHS5ZwjGHUVQJNp38LoHBmykhmzz94ygqqS9me",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 166
+      },
+      "first_seen": 1784728932,
+      "birth_edge": {
+        "sink": "8GBakVqHS5ZwjGHUVQJNp38LoHBmykhmzz94ygqqS9me",
+        "sources": [
+          "Dui7P69ZGxj7XDqa4WUWHFSfQQJhJ4WQYfvaDu6epJDb"
+        ],
+        "value": 6000000000,
+        "signature": "5egDP47NwEtjW6z3FGPu9C8TN6vuKzc5DWdW85GfBcPozErf2Hwz7SAT8uMRLqseRW1zJf9zyZDKzsRS7nU6NuE7",
+        "slot": 434522672,
+        "block_time": 1784728932,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "Dui7P69ZGxj7XDqa4WUWHFSfQQJhJ4WQYfvaDu6epJDb"
+      ],
+      "funded": []
+    },
+    "8QsoN6vuzSC68BmpnYc7a1bnEBKTg6LGyKjsnRbFjy6L": {
+      "address": "8QsoN6vuzSC68BmpnYc7a1bnEBKTg6LGyKjsnRbFjy6L",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 749
+      },
+      "first_seen": 1769731281,
+      "birth_edge": {
+        "sink": "8QsoN6vuzSC68BmpnYc7a1bnEBKTg6LGyKjsnRbFjy6L",
+        "sources": [
+          "3F7LpWtX1vnPTMPrtRsj5kf888WHQxEYrEEfNx1i9TNM"
+        ],
+        "value": 1750000000,
+        "signature": "5QzbCSjB8yFUJJxW4VA6N3FMboK5PzFjLzmg17FA9D37Fwaob7mSBrihErDHAHqgBnHPVUfo5hLhaECpeXDKnRXv",
+        "slot": 396800592,
+        "block_time": 1769731281,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "3F7LpWtX1vnPTMPrtRsj5kf888WHQxEYrEEfNx1i9TNM"
+      ],
+      "funded": [
+        "HnPk9tMejhS4atsn9WWXjphkdQDqEfkgh782r1N31G8u"
+      ]
+    },
+    "8bn7JfKdDRVgPvE5iQvQPAVKyWyVeSr7bGbqC7VURB3z": {
+      "address": "8bn7JfKdDRVgPvE5iQvQPAVKyWyVeSr7bGbqC7VURB3z",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 2
+      },
+      "first_seen": 1784889281,
+      "birth_edge": {
+        "sink": "8bn7JfKdDRVgPvE5iQvQPAVKyWyVeSr7bGbqC7VURB3z",
+        "sources": [
+          "EfTXGDatPDADBzrkXF4UDceXfZomfZapkVtWNxRqiadi"
+        ],
+        "value": 357844785,
+        "signature": "3x7KfTZsQ3qacJ9YQ2GAkVNy5DH5fywQDuNDWHUPTSRdkZx2WXstn6r2aUuYNtexLskp9j3krmGMserB1uza47Xy",
+        "slot": 434904811,
+        "block_time": 1784889281,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "EfTXGDatPDADBzrkXF4UDceXfZomfZapkVtWNxRqiadi"
+      ],
+      "funded": []
+    },
+    "8fenZTDtD27NgQoApjRVTPnZyTEgdjuxkWcQZiPVRS4E": {
+      "address": "8fenZTDtD27NgQoApjRVTPnZyTEgdjuxkWcQZiPVRS4E",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": []
+    },
+    "8hKxzjzh34MNV9WWvQs2XY98aNRSdi7TUPU2LCNDZjk1": {
+      "address": "8hKxzjzh34MNV9WWvQs2XY98aNRSdi7TUPU2LCNDZjk1",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 2154
+      },
+      "first_seen": 1684141322,
+      "birth_edge": {
+        "sink": "8hKxzjzh34MNV9WWvQs2XY98aNRSdi7TUPU2LCNDZjk1",
+        "sources": [
+          "ASTyfSima4LLAdDgoFGkgqoKowG1LZFDr9fAQrg7iaJZ"
+        ],
+        "value": 90000000,
+        "signature": "52ZPH7cfAzwauMYh529GgHWhTzRwReNdJyWYr5ZugsAB5gvSmP6CYuCV1U79B9SLxLjk6qy5nsDUmao8Xa5y5EBB",
+        "slot": 194024003,
+        "block_time": 1684141322,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "ASTyfSima4LLAdDgoFGkgqoKowG1LZFDr9fAQrg7iaJZ"
+      ],
+      "funded": [
+        "xukyMmDrvUreyVX2stb5DyFD7MopGzYfTisLFwg6Tf6"
+      ]
+    },
+    "9L6aT5vj92HvC1M2U63RpihHeJqdJn4ZkqDCwSUJVSWS": {
+      "address": "9L6aT5vj92HvC1M2U63RpihHeJqdJn4ZkqDCwSUJVSWS",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 4
+      },
+      "first_seen": 1784763254,
+      "birth_edge": {
+        "sink": "9L6aT5vj92HvC1M2U63RpihHeJqdJn4ZkqDCwSUJVSWS",
+        "sources": [
+          "1xxAAZZjmZXg4LyhZus3D2GyWD5CQxi7UH5RMm8gqix"
+        ],
+        "value": 123619297270,
+        "signature": "2cECE1YoJRoHQy2qRWbyonojR7N6G7cAwCFK8RMz7suMaM1AczRPVJr9JNpjWZH6evSV42UcKpeetDTHEueNmXzG",
+        "slot": 434604242,
+        "block_time": 1784763254,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "1xxAAZZjmZXg4LyhZus3D2GyWD5CQxi7UH5RMm8gqix"
+      ],
+      "funded": [
+        "9xxr2L8nTGGaoa2LVEen4GGTdFB5585kHAVPftAhLzF2"
+      ]
+    },
+    "9j4kVYJwqp8pTGtoWYdmoio4tf6nagJP6hiZwJNHwwcP": {
+      "address": "9j4kVYJwqp8pTGtoWYdmoio4tf6nagJP6hiZwJNHwwcP",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 4706
+      },
+      "first_seen": 1739322324,
+      "birth_edge": {
+        "sink": "9j4kVYJwqp8pTGtoWYdmoio4tf6nagJP6hiZwJNHwwcP",
+        "sources": [
+          "Hqu3WpZ3NFi5JUkuPQ9KvDPNenApHSKfRu6Xxgced362"
+        ],
+        "value": 10000000000,
+        "signature": "7qWiwuckPXYWmebpR7dcDePFe2ck5fb9P4Vtcnia6q79VyEUvGGyioUbhEEfbb92v6afMhZZKQc9SLfjStygNLK",
+        "slot": 320058361,
+        "block_time": 1739322324,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "Hqu3WpZ3NFi5JUkuPQ9KvDPNenApHSKfRu6Xxgced362"
+      ],
+      "funded": []
+    },
+    "9xxr2L8nTGGaoa2LVEen4GGTdFB5585kHAVPftAhLzF2": {
+      "address": "9xxr2L8nTGGaoa2LVEen4GGTdFB5585kHAVPftAhLzF2",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 32
+      },
+      "first_seen": 1784763527,
+      "birth_edge": {
+        "sink": "9xxr2L8nTGGaoa2LVEen4GGTdFB5585kHAVPftAhLzF2",
+        "sources": [
+          "9L6aT5vj92HvC1M2U63RpihHeJqdJn4ZkqDCwSUJVSWS"
+        ],
+        "value": 100000000000,
+        "signature": "wdtUyL83Tjg7qH1qdd8Tb13cf56tkME445ATpk5MsfdvVqnNrEPgdiShLcTgoErfnxSnBxRXkc2HNX1BC4vPbDb",
+        "slot": 434604898,
+        "block_time": 1784763527,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "9L6aT5vj92HvC1M2U63RpihHeJqdJn4ZkqDCwSUJVSWS"
+      ],
+      "funded": [
+        "sVwhzH6DgSNuc8q5uBDCrwbSQAEwYub42DrjgMqQehB"
+      ]
+    },
+    "AC5RDfQFmDS1deWZos921JfqscXdByf8BKHs5ACWjtW2": {
+      "address": "AC5RDfQFmDS1deWZos921JfqscXdByf8BKHs5ACWjtW2",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "6WY85YarfLbVcys9pYjCPPbtafy8NywxZ2f2dqwEauug"
+      ]
+    },
+    "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW": {
+      "address": "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "DdAS1xeVfShiyL9GkZjFjS2az4mtBDqFE5vQoJZnWcxS",
+        "EfTXGDatPDADBzrkXF4UDceXfZomfZapkVtWNxRqiadi",
+        "FuasKFTCGY2EodUE7vDXkEf6a8TC3gFjCrW6DyLWyxSw",
+        "1xxAAZZjmZXg4LyhZus3D2GyWD5CQxi7UH5RMm8gqix",
+        "HyBcKtGzikuaGKKxdbH6r6a76Rxf4ep71QeDcKGoTUXh",
+        "Bqqa46ZcQKQn4Rj8nCV7hgPYWJ3TLaSbrP3HCUwbzWWw",
+        "4XXUvTDdke6d4hJQ7XF9KwkkkUMYsTbjrNF3tSizbYjr",
+        "6UCU24ZM5tYrj3vgobuc2TH4Fgf45Pdo4R5YV1cTwKbs",
+        "FX1veGSHZV1U88iDn4Tj9Jqsfk4Qru8wyWpJ6piR3GFz",
+        "Cp5dcC6LJcZ8KCfbDpXoCurHgds92qDMr49ovRJcHZRX",
+        "65hBBDbKSmcpLtKcWHkdamVscqPMaTwPkhQ2SieZwo5G",
+        "HVFUeQwehwmbtwMhrJ7Y7ZRvUtCkC1MSfJTz1aaZerfG",
+        "6cTWeEoKH3ZXLtaopZ2w8f3tAYHa1aZ955F7Be3v2JjJ",
+        "HvHgoPZxfcBgyWjmSUaByC9WMmDwpZj8qm9rp1cVQ5AU",
+        "E9HSTWen7vEE42qLWKvVuS3ToWiEsXvmt2vzhgG76FnW"
+      ]
+    },
+    "ASTyfSima4LLAdDgoFGkgqoKowG1LZFDr9fAQrg7iaJZ": {
+      "address": "ASTyfSima4LLAdDgoFGkgqoKowG1LZFDr9fAQrg7iaJZ",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "8hKxzjzh34MNV9WWvQs2XY98aNRSdi7TUPU2LCNDZjk1"
+      ]
+    },
+    "AxG818LtyEa88dJDoHeYHW2WyNXrCLYUzr6ifL5qn4KB": {
+      "address": "AxG818LtyEa88dJDoHeYHW2WyNXrCLYUzr6ifL5qn4KB",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 0
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": []
+    },
+    "B2pLXgxo7pw6zWCHwtcAB8TKTkLn2JscPQ1wE9LbCCp6": {
+      "address": "B2pLXgxo7pw6zWCHwtcAB8TKTkLn2JscPQ1wE9LbCCp6",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 461
+      },
+      "first_seen": 1730991438,
+      "birth_edge": {
+        "sink": "B2pLXgxo7pw6zWCHwtcAB8TKTkLn2JscPQ1wE9LbCCp6",
+        "sources": [
+          "6WY85YarfLbVcys9pYjCPPbtafy8NywxZ2f2dqwEauug"
+        ],
+        "value": 170300000,
+        "signature": "3yotNo2nUtSpv7ygmKCi3Y6GA2Th4y1M4MZUfNSMFLJLLZgjpaZV8PTgncmDHp6LaTHbPudF6o8MtHPdZRa1YTkq",
+        "slot": 300020544,
+        "block_time": 1730991438,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "6WY85YarfLbVcys9pYjCPPbtafy8NywxZ2f2dqwEauug"
+      ],
+      "funded": [
+        "EhYvkhV8sciC6JtoSLeQ3SPcuuHtSCPdBGV6Zpgjce3L"
+      ]
+    },
+    "B4PcoH3JyxhbFuq6UUHtdeAJZdPja84imJq3V34xGLnb": {
+      "address": "B4PcoH3JyxhbFuq6UUHtdeAJZdPja84imJq3V34xGLnb",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 118
+      },
+      "first_seen": 1784559066,
+      "birth_edge": {
+        "sink": "B4PcoH3JyxhbFuq6UUHtdeAJZdPja84imJq3V34xGLnb",
+        "sources": [
+          "EH4vhUSeJrk17J5PkG4W2xziF1H8AVwLTH1AXx4ACvqt"
+        ],
+        "value": 6000000000,
+        "signature": "2DpouWNQzV4La7kGGFWEu8xAUrYsxX1iYLv2YjzUV7o52LGRTmoc2yBKdSeTYC2ftWLUaRyxa7dJoVi4d2aRX7md",
+        "slot": 434118998,
+        "block_time": 1784559066,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "EH4vhUSeJrk17J5PkG4W2xziF1H8AVwLTH1AXx4ACvqt"
+      ],
+      "funded": [
+        "3G7g4bbapfEggBJ2zYVCAMfdEGCHeFWmV6Q1R2Y6iYCE"
+      ]
+    },
+    "B5eHbv7xrBhjvA2NFYr7hP8LDwJmEVdnfDzVkEKUDXqc": {
+      "address": "B5eHbv7xrBhjvA2NFYr7hP8LDwJmEVdnfDzVkEKUDXqc",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": []
+    },
+    "BKQqoatcqyoWoiUnHDJM2FW23rtwoMiCNnVbMECASGPM": {
+      "address": "BKQqoatcqyoWoiUnHDJM2FW23rtwoMiCNnVbMECASGPM",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": []
+    },
+    "BU6qqvJ4Lr9rb6QiPyhs9cr6aUc69MKsGPr63n2WVmj4": {
+      "address": "BU6qqvJ4Lr9rb6QiPyhs9cr6aUc69MKsGPr63n2WVmj4",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 0
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": []
+    },
+    "BmFdpraQhkiDQE6SnfG5omcA1VwzqfXrwtNYBwWTymy6": {
+      "address": "BmFdpraQhkiDQE6SnfG5omcA1VwzqfXrwtNYBwWTymy6",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "WTFsXATVeP2hYL9k95TVH8wwotPdxVLmkZsNLhq9xsW"
+      ]
+    },
+    "Bqqa46ZcQKQn4Rj8nCV7hgPYWJ3TLaSbrP3HCUwbzWWw": {
+      "address": "Bqqa46ZcQKQn4Rj8nCV7hgPYWJ3TLaSbrP3HCUwbzWWw",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 155
+      },
+      "first_seen": 1780608496,
+      "birth_edge": {
+        "sink": "Bqqa46ZcQKQn4Rj8nCV7hgPYWJ3TLaSbrP3HCUwbzWWw",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 3965000,
+        "signature": "2jPiYFrpAtgu9YXus8V7NPkAWW6xWy5zBdh42P7S5sticdDDVgPGo91ne8yDeLjXhZHyH6zxZnWg69yPXRApwheC",
+        "slot": 424324895,
+        "block_time": 1780608496,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "BwEqAJZcZfP1qi4pu5ud6ArHaQqZZ7o454H4UVhFY2B7": {
+      "address": "BwEqAJZcZfP1qi4pu5ud6ArHaQqZZ7o454H4UVhFY2B7",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": []
+    },
+    "CBgkzioYTK6Esxjyt2LeFtbzdWKJALdq7rydGSDiA2jr": {
+      "address": "CBgkzioYTK6Esxjyt2LeFtbzdWKJALdq7rydGSDiA2jr",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 5
+      },
+      "first_seen": 1784599658,
+      "birth_edge": {
+        "sink": "CBgkzioYTK6Esxjyt2LeFtbzdWKJALdq7rydGSDiA2jr",
+        "sources": [
+          "E9HSTWen7vEE42qLWKvVuS3ToWiEsXvmt2vzhgG76FnW"
+        ],
+        "value": 440000000,
+        "signature": "4QJkfNCAWjNh2mfYrx9WN6EBe6cCpPUABueLgf4WfqJ5smBUdqbHDcsQXAHT6d8a6q4hFNMvf7jAozFE4jw1rXwj",
+        "slot": 434214781,
+        "block_time": 1784599658,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "E9HSTWen7vEE42qLWKvVuS3ToWiEsXvmt2vzhgG76FnW"
+      ],
+      "funded": []
+    },
+    "Cp5dcC6LJcZ8KCfbDpXoCurHgds92qDMr49ovRJcHZRX": {
+      "address": "Cp5dcC6LJcZ8KCfbDpXoCurHgds92qDMr49ovRJcHZRX",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 13
+      },
+      "first_seen": 1779951445,
+      "birth_edge": {
+        "sink": "Cp5dcC6LJcZ8KCfbDpXoCurHgds92qDMr49ovRJcHZRX",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 8215125000,
+        "signature": "3S3LvvA4afcP2UWFcxxtrhRLYeEVx2nk5k516Eh5KFDaL6hv54unSFZsQKkJfwFyopqJoi3FBbspfAsLuEyzEGA4",
+        "slot": 422670074,
+        "block_time": 1779951445,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "CtNS8YptrA5Rif1iaemwGozwJBxFYKiyGF2K5a27UNm1": {
+      "address": "CtNS8YptrA5Rif1iaemwGozwJBxFYKiyGF2K5a27UNm1",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 4
+      },
+      "first_seen": 1784708703,
+      "birth_edge": {
+        "sink": "CtNS8YptrA5Rif1iaemwGozwJBxFYKiyGF2K5a27UNm1",
+        "sources": [
+          "5otWRyzcb7D7DEGZoRJrn2RQ8mbGDDpWCntjh45fFKH1"
+        ],
+        "value": 8938355770,
+        "signature": "2AfWhhdPCHX43rGHUYcLfc9mKuadeZ9BcPwcZdjrdbU1GauBAvUpxeMxCtSwGkZgPftHpeHh4BzdaRMQHBvKkCza",
+        "slot": 434474544,
+        "block_time": 1784708703,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "F7p3dFrjRTbtRp8FRF6qHLomXbKRBzpvBLjtQcfcgmNe"
+      ],
+      "funded": []
+    },
+    "DdAS1xeVfShiyL9GkZjFjS2az4mtBDqFE5vQoJZnWcxS": {
+      "address": "DdAS1xeVfShiyL9GkZjFjS2az4mtBDqFE5vQoJZnWcxS",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 5
+      },
+      "first_seen": 1784905824,
+      "birth_edge": {
+        "sink": "DdAS1xeVfShiyL9GkZjFjS2az4mtBDqFE5vQoJZnWcxS",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 1688050000,
+        "signature": "3okszdffPjqzZwqTbMnoDeW22XyxMzjeg4fH7Sa2zx87HW3sSGwHKbMjzoBbhMiodbFuw4pJREV7yyTMdHRyA6LX",
+        "slot": 434944185,
+        "block_time": 1784905824,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "DnpSR1A1gDByxC7X1YWYQDLzZtMxVgLyrH13o9fVVUZX": {
+      "address": "DnpSR1A1gDByxC7X1YWYQDLzZtMxVgLyrH13o9fVVUZX",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 3
+      },
+      "first_seen": 1784827497,
+      "birth_edge": null,
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "Dui7P69ZGxj7XDqa4WUWHFSfQQJhJ4WQYfvaDu6epJDb": {
+      "address": "Dui7P69ZGxj7XDqa4WUWHFSfQQJhJ4WQYfvaDu6epJDb",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 50
+      },
+      "first_seen": 1784677540,
+      "birth_edge": {
+        "sink": "Dui7P69ZGxj7XDqa4WUWHFSfQQJhJ4WQYfvaDu6epJDb",
+        "sources": [
+          "5nfmtYyBWfqgPCa7Q268Z5KvxNN7suoBg335vYJ1f9xR"
+        ],
+        "value": 5972245550,
+        "signature": "3y1YYF3p7DGGbkcPfP7YZiCUuNVbWu1gkkQUyhbjGrHUWWWyHSK3g84KBRYKxWR5EwLHykacupHUUoPCuvixm9D5",
+        "slot": 434400306,
+        "block_time": 1784677540,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "5nfmtYyBWfqgPCa7Q268Z5KvxNN7suoBg335vYJ1f9xR"
+      ],
+      "funded": [
+        "8GBakVqHS5ZwjGHUVQJNp38LoHBmykhmzz94ygqqS9me"
+      ]
+    },
+    "E9HSTWen7vEE42qLWKvVuS3ToWiEsXvmt2vzhgG76FnW": {
+      "address": "E9HSTWen7vEE42qLWKvVuS3ToWiEsXvmt2vzhgG76FnW",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 498
+      },
+      "first_seen": 1778972678,
+      "birth_edge": {
+        "sink": "E9HSTWen7vEE42qLWKvVuS3ToWiEsXvmt2vzhgG76FnW",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 6632702930,
+        "signature": "vJcCHLLH6FaWPDarJWTvMdpKckbK9yPGhy9qgUgypRyheTmVdPiEMf5vCioqKT82iF8G7VZ95vXGuYWoECTAh2B",
+        "slot": 420215149,
+        "block_time": 1778972678,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": [
+        "CBgkzioYTK6Esxjyt2LeFtbzdWKJALdq7rydGSDiA2jr"
+      ]
+    },
+    "EEHTjhZdVh4PSW9Cj3ifufUWjU5thLHuSHRU6vAfrvXw": {
+      "address": "EEHTjhZdVh4PSW9Cj3ifufUWjU5thLHuSHRU6vAfrvXw",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 263
+      },
+      "first_seen": 1739221109,
+      "birth_edge": {
+        "sink": "EEHTjhZdVh4PSW9Cj3ifufUWjU5thLHuSHRU6vAfrvXw",
+        "sources": [
+          "FLpcQHCyZHTt5RE9e2CwdC9KrjsAhjn2MJUm1sbiAhoG"
+        ],
+        "value": 193060356732,
+        "signature": "fAGMDMYWqckj3yppKkDz6nU16mw6nUyj8eqKz67cuBCk2vyPb41nDZFKVfUokuNdBBHR7DnRD6QVNTC1smJ6xeJ",
+        "slot": 319802609,
+        "block_time": 1739221109,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "FLpcQHCyZHTt5RE9e2CwdC9KrjsAhjn2MJUm1sbiAhoG"
+      ],
+      "funded": [
+        "Hqu3WpZ3NFi5JUkuPQ9KvDPNenApHSKfRu6Xxgced362"
+      ]
+    },
+    "EJnp7CWmmEmnVtm4nmCRX384VxpAYb4hx5WRR41EKkE6": {
+      "address": "EJnp7CWmmEmnVtm4nmCRX384VxpAYb4hx5WRR41EKkE6",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 5
+      },
+      "first_seen": 1784723655,
+      "birth_edge": {
+        "sink": "EJnp7CWmmEmnVtm4nmCRX384VxpAYb4hx5WRR41EKkE6",
+        "sources": [
+          "WTFsXATVeP2hYL9k95TVH8wwotPdxVLmkZsNLhq9xsW"
+        ],
+        "value": 53379956,
+        "signature": "5V2TrixS2SaFcCSTh7Z8rQCHwGk8BsHYxbVkiC1LYG7b1kroixqiZTc4xxgExXW799cbRzcxGZzHnNtJJqkfp7PY",
+        "slot": 434510180,
+        "block_time": 1784723655,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "WTFsXATVeP2hYL9k95TVH8wwotPdxVLmkZsNLhq9xsW"
+      ],
+      "funded": []
+    },
+    "EfTXGDatPDADBzrkXF4UDceXfZomfZapkVtWNxRqiadi": {
+      "address": "EfTXGDatPDADBzrkXF4UDceXfZomfZapkVtWNxRqiadi",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 22
+      },
+      "first_seen": 1784545211,
+      "birth_edge": {
+        "sink": "EfTXGDatPDADBzrkXF4UDceXfZomfZapkVtWNxRqiadi",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 911592746,
+        "signature": "3mU1pusTugbjUavbBoZ22NW4vuCtQpkg3cLhD7LzftumBwNyYjjym77QgZDqw3P1MJyPGHmjFvhwfmBdqzkPM22C",
+        "slot": 434086683,
+        "block_time": 1784545211,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": [
+        "8bn7JfKdDRVgPvE5iQvQPAVKyWyVeSr7bGbqC7VURB3z"
+      ]
+    },
+    "EhYvkhV8sciC6JtoSLeQ3SPcuuHtSCPdBGV6Zpgjce3L": {
+      "address": "EhYvkhV8sciC6JtoSLeQ3SPcuuHtSCPdBGV6Zpgjce3L",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 204
+      },
+      "first_seen": 1760973563,
+      "birth_edge": {
+        "sink": "EhYvkhV8sciC6JtoSLeQ3SPcuuHtSCPdBGV6Zpgjce3L",
+        "sources": [
+          "B2pLXgxo7pw6zWCHwtcAB8TKTkLn2JscPQ1wE9LbCCp6"
+        ],
+        "value": 232124163,
+        "signature": "4myvBjchjS5GpkAefDQzdZy9X3tRiTAqLqXLP15CbfeRozQKLwNkE9cjT1HM1jWLgXWYX1Finn6WPATKvUW7qh1b",
+        "slot": 374643294,
+        "block_time": 1760973563,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "B2pLXgxo7pw6zWCHwtcAB8TKTkLn2JscPQ1wE9LbCCp6"
+      ],
+      "funded": [
+        "6K21Da3WJ69MjAQAguwQpMfaPFqJE8fku8USd8yoY6Jo"
+      ]
+    },
+    "EvGpkcSBfhp5K9SNP48wVtfNXdKYRBiK3kvMkB66kU3Q": {
+      "address": "EvGpkcSBfhp5K9SNP48wVtfNXdKYRBiK3kvMkB66kU3Q",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "3UwX8m3zCdepWUCnttRVZDXMzn6u32KK1SqPeBHSqPB3"
+      ]
+    },
+    "FLpcQHCyZHTt5RE9e2CwdC9KrjsAhjn2MJUm1sbiAhoG": {
+      "address": "FLpcQHCyZHTt5RE9e2CwdC9KrjsAhjn2MJUm1sbiAhoG",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 65
+      },
+      "first_seen": 1739220909,
+      "birth_edge": {
+        "sink": "FLpcQHCyZHTt5RE9e2CwdC9KrjsAhjn2MJUm1sbiAhoG",
+        "sources": [
+          "HY5YfhKFC8yv14VUWAxdjpDP84cgwPqHuFFPmP85AJUU"
+        ],
+        "value": 193060501712,
+        "signature": "3XTrWcuTAZ6VPTskSZUcKifL2no86sm4ySA1mKqd1TrtwfmBSH5TGFizJGSUj97L73oWhVHHZxDaZ8QPotXrhKHN",
+        "slot": 319802102,
+        "block_time": 1739220909,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "HY5YfhKFC8yv14VUWAxdjpDP84cgwPqHuFFPmP85AJUU"
+      ],
+      "funded": [
+        "EEHTjhZdVh4PSW9Cj3ifufUWjU5thLHuSHRU6vAfrvXw"
+      ]
+    },
+    "FPhsUG4FtDmSZCAv16fhdGquQvymnN8uXUUzuWJLsP6M": {
+      "address": "FPhsUG4FtDmSZCAv16fhdGquQvymnN8uXUUzuWJLsP6M",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 39
+      },
+      "first_seen": 1784388028,
+      "birth_edge": {
+        "sink": "FPhsUG4FtDmSZCAv16fhdGquQvymnN8uXUUzuWJLsP6M",
+        "sources": [
+          "HyBcKtGzikuaGKKxdbH6r6a76Rxf4ep71QeDcKGoTUXh"
+        ],
+        "value": 713996614,
+        "signature": "3uB9YzeAF4ZxH7RhAuKzZTEdfY2ZemqdbocxsdNcgxhPTegQLCabEQV4FatVhr3suF7G3WsgTmZi1rM4Rv7bHwDY",
+        "slot": 433713669,
+        "block_time": 1784388028,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "HyBcKtGzikuaGKKxdbH6r6a76Rxf4ep71QeDcKGoTUXh"
+      ],
+      "funded": []
+    },
+    "FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5": {
+      "address": "FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "HY5YfhKFC8yv14VUWAxdjpDP84cgwPqHuFFPmP85AJUU"
+      ]
+    },
+    "FX1veGSHZV1U88iDn4Tj9Jqsfk4Qru8wyWpJ6piR3GFz": {
+      "address": "FX1veGSHZV1U88iDn4Tj9Jqsfk4Qru8wyWpJ6piR3GFz",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 13
+      },
+      "first_seen": 1784474206,
+      "birth_edge": {
+        "sink": "FX1veGSHZV1U88iDn4Tj9Jqsfk4Qru8wyWpJ6piR3GFz",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 4000000000,
+        "signature": "2HhrwGqohRREkYJwQikQSNMrdj84hNCE8rEm36vnehrxBDGhdcviJ8r2UaYrjVrkCdoc9C7yZgf1Ry5qqJkySMWe",
+        "slot": 433919635,
+        "block_time": 1784474206,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "FuasKFTCGY2EodUE7vDXkEf6a8TC3gFjCrW6DyLWyxSw": {
+      "address": "FuasKFTCGY2EodUE7vDXkEf6a8TC3gFjCrW6DyLWyxSw",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 14348
+      },
+      "first_seen": 1777091838,
+      "birth_edge": {
+        "sink": "FuasKFTCGY2EodUE7vDXkEf6a8TC3gFjCrW6DyLWyxSw",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 18571768434,
+        "signature": "44VV33bxUiT3rDmG3dtN2uxnDx4uBs6keq7PWCmx3rdqWhvPmPXJhrA7Sq7atABrqAkpaBZH5wdRRWMkFQ7j8kNA",
+        "slot": 415493545,
+        "block_time": 1777091838,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "G2YxRa6wt1qePMwfJzdXZG62ej4qaTC7YURzuh2Lwd3t": {
+      "address": "G2YxRa6wt1qePMwfJzdXZG62ej4qaTC7YURzuh2Lwd3t",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "J5fR73GQgDErMSYWU4ZhqdCQMAv4ATKHRYgQRmmeDgwd"
+      ]
+    },
+    "HG9AMzxAyU57FcKSfGxoiZLEaj25Lp4os3h2C1J1pthB": {
+      "address": "HG9AMzxAyU57FcKSfGxoiZLEaj25Lp4os3h2C1J1pthB",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 70
+      },
+      "first_seen": 1784642108,
+      "birth_edge": {
+        "sink": "HG9AMzxAyU57FcKSfGxoiZLEaj25Lp4os3h2C1J1pthB",
+        "sources": [
+          "3G7g4bbapfEggBJ2zYVCAMfdEGCHeFWmV6Q1R2Y6iYCE"
+        ],
+        "value": 6000000000,
+        "signature": "36emCx68q3daUpGUon62Ap25HKquJc4ShAsXFf4WTrQSv3LLkMyzrgHppntKE5x7nhXgc4yHAbiV9emJWZTyWUBt",
+        "slot": 434315972,
+        "block_time": 1784642108,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "3G7g4bbapfEggBJ2zYVCAMfdEGCHeFWmV6Q1R2Y6iYCE"
+      ],
+      "funded": [
+        "5nfmtYyBWfqgPCa7Q268Z5KvxNN7suoBg335vYJ1f9xR"
+      ]
+    },
+    "HVFUeQwehwmbtwMhrJ7Y7ZRvUtCkC1MSfJTz1aaZerfG": {
+      "address": "HVFUeQwehwmbtwMhrJ7Y7ZRvUtCkC1MSfJTz1aaZerfG",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 2
+      },
+      "first_seen": 1784388623,
+      "birth_edge": {
+        "sink": "HVFUeQwehwmbtwMhrJ7Y7ZRvUtCkC1MSfJTz1aaZerfG",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 1417613532,
+        "signature": "36LP8gnyhWKzZ7tRs8AqYiryPu1uXRnxkJkCL5UYY3gDLP9HDKxoM7F78gtGZhL4484ggeipkx7br8xuVkjqiCmP",
+        "slot": 433715069,
+        "block_time": 1784388623,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": [
+        "SPHLgtPvqwnpETAnq5b8X9Evqj5g4BLzDFWNZuBFpPw"
+      ]
+    },
+    "HVZXVsbsnvNJuHj5xBCUppm2c5i2gVuryFGMRpFRu165": {
+      "address": "HVZXVsbsnvNJuHj5xBCUppm2c5i2gVuryFGMRpFRu165",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": []
+    },
+    "HWjmoUNYckccg9Qrwi43JTzBcGcM1nbdAtATf9GXmz16": {
+      "address": "HWjmoUNYckccg9Qrwi43JTzBcGcM1nbdAtATf9GXmz16",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "75ccPySyKNxYxeAW4EHmu2qhkeGR9e8EWocme3mSRMn7"
+      ]
+    },
+    "HY5YfhKFC8yv14VUWAxdjpDP84cgwPqHuFFPmP85AJUU": {
+      "address": "HY5YfhKFC8yv14VUWAxdjpDP84cgwPqHuFFPmP85AJUU",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 88
+      },
+      "first_seen": 1739158938,
+      "birth_edge": {
+        "sink": "HY5YfhKFC8yv14VUWAxdjpDP84cgwPqHuFFPmP85AJUU",
+        "sources": [
+          "FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5"
+        ],
+        "value": 175000000000,
+        "signature": "4oThEUiwo2rQL8uC6ftsU8CM4T777952pow6Xd1V1g38wLEXcD7Unwfoam7V3h3RscKvknzQYeniAxhqP788yJey",
+        "slot": 319645868,
+        "block_time": 1739158938,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "FWznbcNXWQuHTawe9RxvQ2LdCENssh12dsznf4RiouN5"
+      ],
+      "funded": [
+        "FLpcQHCyZHTt5RE9e2CwdC9KrjsAhjn2MJUm1sbiAhoG"
+      ]
+    },
+    "HhWpXSYWqpqL5SndpynYX6bhyCPakVgSEdBYKHeVB7qq": {
+      "address": "HhWpXSYWqpqL5SndpynYX6bhyCPakVgSEdBYKHeVB7qq",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 14
+      },
+      "first_seen": 1784431964,
+      "birth_edge": null,
+      "fee_payers": [
+        "5b89H4qf4gyBvEmdTbVCoEUxvBTMuqtjwpRnVusBwPF7"
+      ],
+      "funded": []
+    },
+    "HnPk9tMejhS4atsn9WWXjphkdQDqEfkgh782r1N31G8u": {
+      "address": "HnPk9tMejhS4atsn9WWXjphkdQDqEfkgh782r1N31G8u",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 539
+      },
+      "first_seen": 1780432182,
+      "birth_edge": {
+        "sink": "HnPk9tMejhS4atsn9WWXjphkdQDqEfkgh782r1N31G8u",
+        "sources": [
+          "8QsoN6vuzSC68BmpnYc7a1bnEBKTg6LGyKjsnRbFjy6L"
+        ],
+        "value": 89094594,
+        "signature": "3AAmWu8c1yZAnghr6GUa2VZVep5GxNyWya4YaXB6nZvYXh3Au5z2tZGp8K4dDVV9gHzHoCVPkww6bCeRQkWnq9Am",
+        "slot": 423882128,
+        "block_time": 1780432182,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "8QsoN6vuzSC68BmpnYc7a1bnEBKTg6LGyKjsnRbFjy6L"
+      ],
+      "funded": []
+    },
+    "Hqu3WpZ3NFi5JUkuPQ9KvDPNenApHSKfRu6Xxgced362": {
+      "address": "Hqu3WpZ3NFi5JUkuPQ9KvDPNenApHSKfRu6Xxgced362",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 489
+      },
+      "first_seen": 1739221320,
+      "birth_edge": {
+        "sink": "Hqu3WpZ3NFi5JUkuPQ9KvDPNenApHSKfRu6Xxgced362",
+        "sources": [
+          "EEHTjhZdVh4PSW9Cj3ifufUWjU5thLHuSHRU6vAfrvXw"
+        ],
+        "value": 193060212752,
+        "signature": "4ueh33xU53mTLFqenjNiZHvF9gZzqG5w7vbFG2Q3j45hwf2hgJWPdByjYckeqYBLc4Z2daRQ2z6svu5ia86Dm9gH",
+        "slot": 319803144,
+        "block_time": 1739221320,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "EEHTjhZdVh4PSW9Cj3ifufUWjU5thLHuSHRU6vAfrvXw"
+      ],
+      "funded": [
+        "9j4kVYJwqp8pTGtoWYdmoio4tf6nagJP6hiZwJNHwwcP"
+      ]
+    },
+    "HvHgoPZxfcBgyWjmSUaByC9WMmDwpZj8qm9rp1cVQ5AU": {
+      "address": "HvHgoPZxfcBgyWjmSUaByC9WMmDwpZj8qm9rp1cVQ5AU",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 145
+      },
+      "first_seen": 1784670576,
+      "birth_edge": {
+        "sink": "HvHgoPZxfcBgyWjmSUaByC9WMmDwpZj8qm9rp1cVQ5AU",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 19924000000,
+        "signature": "3LziCnYj4ysFF65ZBR3SNn84RCPxARZLuPtZmpzURcX4DxBWNxnJfBLHPy59wws7xzfa1is1EEmFnFBVaKLNBeTo",
+        "slot": 434383701,
+        "block_time": 1784670576,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "HyBcKtGzikuaGKKxdbH6r6a76Rxf4ep71QeDcKGoTUXh": {
+      "address": "HyBcKtGzikuaGKKxdbH6r6a76Rxf4ep71QeDcKGoTUXh",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 2
+      },
+      "first_seen": 1784388026,
+      "birth_edge": {
+        "sink": "HyBcKtGzikuaGKKxdbH6r6a76Rxf4ep71QeDcKGoTUXh",
+        "sources": [
+          "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW",
+          "4AV2Qzp3N4c9RfzyEbNZs2wqWfW4EwKnnxFAZCndvfGh"
+        ],
+        "value": 714001614,
+        "signature": "3zpvvnKV22nNgWn1Ydb4Cmuv1F4YKDfUYamgYGRpiorEU8miy9A1jphqfMqayhc7VCBVGe8rWwa9eid9YshWZ48o",
+        "slot": 433713663,
+        "block_time": 1784388026,
+        "ambiguous_attribution": true
+      },
+      "fee_payers": [
+        "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": [
+        "FPhsUG4FtDmSZCAv16fhdGquQvymnN8uXUUzuWJLsP6M"
+      ]
+    },
+    "J5fR73GQgDErMSYWU4ZhqdCQMAv4ATKHRYgQRmmeDgwd": {
+      "address": "J5fR73GQgDErMSYWU4ZhqdCQMAv4ATKHRYgQRmmeDgwd",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 85
+      },
+      "first_seen": 1718409947,
+      "birth_edge": {
+        "sink": "J5fR73GQgDErMSYWU4ZhqdCQMAv4ATKHRYgQRmmeDgwd",
+        "sources": [
+          "G2YxRa6wt1qePMwfJzdXZG62ej4qaTC7YURzuh2Lwd3t"
+        ],
+        "value": 36624826000,
+        "signature": "2obyvsC8f8UtJ8559U2kbcFKJWPo2MfRAWKv7QAJdMvm1hW2W16SLvaJnUWAwEexZPBsZ7s5e2dp38A7mTSPR9Cn",
+        "slot": 271887897,
+        "block_time": 1718409947,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "E9vf42zJXFv8Ljop1cG68NAxLDat4ZEGEWDLfJVX38GF"
+      ],
+      "funded": [
+        "5WhtGkw1u3uC9LxS1CNYsNQqMrkLp5xajmAeJUufNAQ9"
+      ]
+    },
+    "SPHLgtPvqwnpETAnq5b8X9Evqj5g4BLzDFWNZuBFpPw": {
+      "address": "SPHLgtPvqwnpETAnq5b8X9Evqj5g4BLzDFWNZuBFpPw",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 21
+      },
+      "first_seen": 1784388626,
+      "birth_edge": {
+        "sink": "SPHLgtPvqwnpETAnq5b8X9Evqj5g4BLzDFWNZuBFpPw",
+        "sources": [
+          "HVFUeQwehwmbtwMhrJ7Y7ZRvUtCkC1MSfJTz1aaZerfG"
+        ],
+        "value": 1417608532,
+        "signature": "4EZV6Ja1sYLxFkLSNn8iEM4HYdBjTiYcQvtxBvJv85YMEqHSAyarQKycubjButPaP8hLhohkykcr3rUZ2xNRhGu1",
+        "slot": 433715076,
+        "block_time": 1784388626,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "HVFUeQwehwmbtwMhrJ7Y7ZRvUtCkC1MSfJTz1aaZerfG"
+      ],
+      "funded": []
+    },
+    "WTFsXATVeP2hYL9k95TVH8wwotPdxVLmkZsNLhq9xsW": {
+      "address": "WTFsXATVeP2hYL9k95TVH8wwotPdxVLmkZsNLhq9xsW",
+      "owner": null,
+      "executable": false,
+      "signatures": {
+        "Exact": 268
+      },
+      "first_seen": 1774254581,
+      "birth_edge": {
+        "sink": "WTFsXATVeP2hYL9k95TVH8wwotPdxVLmkZsNLhq9xsW",
+        "sources": [
+          "BmFdpraQhkiDQE6SnfG5omcA1VwzqfXrwtNYBwWTymy6"
+        ],
+        "value": 993510000,
+        "signature": "44FY8HTRxTcgN7VSbQRWWMcQKwr1GcJkUrNeRrn37hM2hkkKM2oknZDFKFT51NEERKch9e8SKE6MhNaFGuAvKQaH",
+        "slot": 408290047,
+        "block_time": 1774254581,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "BmFdpraQhkiDQE6SnfG5omcA1VwzqfXrwtNYBwWTymy6"
+      ],
+      "funded": [
+        "EJnp7CWmmEmnVtm4nmCRX384VxpAYb4hx5WRR41EKkE6"
+      ]
+    },
+    "fr6yQkDmWy6R6pecbUsxXaw6EvRJznZ2HsK5frQgud8": {
+      "address": "fr6yQkDmWy6R6pecbUsxXaw6EvRJznZ2HsK5frQgud8",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "AtLeast": 20000
+      },
+      "first_seen": null,
+      "birth_edge": null,
+      "fee_payers": [],
+      "funded": [
+        "7BBMr88hUcH2HQ1YPW9om9WF5TAH8SdhbqTsyvjStDt4"
+      ]
+    },
+    "isU3XW1Fc8wobkR1nPL1itv9UaknRbFpTNU2bkYJV6h": {
+      "address": "isU3XW1Fc8wobkR1nPL1itv9UaknRbFpTNU2bkYJV6h",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 6573
+      },
+      "first_seen": 1780811622,
+      "birth_edge": {
+        "sink": "isU3XW1Fc8wobkR1nPL1itv9UaknRbFpTNU2bkYJV6h",
+        "sources": [
+          "51JyiaMJn8BvSMspReePnX5uDiPqfMM4WSKkaPK6o83s"
+        ],
+        "value": 250000000,
+        "signature": "4Aosp2JL7xc7wzaEFspne89EtdUQ2k5KGX2ifGWFTu148Y9FrvDh8wEuW1wDa7pwMDXLBNbCf6d1z2vXQMLm5ciG",
+        "slot": 424834280,
+        "block_time": 1780811622,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "51JyiaMJn8BvSMspReePnX5uDiPqfMM4WSKkaPK6o83s"
+      ],
+      "funded": []
+    },
+    "sVwhzH6DgSNuc8q5uBDCrwbSQAEwYub42DrjgMqQehB": {
+      "address": "sVwhzH6DgSNuc8q5uBDCrwbSQAEwYub42DrjgMqQehB",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 859
+      },
+      "first_seen": 1784793041,
+      "birth_edge": {
+        "sink": "sVwhzH6DgSNuc8q5uBDCrwbSQAEwYub42DrjgMqQehB",
+        "sources": [
+          "9xxr2L8nTGGaoa2LVEen4GGTdFB5585kHAVPftAhLzF2"
+        ],
+        "value": 97997217398,
+        "signature": "NUEDXVJvG4JREhaSjMytzbdG5Bm9CucuFuyCj9evrfefAkE79RzFyr38HcuvGEkG9c2SZUTQJtNPTssxoZugU4q",
+        "slot": 434675365,
+        "block_time": 1784793041,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "9xxr2L8nTGGaoa2LVEen4GGTdFB5585kHAVPftAhLzF2"
+      ],
+      "funded": []
+    },
+    "xukyMmDrvUreyVX2stb5DyFD7MopGzYfTisLFwg6Tf6": {
+      "address": "xukyMmDrvUreyVX2stb5DyFD7MopGzYfTisLFwg6Tf6",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 531
+      },
+      "first_seen": 1783364451,
+      "birth_edge": {
+        "sink": "xukyMmDrvUreyVX2stb5DyFD7MopGzYfTisLFwg6Tf6",
+        "sources": [
+          "8hKxzjzh34MNV9WWvQs2XY98aNRSdi7TUPU2LCNDZjk1"
+        ],
+        "value": 1100000000,
+        "signature": "4kLBV2LbExCtK85mRP4FnNGDaHVTBNNvvtyQjbFVqiqeLgvs3fcSUVbsxtmuZ6WzVUBYV9h9GJzyUuWpYf6nAxTD",
+        "slot": 431221166,
+        "block_time": 1783364451,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "8hKxzjzh34MNV9WWvQs2XY98aNRSdi7TUPU2LCNDZjk1"
+      ],
+      "funded": []
+    }
+  }
+}

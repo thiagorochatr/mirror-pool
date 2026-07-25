@@ -370,6 +370,7 @@ impl<'a> Collector<'a> {
         let mut before: Option<String> = None;
         let mut seen: u64 = 0;
         let mut oldest: Option<crate::rpc::SignatureInfo> = None;
+        let mut last_seen_time: Option<i64> = None;
 
         for page in 0..self.config.sig_page_cap {
             let batch = self.client.signatures_for_address(
@@ -383,6 +384,7 @@ impl<'a> Collector<'a> {
             seen += batch.len() as u64;
             let last = batch.last().expect("non-empty").clone();
             before = Some(last.signature.clone());
+            last_seen_time = last.block_time.or(last_seen_time);
             oldest = Some(last);
 
             if (batch.len() as u32) < self.config.page_size {
@@ -394,6 +396,16 @@ impl<'a> Collector<'a> {
                 // The cap is a classification signal with a name, never a
                 // silent unresolved: the count is a lower bound and says so.
                 facts.signatures = SigCount::AtLeast(seen);
+                // Record the age too, from the oldest signature reached. This
+                // is the whole point of the volume-hub rule: an address busy
+                // enough to exhaust the paging budget is exactly the kind that
+                // should be classified rather than dropped.
+                //
+                // The value is conservative in the right direction. We stopped
+                // before the true oldest signature, so the real account is at
+                // least this old; an address that already looks thirty days old
+                // from a partial view is genuinely at least that.
+                facts.first_seen = last_seen_time;
                 return Ok(());
             }
         }
@@ -688,6 +700,65 @@ mod tests {
         assert_eq!(a.0, b.0);
         assert_eq!(a.1, b.1);
         assert_eq!(a.0[0].1.label().unwrap(), "busy-unlabelled:Hub");
+    }
+
+    /// An address busy enough to exhaust the paging budget is exactly the kind
+    /// the volume-hub rule exists for, so it must arrive at pass two carrying an
+    /// age. An earlier version returned from paging before recording one, and
+    /// every page-capped funder fell through to unresolved — which on a real
+    /// sample was thirty chains out of thirty-seven.
+    #[test]
+    fn a_page_capped_funder_is_classified_rather_than_dropped() {
+        let mut hub = wallet("BusyFunder");
+        hub.signatures = SigCount::AtLeast(20_000);
+        hub.first_seen = Some(NOW - 400 * 24 * 3_600);
+
+        let sample = sample_with(
+            vec![Chain {
+                seed: "member".into(),
+                visited: vec!["member".into(), "BusyFunder".into()],
+                stop: ChainStop::PageCapHit,
+            }],
+            vec![wallet("member"), hub],
+        );
+        let (results, census) =
+            classify_sample(&sample, &AnchorSet::default(), &Thresholds::default(), NOW);
+        assert_eq!(
+            results[0].1.label().unwrap(),
+            "busy-unlabelled:BusyFunder",
+            "a page-capped funder with an age must classify"
+        );
+        assert_eq!(census.resolved, 1);
+        assert_eq!(census.page_cap_hit, 0);
+    }
+
+    /// Without an age it cannot classify, and that is the correct outcome — but
+    /// it must land in the budget bucket rather than look like evidence.
+    #[test]
+    fn a_page_capped_funder_without_an_age_stays_a_budget_outcome() {
+        let mut hub = wallet("BusyFunder");
+        hub.signatures = SigCount::AtLeast(20_000);
+        hub.first_seen = None;
+
+        let sample = sample_with(
+            vec![Chain {
+                seed: "member".into(),
+                visited: vec!["member".into(), "BusyFunder".into()],
+                stop: ChainStop::PageCapHit,
+            }],
+            vec![wallet("member"), hub],
+        );
+        let (results, census) =
+            classify_sample(&sample, &AnchorSet::default(), &Thresholds::default(), NOW);
+        assert!(matches!(
+            results[0].1,
+            Outcome::Unresolved {
+                reason: Unresolved::PageCapHit,
+                ..
+            }
+        ));
+        assert_eq!(census.page_cap_hit, 1);
+        assert!(!Unresolved::PageCapHit.is_evidence());
     }
 
     #[test]

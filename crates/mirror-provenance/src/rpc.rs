@@ -124,26 +124,48 @@ impl RpcClient {
         self.last_call = Some(Instant::now());
     }
 
+    /// One call, retrying through rate limits.
+    ///
+    /// A 429 is not evidence about the chain, so abandoning a trace on the first
+    /// one converts throttling into an `RpcFailure` — and enough of those push
+    /// the run past the threshold where it refuses to publish at all. Which is
+    /// what happened on the first real run of this collector: the chain client
+    /// had backoff and this one did not, and the analysis correctly refused a
+    /// headline computed from our own throttling.
+    ///
+    /// Persistent throttling still surfaces as an error. The point is not to
+    /// hide it, only to distinguish a transient limit from a real one.
     fn call(
         &mut self,
         method: &str,
         params: serde_json::Value,
     ) -> Result<serde_json::Value, RpcError> {
-        self.pace();
-        self.calls += 1;
         let body = serde_json::json!({
             "jsonrpc": "2.0",
-            "id": self.calls,
+            "id": self.calls + 1,
             "method": method,
             "params": params,
         });
-        let response: JsonRpcResponse = self
-            .agent
-            .post(&self.endpoint)
-            .send_json(body)
-            .map_err(|e| RpcError::Transport(e.to_string()))?
-            .into_json()
-            .map_err(|e| RpcError::Shape(e.to_string()))?;
+
+        let mut wait = std::time::Duration::from_millis(800);
+        let mut response: Option<JsonRpcResponse> = None;
+        for attempt in 0..6 {
+            self.pace();
+            self.calls += 1;
+            match self.agent.post(&self.endpoint).send_json(body.clone()) {
+                Ok(r) => {
+                    response = Some(r.into_json().map_err(|e| RpcError::Shape(e.to_string()))?);
+                    break;
+                }
+                Err(ureq::Error::Status(429 | 502 | 503, _)) if attempt < 5 => {
+                    std::thread::sleep(wait);
+                    wait *= 2;
+                }
+                Err(e) => return Err(RpcError::Transport(e.to_string())),
+            }
+        }
+        let response = response
+            .ok_or_else(|| RpcError::Transport(format!("{method}: throttled past retries")))?;
 
         if let Some(err) = response.error {
             return Err(RpcError::Rpc(err.to_string()));
