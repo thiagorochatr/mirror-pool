@@ -704,3 +704,87 @@ fn settlement_refuses_a_beneficiary_the_proof_did_not_bind() {
         .expect_err("settlement paid an unbound beneficiary");
     println!("unbound beneficiary rejected: {err}");
 }
+
+/// The permissionless exit, demonstrated rather than added.
+///
+/// No `self_spend` instruction exists, because none is needed: a member acts as
+/// their own relay with a zero fee, and settlement is already permissionless, so
+/// they can settle their own batch once the timeout passes. Nothing in the
+/// protocol can hold their escrow — no relay has to cooperate and no operator
+/// has to be alive.
+///
+/// The cost is exactly the one you would expect: their own wallet signs, so this
+/// path gives up the anonymity the relay path provides. It is an escape hatch,
+/// not a mode of operation, and this test pins that it works rather than leaving
+/// it as an assertion in a README.
+#[test]
+fn a_member_can_always_exit_without_any_relay() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+
+    // The member is their own relay and their own beneficiary, fee zero.
+    let member = Keypair::new();
+    env.svm.airdrop(&member.pubkey(), 10_000_000_000).unwrap();
+    let beneficiary = member.pubkey();
+
+    let merkle_proof = tree.proof(0).unwrap();
+    let binding = mirror_core::action_binding(SELECTOR, &beneficiary.to_bytes(), 0).unwrap();
+    let witness = Witness {
+        note: notes[0],
+        merkle_proof: &merkle_proof,
+        root: tree.root().unwrap(),
+        action_binding: binding,
+    };
+    let mut rng = {
+        use ark_std::rand::SeedableRng;
+        ark_std::rand::rngs::StdRng::from_seed([42u8; 32])
+    };
+    let proof = prove(&keys, &witness, &mut rng).expect("proving");
+    let nullifier = proof.public_inputs[1];
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+
+    let ix = Instruction::new_with_bytes(
+        env.program_id,
+        &MirrorIx::SubmitSpend {
+            proof_a: proof.proof_a,
+            proof_b: proof.proof_b,
+            proof_c: proof.proof_c,
+            root: proof.public_inputs[0],
+            nullifier,
+            selector: SELECTOR,
+            beneficiary: beneficiary.to_bytes(),
+            relay_fee: 0,
+        }
+        .pack(),
+        vec![
+            AccountMeta::new(member.pubkey(), true),
+            AccountMeta::new(env.pool, false),
+            AccountMeta::new(spend_pda, false),
+            AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+        ],
+    );
+    env.send(ix, &member)
+        .expect("member submitted their own spend");
+
+    // Alone, so the crowd rule sends them to the timeout.
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+
+    let before = env.svm.get_account(&member.pubkey()).unwrap().lamports;
+    let batch = vec![(spend_pda, beneficiary, member.insecure_clone())];
+    let settle = settle_ix(&env, &batch, &member.pubkey());
+    env.send(settle, &member)
+        .expect("member settled their own spend");
+
+    let after = env.svm.get_account(&member.pubkey()).unwrap().lamports;
+    // The full denomination, minus whatever the transaction itself cost.
+    assert!(
+        after > before,
+        "the member ended up worse off: {before} -> {after}"
+    );
+    assert!(
+        after - before >= DENOMINATION - 100_000,
+        "expected roughly the full denomination back, got {}",
+        after - before
+    );
+}
