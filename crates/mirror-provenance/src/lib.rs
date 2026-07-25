@@ -9,12 +9,16 @@
 //! the limits of what the numbers prove are in `docs/PROVENANCE_METHOD.md`.
 #![forbid(unsafe_code)]
 
+pub mod classify;
 pub mod edge;
+pub mod facts;
 pub mod metrics;
 pub mod outcome;
 pub mod rpc;
 
+pub use classify::{AnchorSet, Classifier, SetStructure, Thresholds};
 pub use edge::{FundingEdge, TransactionView};
+pub use facts::{AddressFacts, SigCount};
 pub use metrics::Anonymity;
 pub use outcome::{Census, Outcome, TerminalRule, Unresolved};
 pub use rpc::{RpcClient, RpcError};
