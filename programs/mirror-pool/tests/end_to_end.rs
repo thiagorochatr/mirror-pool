@@ -16,7 +16,7 @@ use mirror_core::{Field, MerkleTree, Note};
 use mirror_pool_program::{
     instruction::Instruction as MirrorIx,
     pda::{pool_address, spend_address, vault_address},
-    spend::{Spend, SPEND_LEN, STATUS_PENDING},
+    spend::{Spend, SPEND_LEN, STATUS_PENDING, STATUS_SETTLED},
     Pool, POOL_LEN,
 };
 use solana_keypair::Keypair;
@@ -75,15 +75,28 @@ fn setup() -> Env {
 }
 
 impl Env {
+    /// Sends a transaction, treating runtime deduplication as a test bug.
+    ///
+    /// A resubmitted byte-identical transaction is rejected as AlreadyProcessed
+    /// *before the program runs*, so any negative test that reaches that state is
+    /// asserting nothing about this program. Two tests in this file passed that
+    /// way before this guard existed. Vary the fee payer to make a genuine
+    /// retry.
     fn send(&mut self, ix: Instruction, signer: &Keypair) -> Result<(), String> {
         let msg = Message::new(&[ix], Some(&signer.pubkey()));
         let tx = Transaction::new(&[signer], msg, self.svm.latest_blockhash());
         self.svm.send_transaction(tx).map(|_| ()).map_err(|e| {
-            format!(
+            let rendered = format!(
                 "{:?} | logs: {:?}",
                 e.err,
                 e.meta.logs.iter().rev().take(4).collect::<Vec<_>>()
-            )
+            );
+            assert!(
+                !rendered.contains("AlreadyProcessed"),
+                "the runtime deduplicated this transaction, so the program never \
+                 ran and the test proves nothing. Vary the fee payer: {rendered}"
+            );
+            rendered
         })
     }
 
@@ -467,4 +480,227 @@ fn a_forged_proof_is_rejected() {
         .send(ix, &relay)
         .expect_err("a corrupted proof was accepted");
     println!("forged proof rejected: {err}");
+}
+
+// ---------------------------------------------------------------------------
+// Settlement
+// ---------------------------------------------------------------------------
+
+/// Submits `n` spends and returns their (spend PDA, beneficiary, relay) triples.
+fn submit_batch(
+    env: &mut Env,
+    tree: &MerkleTree,
+    notes: &[Note],
+    keys: &Keys,
+    n: usize,
+) -> Vec<(Pubkey, Pubkey, Keypair)> {
+    let mut out = Vec::new();
+    for i in 0..n {
+        let beneficiary = Pubkey::new_unique();
+        let relay = Keypair::new();
+        env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+        let proof = proof_for(keys, tree, notes, i, &beneficiary);
+        let nullifier = proof.public_inputs[1];
+        let ix = spend_ix(env, &proof, nullifier, &beneficiary, &relay.pubkey());
+        env.send(ix, &relay)
+            .unwrap_or_else(|e| panic!("submit {i} failed: {e}"));
+        let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+        out.push((spend_pda, beneficiary, relay));
+    }
+    out
+}
+
+fn settle_ix(env: &Env, batch: &[(Pubkey, Pubkey, Keypair)], settler: &Pubkey) -> Instruction {
+    let mut metas = vec![
+        AccountMeta::new(*settler, true),
+        AccountMeta::new(env.pool, false),
+        AccountMeta::new(env.vault, false),
+    ];
+    for (spend, beneficiary, relay) in batch {
+        metas.push(AccountMeta::new(*spend, false));
+        metas.push(AccountMeta::new(*beneficiary, false));
+        metas.push(AccountMeta::new(relay.pubkey(), false));
+    }
+    Instruction::new_with_bytes(
+        env.program_id,
+        &MirrorIx::SettleEpoch {
+            count: batch.len() as u8,
+        }
+        .pack(),
+        metas,
+    )
+}
+
+#[test]
+fn a_full_crowd_settles_and_pays_every_beneficiary() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let batch = submit_batch(&mut env, &tree, &notes, &keys, K_FLOOR as usize);
+
+    let before: Vec<u64> = batch
+        .iter()
+        .map(|(_, b, _)| env.svm.get_account(b).map(|a| a.lamports).unwrap_or(0))
+        .collect();
+    let vault_before = env.vault_lamports();
+
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let ix = settle_ix(&env, &batch, &settler.pubkey());
+    let cu = env.send_expect_cu(ix, &settler);
+    println!(
+        "settle_epoch of {} spends consumed {cu} compute units",
+        batch.len()
+    );
+
+    let payout = DENOMINATION - RELAY_FEE;
+    for (i, (spend, beneficiary, _relay)) in batch.iter().enumerate() {
+        let after = env.svm.get_account(beneficiary).unwrap().lamports;
+        assert_eq!(
+            after - before[i],
+            payout,
+            "beneficiary {i} received the wrong amount"
+        );
+        let mut data = env.svm.get_account(spend).unwrap().data;
+        let record = Spend::load(&mut data).unwrap();
+        assert_eq!(record.status(), STATUS_SETTLED);
+    }
+
+    // The vault paid out exactly the batch, nothing more.
+    assert_eq!(
+        vault_before - env.vault_lamports(),
+        batch.len() as u64 * DENOMINATION
+    );
+
+    // And the invariant still holds against the notes that remain unspent.
+    let mut data = env.pool_state();
+    let pool = Pool::load(&mut data).unwrap();
+    assert_eq!(pool.spend_count(), batch.len() as u64);
+    assert_eq!(pool.outstanding_notes().unwrap(), 6 - batch.len() as u64);
+    assert!(
+        env.vault_lamports() >= pool.required_vault_lamports().unwrap(),
+        "vault {} cannot cover {} outstanding notes",
+        env.vault_lamports(),
+        pool.outstanding_notes().unwrap()
+    );
+}
+
+/// The double-spend an attacker reaches for first: present one pending spend
+/// twice inside a single batch and be paid twice for one note.
+#[test]
+fn the_same_spend_cannot_be_settled_twice_within_one_batch() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let batch = submit_batch(&mut env, &tree, &notes, &keys, K_FLOOR as usize);
+
+    // Replace the last entry with a duplicate of the first.
+    let mut doubled: Vec<(Pubkey, Pubkey, Keypair)> = batch
+        .iter()
+        .map(|(s, b, r)| (*s, *b, r.insecure_clone()))
+        .collect();
+    let last = doubled.len() - 1;
+    doubled[last] = (batch[0].0, batch[0].1, batch[0].2.insecure_clone());
+
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let ix = settle_ix(&env, &doubled, &settler.pubkey());
+    let err = env
+        .send(ix, &settler)
+        .expect_err("a spend was settled twice in one batch");
+    println!("in-batch double settle rejected: {err}");
+    assert!(
+        err.contains("Custom(16)"),
+        "expected AlreadySettled (16), got: {err}"
+    );
+}
+
+#[test]
+fn a_settled_spend_cannot_be_settled_again_later() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let batch = submit_batch(&mut env, &tree, &notes, &keys, K_FLOOR as usize);
+
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let ix = settle_ix(&env, &batch, &settler.pubkey());
+    env.send(ix, &settler).expect("first settlement");
+
+    // A different settler, so the transaction is not byte-identical and the
+    // rejection has to come from the program.
+    let other = Keypair::new();
+    env.svm.airdrop(&other.pubkey(), 10_000_000_000).unwrap();
+    let again = settle_ix(&env, &batch, &other.pubkey());
+    let err = env
+        .send(again, &other)
+        .expect_err("a settled batch was replayed");
+    println!("settlement replay rejected: {err}");
+    assert!(err.contains("Custom(16)"), "expected AlreadySettled: {err}");
+}
+
+#[test]
+fn a_batch_below_the_crowd_size_must_wait() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    // One short of the floor, and freshly submitted.
+    let batch = submit_batch(&mut env, &tree, &notes, &keys, K_FLOOR as usize - 1);
+
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let ix = settle_ix(&env, &batch, &settler.pubkey());
+    let err = env
+        .send(ix, &settler)
+        .expect_err("a batch below the crowd size settled immediately");
+    println!("small batch rejected: {err}");
+    assert!(
+        err.contains("Custom(21)"),
+        "expected CrowdTooSmall (21), got: {err}"
+    );
+}
+
+/// The escape valve. A quiet pool must not hold a member's funds forever, so
+/// once the timeout has passed a lone spend settles on its own.
+#[test]
+fn a_lone_spend_settles_once_the_timeout_has_passed() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let batch = submit_batch(&mut env, &tree, &notes, &keys, 1);
+
+    let early = Keypair::new();
+    let late = Keypair::new();
+    env.svm.airdrop(&early.pubkey(), 10_000_000_000).unwrap();
+    env.svm.airdrop(&late.pubkey(), 10_000_000_000).unwrap();
+
+    // Before the timeout: refused.
+    let ix = settle_ix(&env, &batch, &early.pubkey());
+    assert!(env.send(ix, &early).is_err(), "settled too early");
+
+    // Advance the clock past the timeout.
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+
+    let before = env
+        .svm
+        .get_account(&batch[0].1)
+        .map(|a| a.lamports)
+        .unwrap_or(0);
+    let ix = settle_ix(&env, &batch, &late.pubkey());
+    env.send(ix, &late).expect("lone spend after timeout");
+    let after = env.svm.get_account(&batch[0].1).unwrap().lamports;
+    assert_eq!(after - before, DENOMINATION - RELAY_FEE);
+}
+
+#[test]
+fn settlement_refuses_a_beneficiary_the_proof_did_not_bind() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let batch = submit_batch(&mut env, &tree, &notes, &keys, K_FLOOR as usize);
+
+    // Swap one beneficiary for an address the member never proved.
+    let mut tampered: Vec<(Pubkey, Pubkey, Keypair)> = batch
+        .iter()
+        .map(|(s, b, r)| (*s, *b, r.insecure_clone()))
+        .collect();
+    tampered[1].1 = Pubkey::new_unique();
+
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let ix = settle_ix(&env, &tampered, &settler.pubkey());
+    let err = env
+        .send(ix, &settler)
+        .expect_err("settlement paid an unbound beneficiary");
+    println!("unbound beneficiary rejected: {err}");
 }

@@ -54,6 +54,8 @@ pub enum MirrorProgramError {
     BelowAnonymityFloor = 19,
     /// The relay fee is not less than the denomination.
     RelayFeeTooLarge = 20,
+    /// The batch is below the crowd size and has not waited out the timeout.
+    CrowdTooSmall = 21,
 }
 
 impl From<MirrorProgramError> for ProgramError {

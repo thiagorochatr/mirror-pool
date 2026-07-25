@@ -19,6 +19,7 @@ pub enum Tag {
     InitPool = 0,
     Deposit = 1,
     SubmitSpend = 2,
+    SettleEpoch = 3,
 }
 
 impl Tag {
@@ -27,6 +28,7 @@ impl Tag {
             0 => Ok(Tag::InitPool),
             1 => Ok(Tag::Deposit),
             2 => Ok(Tag::SubmitSpend),
+            3 => Ok(Tag::SettleEpoch),
             _ => Err(MirrorProgramError::MalformedInstruction),
         }
     }
@@ -71,6 +73,13 @@ pub enum Instruction {
         beneficiary: [u8; 32],
         relay_fee: u64,
     },
+    /// Executes a batch of pending spends in one transaction, so every payout in
+    /// an epoch shares a timestamp and an ordering.
+    ///
+    /// `count` is the number of spend records that follow in the account list.
+    /// Permissionless: anyone may settle, so no operator's absence can strand a
+    /// member's funds.
+    SettleEpoch { count: u8 },
 }
 
 /// `InitPool`: tag + u64 + u64 + u32.
@@ -79,6 +88,8 @@ pub const INIT_POOL_LEN: usize = 1 + 8 + 8 + 4;
 pub const DEPOSIT_LEN: usize = 1 + 32;
 /// `SubmitSpend`: tag + proof + root + nullifier + selector + beneficiary + fee.
 pub const SUBMIT_SPEND_LEN: usize = 1 + 64 + 128 + 64 + 32 + 32 + 8 + 32 + 8;
+/// `SettleEpoch`: tag + count.
+pub const SETTLE_EPOCH_LEN: usize = 1 + 1;
 
 fn read_u64(data: &[u8], at: usize) -> u64 {
     let mut b = [0u8; 8];
@@ -118,6 +129,12 @@ impl Instruction {
                 let mut commitment = [0u8; 32];
                 commitment.copy_from_slice(&data[1..33]);
                 Ok(Instruction::Deposit { commitment })
+            }
+            Tag::SettleEpoch => {
+                if data.len() != SETTLE_EPOCH_LEN {
+                    return Err(MirrorProgramError::MalformedInstruction);
+                }
+                Ok(Instruction::SettleEpoch { count: data[1] })
             }
             Tag::SubmitSpend => {
                 if data.len() != SUBMIT_SPEND_LEN {
@@ -194,6 +211,9 @@ impl Instruction {
                 out.extend_from_slice(&relay_fee.to_le_bytes());
                 out
             }
+            Instruction::SettleEpoch { count } => {
+                vec![Tag::SettleEpoch as u8, *count]
+            }
         }
     }
 }
@@ -216,6 +236,10 @@ mod tests {
         }
     }
 
+    fn settle() -> Instruction {
+        Instruction::SettleEpoch { count: 7 }
+    }
+
     fn submit_spend() -> Instruction {
         // Distinct byte patterns per field so a swapped offset cannot pass.
         Instruction::SubmitSpend {
@@ -232,7 +256,7 @@ mod tests {
 
     #[test]
     fn packing_then_unpacking_is_the_identity() {
-        for ix in [init(), deposit(), submit_spend()] {
+        for ix in [init(), deposit(), submit_spend(), settle()] {
             assert_eq!(Instruction::unpack(&ix.pack()).unwrap(), ix);
         }
     }
@@ -246,6 +270,7 @@ mod tests {
         assert_eq!(INIT_POOL_LEN, 21);
         assert_eq!(DEPOSIT_LEN, 33);
         assert_eq!(SUBMIT_SPEND_LEN, 369);
+        assert_eq!(settle().pack().len(), SETTLE_EPOCH_LEN);
     }
 
     #[test]
@@ -258,7 +283,7 @@ mod tests {
 
     #[test]
     fn an_unknown_tag_is_refused() {
-        for tag in [3u8, 4, 99, 255] {
+        for tag in [4u8, 5, 99, 255] {
             assert!(
                 matches!(
                     Instruction::unpack(&[tag]),
@@ -273,7 +298,7 @@ mod tests {
     /// buffer must not be zero-extended and a long one must not be truncated.
     #[test]
     fn every_wrong_length_is_refused() {
-        for ix in [init(), deposit(), submit_spend()] {
+        for ix in [init(), deposit(), submit_spend(), settle()] {
             let good = ix.pack();
             for len in 0..good.len() {
                 assert!(

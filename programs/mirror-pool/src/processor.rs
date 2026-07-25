@@ -49,6 +49,7 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
                 relay_fee,
             },
         ),
+        Instruction::SettleEpoch { count } => settle_epoch(program_id, accounts, count),
     }
 }
 
@@ -341,20 +342,169 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
     )
     .map_err(|_| MirrorProgramError::NullifierAlreadySpent)?;
 
+    let now = solana_program::clock::Clock::get()?.unix_timestamp;
     let mut spend_data = spend_account.try_borrow_mut_data()?;
     let mut record = Spend::load_uninitialised(&mut spend_data)?;
     record.initialise(
         spend_bump,
         req.selector,
         req.relay_fee,
+        now,
         &req.beneficiary,
         &relay.key.to_bytes(),
+        &pool_account.key.to_bytes(),
     );
 
     // The spend counter is deliberately *not* advanced here. The note is
     // committed to be paid but has not been paid, so the vault must still cover
     // it; leaving the counter alone keeps `required_vault_lamports` an upper
     // bound on what is owed until settlement actually disburses.
+    Ok(())
+}
+
+/// How long a spend may wait before it can settle alone.
+///
+/// Below the crowd size, a batch must wait this out. It is the escape valve that
+/// makes the crowd requirement safe: without it, a quiet pool could hold a
+/// member's funds indefinitely because the crowd never arrives, and a privacy
+/// tool that can strand your money is not one anybody should use.
+pub const SETTLE_TIMEOUT_SECONDS: i64 = 3_600;
+
+/// Executes a batch of pending spends in one transaction.
+///
+/// Every payout in the batch shares a timestamp and an ordering, which is what
+/// makes the crowd synchronised: an observer watching beneficiaries receive
+/// funds cannot use arrival time to tell them apart.
+///
+/// Permissionless. Anyone may settle, so no operator's absence can strand a
+/// member — and a member can always settle their own batch once the timeout has
+/// passed.
+///
+/// The crowd rule: a batch must carry at least `k_floor` spends, **or** every
+/// spend in it must have waited out `SETTLE_TIMEOUT_SECONDS`. Requiring the crowd
+/// unconditionally would be a liveness hazard on a quiet pool; dropping the
+/// requirement would make "synchronised" a word rather than a property. This is
+/// the honest middle: synchronised when there is traffic, still liquid when
+/// there is not.
+fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> ProgramResult {
+    if count == 0 {
+        return Err(MirrorProgramError::MalformedInstruction.into());
+    }
+
+    let iter = &mut accounts.iter();
+    let settler = next_account_info(iter)?;
+    let pool_account = next_account_info(iter)?;
+    let vault_account = next_account_info(iter)?;
+
+    if !settler.is_signer {
+        return Err(MirrorProgramError::MissingSignature.into());
+    }
+    if pool_account.owner != program_id || vault_account.owner != program_id {
+        return Err(MirrorProgramError::InvalidOwner.into());
+    }
+    if *vault_account.key != vault_address(program_id, pool_account.key).0 {
+        return Err(MirrorProgramError::InvalidPda.into());
+    }
+
+    let (denomination, k_floor) = {
+        let mut data = pool_account.try_borrow_mut_data()?;
+        let pool = Pool::load(&mut data)?;
+        (pool.denomination(), pool.k_floor())
+    };
+
+    let now = solana_program::clock::Clock::get()?.unix_timestamp;
+    let crowd_satisfied = count as u32 >= k_floor;
+
+    // Each spend brings its record, its beneficiary and its relay.
+    let mut settled = 0u64;
+    for _ in 0..count {
+        let spend_account = next_account_info(iter)?;
+        let beneficiary = next_account_info(iter)?;
+        let relay = next_account_info(iter)?;
+
+        if spend_account.owner != program_id {
+            return Err(MirrorProgramError::InvalidOwner.into());
+        }
+
+        let (relay_fee, payout) = {
+            let mut data = spend_account.try_borrow_mut_data()?;
+            let mut record = Spend::load(&mut data)?;
+
+            // A record from another pool must not reach this vault.
+            if record.pool() != pool_account.key.to_bytes() {
+                return Err(MirrorProgramError::InvalidPda.into());
+            }
+            // The accounts must be the ones the proof bound.
+            if record.beneficiary() != beneficiary.key.to_bytes()
+                || record.relay() != relay.key.to_bytes()
+            {
+                return Err(MirrorProgramError::InvalidPda.into());
+            }
+            if !crowd_satisfied
+                && now.saturating_sub(record.submitted_at()) < SETTLE_TIMEOUT_SECONDS
+            {
+                return Err(MirrorProgramError::CrowdTooSmall.into());
+            }
+
+            // Refuses a second settlement of the same record, which is the
+            // double-spend an attacker would reach for: pass one pending spend
+            // twice in a single batch and be paid twice.
+            record.mark_settled()?;
+
+            let relay_fee = record.relay_fee();
+            let payout = denomination
+                .checked_sub(relay_fee)
+                .ok_or(MirrorProgramError::ArithmeticOverflow)?;
+            (relay_fee, payout)
+        };
+
+        // The vault is owned by this program, so its lamports move by direct
+        // mutation rather than a system-program CPI. That means no signer seeds
+        // and no nested invoke on the hot path.
+        move_lamports(vault_account, beneficiary, payout)?;
+        if relay_fee > 0 {
+            move_lamports(vault_account, relay, relay_fee)?;
+        }
+        settled += 1;
+    }
+
+    let mut data = pool_account.try_borrow_mut_data()?;
+    let mut pool = Pool::load(&mut data)?;
+    for _ in 0..settled {
+        pool.record_spend()?;
+    }
+
+    // The accounting invariant, re-read from the account after the lamports
+    // actually moved rather than assumed from the arithmetic above.
+    let rent = Rent::get()?;
+    let required = pool
+        .required_vault_lamports()?
+        .checked_add(rent.minimum_balance(0))
+        .ok_or(MirrorProgramError::ArithmeticOverflow)?;
+    if vault_account.lamports() < required {
+        return Err(MirrorProgramError::InsolventVault.into());
+    }
+    Ok(())
+}
+
+/// Moves lamports between two accounts this program owns or may credit.
+fn move_lamports(
+    from: &AccountInfo,
+    to: &AccountInfo,
+    amount: u64,
+) -> Result<(), MirrorProgramError> {
+    let mut from_lamports = from
+        .try_borrow_mut_lamports()
+        .map_err(|_| MirrorProgramError::InsolventVault)?;
+    let mut to_lamports = to
+        .try_borrow_mut_lamports()
+        .map_err(|_| MirrorProgramError::InsolventVault)?;
+    **from_lamports = from_lamports
+        .checked_sub(amount)
+        .ok_or(MirrorProgramError::InsolventVault)?;
+    **to_lamports = to_lamports
+        .checked_add(amount)
+        .ok_or(MirrorProgramError::ArithmeticOverflow)?;
     Ok(())
 }
 
