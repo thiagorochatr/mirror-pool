@@ -23,3 +23,4 @@ thiserror.workspace = true
 
 [dev-dependencies]
 solana-poseidon.workspace = true
+groth16-solana.workspace = true
