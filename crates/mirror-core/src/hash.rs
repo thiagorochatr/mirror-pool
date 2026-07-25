@@ -19,7 +19,7 @@
 //! | nullifier | 1 | `(k)` |
 //! | Merkle node | 2 | `(left, right)` |
 //! | note commitment | 3 | `(k, r, denom_tag)` |
-//! | action binding | 4 | `(selector, beneficiary_hi, beneficiary_lo, params)` |
+//! | action binding | 4 | `(selector, beneficiary_hi, beneficiary_lo, relay_fee)` |
 //!
 //! An explicit integer tag was the first design here and it was wrong: with a
 //! small tag constant, a Merkle node whose left child equals the tag collides
@@ -84,6 +84,41 @@ pub fn nullifier(k: Field) -> Result<Field, MirrorError> {
     poseidon1(k)
 }
 
+/// Action binding: `H4(selector, beneficiary_hi, beneficiary_lo, relay_fee)`.
+///
+/// This is the value the circuit takes as its third public input and the value
+/// the program recomputes from the action it is about to execute. It lives here,
+/// shared by both, so the two cannot drift apart.
+///
+/// It covers every economically meaningful field of a spend. The payout is the
+/// pool denomination minus `relay_fee`, so binding the beneficiary and the fee
+/// binds the amount too: a relay can neither redirect the payout nor inflate its
+/// own cut, because either change produces a different binding and the proof
+/// stops verifying.
+///
+/// A 32-byte public key does not fit in a BN254 scalar — the field is ~254 bits
+/// — so the key is split into two 16-byte halves. Each half is well under the
+/// modulus, the split is injective, and no reduction ever happens. Reducing a
+/// full key instead would let two distinct beneficiaries share one binding.
+pub fn action_binding(
+    selector: u64,
+    beneficiary: &[u8; 32],
+    relay_fee: u64,
+) -> Result<Field, MirrorError> {
+    let mut hi = [0u8; 32];
+    hi[16..].copy_from_slice(&beneficiary[..16]);
+    let mut lo = [0u8; 32];
+    lo[16..].copy_from_slice(&beneficiary[16..]);
+
+    poseidon4(
+        Field::from_u64(selector),
+        // Both halves are < 2^128, so these constructions cannot fail.
+        Field::from_bytes(hi)?,
+        Field::from_bytes(lo)?,
+        Field::from_u64(relay_fee),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,6 +172,67 @@ mod tests {
             commitment(k, r, f(1)).unwrap(),
             commitment(k, r, f(2)).unwrap(),
             "the same note under two denominations must not share a commitment"
+        );
+    }
+
+    #[test]
+    fn the_action_binding_covers_every_field_a_relay_could_change() {
+        let bob = [7u8; 32];
+        let base = action_binding(1, &bob, 5_000).unwrap();
+
+        let mut carol = [7u8; 32];
+        carol[31] = 8;
+        assert_ne!(
+            base,
+            action_binding(1, &carol, 5_000).unwrap(),
+            "a redirected beneficiary must change the binding"
+        );
+        assert_ne!(
+            base,
+            action_binding(1, &bob, 6_000).unwrap(),
+            "an inflated relay fee must change the binding"
+        );
+        assert_ne!(
+            base,
+            action_binding(2, &bob, 5_000).unwrap(),
+            "a different action must change the binding"
+        );
+    }
+
+    #[test]
+    fn the_beneficiary_split_is_injective_across_the_halfway_boundary() {
+        // Two keys differing only at byte 15 and two differing only at byte 16
+        // land in different halves. If the split dropped or overlapped a byte,
+        // one of these pairs would collide.
+        let base = [0u8; 32];
+        let mut a = base;
+        a[15] = 1;
+        let mut b = base;
+        b[16] = 1;
+        let zero = action_binding(0, &base, 0).unwrap();
+        let ha = action_binding(0, &a, 0).unwrap();
+        let hb = action_binding(0, &b, 0).unwrap();
+        assert_ne!(zero, ha);
+        assert_ne!(zero, hb);
+        assert_ne!(ha, hb);
+    }
+
+    #[test]
+    fn a_full_width_key_binds_without_reduction() {
+        // An all-0xff key exceeds the BN254 modulus. Reducing it whole would be
+        // a silent collision surface; the halves keep it exact.
+        let max = [0xffu8; 32];
+        assert!(
+            Field::from_bytes(max).is_err(),
+            "precondition: not canonical"
+        );
+        assert!(action_binding(0, &max, 0).is_ok());
+
+        let mut near = [0xffu8; 32];
+        near[0] = 0xfe;
+        assert_ne!(
+            action_binding(0, &max, 0).unwrap(),
+            action_binding(0, &near, 0).unwrap()
         );
     }
 

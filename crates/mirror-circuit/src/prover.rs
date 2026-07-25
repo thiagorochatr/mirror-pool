@@ -46,6 +46,14 @@ pub fn generate<R: RngCore + ark_std::rand::CryptoRng>(rng: &mut R) -> Result<Ke
 /// the multi-party path that replaces it for production is a separate,
 /// documented procedure.
 ///
+/// The reproducibility is scoped, and the scope is the committed `Cargo.lock`.
+/// `StdRng` is explicitly not guaranteed portable across `rand` releases, and
+/// arkworks' key generation consumes randomness in an order that is an
+/// implementation detail. Re-deriving the same bytes therefore requires the same
+/// locked dependency graph, which is why the lockfile is committed and why the
+/// setup transcript records a digest of the resulting key rather than trusting
+/// the seed alone.
+///
 /// The competing approaches both fail differently. One publishes its entropy
 /// string in the repository *and* gitignores the proving key, so the setup is
 /// simultaneously insecure and unreproducible — no third party can generate any

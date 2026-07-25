@@ -12,7 +12,9 @@ mod merkle;
 mod note;
 
 pub use field::{Field, MODULUS_BE};
-pub use hash::{commitment, hash_node, nullifier, poseidon1, poseidon2, poseidon3, poseidon4};
+pub use hash::{
+    action_binding, commitment, hash_node, nullifier, poseidon1, poseidon2, poseidon3, poseidon4,
+};
 pub use merkle::{Frontier, MerkleProof, MerkleTree, TREE_DEPTH};
 pub use note::Note;
 

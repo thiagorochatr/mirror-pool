@@ -114,14 +114,21 @@ impl ConstraintSynthesizer<Fr> for MembershipCircuit {
         computed_nullifier.enforce_equal(&nullifier)?;
 
         // --- bind the action ---
-        // A Groth16 public input participates in verification only if it appears
-        // in at least one constraint; an input referenced nowhere has an all-zero
-        // column and can be dropped by the optimizer, leaving it unbound. Squaring
-        // registers a multiplicative constraint that references it. Without this,
-        // a relay could swap the action after the fact and the proof would still
-        // verify.
-        let binding_squared = action_binding.square()?;
-        binding_squared.enforce_equal(&(&action_binding * &action_binding))?;
+        // A Groth16 public input participates in verification only through the
+        // R1CS columns that reference it. An input used in no constraint has an
+        // all-zero column, so its `gamma_abc` term is the identity and *any*
+        // value satisfies the verification equation — the input is present but
+        // unbound. A relay could then swap the action after proving and the
+        // proof would still verify.
+        //
+        // One multiplicative constraint is enough to give it a non-zero column.
+        // The product itself is never used; emitting the constraint is the point.
+        //
+        // This is load-bearing rather than defensive, and it is checked rather
+        // than assumed: `tests/onchain_layout.rs` tampers with this exact public
+        // input and asserts the real on-chain verifier rejects the result. If
+        // this line were removed, that test would fail.
+        let _binding_is_referenced = action_binding.square()?;
 
         Ok(())
     }
