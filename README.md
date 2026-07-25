@@ -1,0 +1,169 @@
+# mirror-pool
+
+A behavioral anonymity set for Solana. Members deposit a fixed denomination;
+later, a member proves in zero knowledge that they own some note in the set and
+directs the pool to act. The pool executes. An observer sees that an action
+happened and cannot say which member asked for it.
+
+Rust end to end. MIT. No Anchor, no Circom, no JavaScript anywhere in the
+proving path.
+
+```
+make verify          # fmt, clippy -D warnings, tests, build-sbf
+```
+
+## The problem this takes as its subject
+
+Every serious submission to this bounty — across all three repositories —
+identifies the same open channel and none of them closes it:
+
+> An anonymity set on a public ledger can be partitioned by **where each member's
+> capital came from**. Learning a member's funding class leaves only that class to
+> guess within, so what survives is the size of the class, not `k`.
+
+No deposit pool controls where its users' money came from, so this cannot be
+fixed by a better circuit. What it can be is *measured*, and measured honestly.
+
+So this submission claims exactly two things:
+
+1. **The action side is closed.** Actions execute from the pool PDA, so an
+   action's on-chain funding trace leads to the pool and is identical for every
+   member.
+2. **The membership side is measured**, from real mainnet data, with the method
+   and its limits published beside the number.
+
+Anything we cannot support with a measurement whose method is published, we do
+not say. There is a section below of things we deliberately do not claim.
+
+## What is here
+
+| | |
+|---|---|
+| `programs/mirror-pool` | The on-chain program. Groth16 verified on-chain at **99k CU**. |
+| `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain. |
+| `crates/mirror-circuit` | R1CS gadget, membership circuit, prover, key export. |
+| `crates/mirror-provenance` | The funding-provenance measurement. |
+| `crates/mirror-cli` | `setup`, `check-endpoint`, `seeds`, `collect`, `analyze`. |
+
+**152 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+produces into a real SVM, sends real transactions, and verifies a real Groth16
+proof through the actual syscall — so a divergence between what the host believes
+and what the chain does cannot pass unnoticed.
+
+## Properties, and how each is checked
+
+**A note's value cannot disagree with its commitment.** The denomination is a
+pool constant rather than a field in the note, so `vault ≥ denomination ×
+outstanding` is a function of two counters that nothing a prover supplies can
+influence. It is re-read from the vault after lamports move rather than inferred
+from the arithmetic that moved them.
+
+**A nullifier is spent once, ever** — never epoch-scoped.
+
+Those two together make a class of drain *unrepresentable* rather than merely
+untested. Two competing submissions are drainable at exactly this point: one
+escrows an amount never bound to its hidden commitment, so a depositor of one
+lamport can withdraw the whole pool with a valid proof; the other issues an
+epoch-scoped nullifier against a value payout, so one deposit pays out once per
+epoch forever.
+
+**A relay cannot redirect or re-price an action.** The action binding is never
+transmitted — it is recomputed on-chain from the selector, the beneficiary and
+the relay fee and used as the third public input, so altering any of them changes
+the binding and the pairing fails. There is no separate field that could be
+checked incorrectly. The test tampers with that exact input and asserts the real
+verifier rejects it.
+
+**No member key ever appears on chain** on the relay path.
+
+**Nothing can hold a member's escrow.** There is no `self_spend` instruction
+because none is needed: a member acts as their own relay at zero fee, and
+settlement is permissionless, so they settle their own batch once the timeout
+passes. The cost is the expected one — their wallet signs, giving up anonymity —
+and the test pins that the exit works.
+
+**Gadget, host and syscall compute one hash.** All three are checked against
+circomlib's published `poseidon([1,2])` vector rather than against each other, so
+all three agreeing on a wrong answer is not reachable. Several published Solana
+projects ship a gadget whose native and in-circuit hashes differ; that only
+surfaces at proving time.
+
+## The measurement
+
+Two commands, and the split is the point:
+
+```
+mirror seeds   --program <pool>     # member-weighted frame, one row per depositor
+mirror collect --seeds seeds.txt    # the only networked step; writes sample.json
+mirror analyze --sample sample.json # pure, offline, deterministic
+```
+
+`sample.json` is the committed artifact. Anyone holding it recomputes the
+headline without RPC access and without trusting that our endpoint behaved the
+same way on their machine.
+
+### Design choices that exist to avoid specific published defects
+
+- **Edges come from balance deltas**, not instruction parsing, which is blind to
+  every program that moves lamports by direct account mutation.
+- **The birth edge is the oldest credit.** A competing tracer scans the six most
+  *recent* transactions — the wrong end of the history for anything with more
+  than six, which manufactures "unresolved" for active wallets.
+- **The hub threshold is decoupled from the paging cap.** In a competing tracer
+  the two are one number, so "reaches an attributable origin" there means "hit
+  the RPC page cap" — admitting every DEX program and bot.
+- **RPC failures are never evidence.** Counted separately, excluded from the
+  distribution, and above a 1% failure rate the run refuses to print a headline
+  rather than printing a warning above one.
+- **The endpoint is checked first.** A truncated endpoint returns `null` rather
+  than an error for pruned history, so a collection against one looks healthy
+  and reports every old funding event as absent. `check-endpoint` refuses.
+- **The frame is member-weighted.** Each depositor counts once. Sampling
+  addresses because they appear in recent blocks is size-biased toward the
+  highest-frequency actors.
+
+### The folklore formula is inverted
+
+`2^H(C)` — entropy over the class-size distribution — is widely quoted as the
+effective anonymity set. It is the **leakage**: it is maximised when every member
+stands alone, which is total deanonymisation. The anonymity is `2^H(X|C)`.
+
+Our headline is the loss factor `ρ = 2^−H(C)`, because it is independent of `k`
+and therefore comparable across pools. Effective-k measured at small `k`
+systematically understates the steady-state loss and cannot be extrapolated
+upward.
+
+And **"worst case is 1" is not a finding.** Under any heavy-tailed provenance
+prior somebody is always alone. It describes provenance in general, not the pool
+being measured.
+
+## What we do not claim
+
+- Not "unlinkable", not "untraceable", not "anonymous" without a named adversary
+  and a stated population.
+- **Not that the funding-provenance channel is closed.** It is closed on the
+  action side and measured on the membership side.
+- Not that the trusted setup is secure. It is *reproducible*, which is a
+  different and lesser property: the seed is public, so the toxic waste is
+  public, so proofs are forgeable. `mirror verify-setup` lets anyone re-derive
+  the deployed key and check it against the circuit here. A competing submission
+  publishes its entropy string *and* gitignores its proving key, so its setup is
+  insecure and unreproducible at once — no third party can produce a valid proof
+  for its deployed program at all.
+- The on-chain `k_floor` bounds **program-visible membership** only. That is all
+  a program can check.
+- Not audited.
+
+`docs/MEASUREMENT_LOG.md` records every collection run, including the one that
+produced nothing. A measurement project that keeps only its successful runs is
+selecting rather than reporting.
+
+## Documentation
+
+| | |
+|---|---|
+| `docs/ARCHITECTURE.md` | The design, and why each decision is what it is. |
+| `docs/PROVENANCE_METHOD.md` | Adversary model, metrics, sampling, the honest-claims analysis. |
+| `docs/GROTH16_INTEGRATION.md` | The arkworks-to-Solana byte layout, verified by execution. |
+| `docs/MEASUREMENT_LOG.md` | Every run. |
+| `docs/PLAN.md` | What was planned, and what was cut. |
