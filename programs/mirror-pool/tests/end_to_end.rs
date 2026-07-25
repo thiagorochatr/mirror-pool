@@ -246,6 +246,7 @@ fn proof_for(
         &[0u8; 32],
         &beneficiary.to_bytes(),
         RELAY_FEE,
+        0,
         &[],
     );
     let witness = Witness {
@@ -768,7 +769,7 @@ fn a_member_can_always_exit_without_any_relay() {
 
     let merkle_proof = tree.proof(0).unwrap();
     let binding =
-        mirror_core::action_binding(SELECTOR, &[0u8; 32], &beneficiary.to_bytes(), 0, &[]);
+        mirror_core::action_binding(SELECTOR, &[0u8; 32], &beneficiary.to_bytes(), 0, 0, &[]);
     let witness = Witness {
         note: notes[0],
         merkle_proof: &merkle_proof,
@@ -900,6 +901,7 @@ fn action_proof(
         &target.to_bytes(),
         &beneficiary.to_bytes(),
         RELAY_FEE,
+        0,
         payload,
     );
     let witness = Witness {
@@ -1073,5 +1075,123 @@ fn an_action_cannot_re_enter_the_pool() {
     assert!(
         err.contains("Custom(23)"),
         "expected SelfInvocationRefused: {err}"
+    );
+}
+
+/// The griefing vector an adversarial review found: `action_accounts` was
+/// relay-supplied, written verbatim into the record, and outside the binding.
+///
+/// A relay handed a valid transfer proof could submit it with a count that
+/// settlement can never satisfy. The nullifier burns, the record cannot be
+/// amended, there is no refund instruction, and the note is destroyed for free.
+/// The relay forfeits only its fee.
+#[test]
+fn a_relay_cannot_declare_an_account_count_the_member_did_not_authorise() {
+    let (mut env, tree, notes, keys) = seeded_pool(5);
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+
+    // Proved for a plain transfer, which takes no action accounts.
+    let proof = proof_for(&keys, &tree, &notes, 0, &beneficiary);
+    let nullifier = proof.public_inputs[1];
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+
+    let ix = Instruction::new_with_bytes(
+        env.program_id,
+        &MirrorIx::SubmitSpend {
+            proof_a: proof.proof_a,
+            proof_b: proof.proof_b,
+            proof_c: proof.proof_c,
+            root: proof.public_inputs[0],
+            nullifier,
+            selector: SELECTOR,
+            target_program: [0u8; 32],
+            beneficiary: beneficiary.to_bytes(),
+            relay_fee: RELAY_FEE,
+            action_accounts: 1, // the member authorised zero
+            payload: Vec::new(),
+        }
+        .pack(),
+        vec![
+            AccountMeta::new(relay.pubkey(), true),
+            AccountMeta::new(env.pool, false),
+            AccountMeta::new(spend_pda, false),
+            AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+        ],
+    );
+    let err = env
+        .send(ix, &relay)
+        .expect_err("a relay inflated the account count and burnt the note");
+    println!("inflated action_accounts rejected: {err}");
+
+    // The nullifier must still be spendable: the griefing attempt cost the
+    // member nothing.
+    assert!(
+        env.svm.get_account(&spend_pda).is_none(),
+        "the spend record was created, so the note is now unspendable"
+    );
+    let ok = spend_ix(&env, &proof, nullifier, &beneficiary, &relay.pubkey());
+    env.send(ok, &relay)
+        .expect("the note must remain spendable after a failed griefing attempt");
+}
+
+#[test]
+fn an_unknown_selector_is_refused_before_the_nullifier_burns() {
+    let (mut env, tree, notes, keys) = seeded_pool(5);
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+
+    let merkle_proof = tree.proof(1).unwrap();
+    let binding =
+        mirror_core::action_binding(99, &[0u8; 32], &beneficiary.to_bytes(), RELAY_FEE, 0, &[]);
+    let witness = Witness {
+        note: notes[1],
+        merkle_proof: &merkle_proof,
+        root: tree.root().unwrap(),
+        action_binding: binding,
+    };
+    let mut rng = {
+        use ark_std::rand::SeedableRng;
+        ark_std::rand::rngs::StdRng::from_seed([77u8; 32])
+    };
+    let proof = prove(&keys, &witness, &mut rng).expect("proving");
+    let nullifier = proof.public_inputs[1];
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+
+    let ix = Instruction::new_with_bytes(
+        env.program_id,
+        &MirrorIx::SubmitSpend {
+            proof_a: proof.proof_a,
+            proof_b: proof.proof_b,
+            proof_c: proof.proof_c,
+            root: proof.public_inputs[0],
+            nullifier,
+            selector: 99,
+            target_program: [0u8; 32],
+            beneficiary: beneficiary.to_bytes(),
+            relay_fee: RELAY_FEE,
+            action_accounts: 0,
+            payload: Vec::new(),
+        }
+        .pack(),
+        vec![
+            AccountMeta::new(relay.pubkey(), true),
+            AccountMeta::new(env.pool, false),
+            AccountMeta::new(spend_pda, false),
+            AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+        ],
+    );
+    let err = env
+        .send(ix, &relay)
+        .expect_err("an unknown selector was stored");
+    assert!(
+        err.contains("Custom(22)"),
+        "expected UnknownSelector: {err}"
+    );
+    assert!(
+        env.svm.get_account(&spend_pda).is_none(),
+        "the nullifier burnt for a selector settlement can never execute"
     );
 }

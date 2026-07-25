@@ -326,7 +326,25 @@ fn main() -> Result<()> {
                 .as_secs() as i64;
 
             let collector = mirror_provenance::Collector::new(&mut client, config);
-            let sample = collector.collect(&seed_list, &check, &thresholds, now);
+            let started = std::time::Instant::now();
+            let sample =
+                collector.collect_with_progress(&seed_list, &check, &thresholds, now, |p| {
+                    // Rate is the useful number here: it tells the operator
+                    // whether the run is progressing or the endpoint has
+                    // started throttling.
+                    let elapsed = started.elapsed().as_secs_f64().max(0.001);
+                    eprintln!(
+                        "  [{:>3}/{}] {}… {} hops, {:?}  ({} calls, {:.1}/s, {:.0}s elapsed)",
+                        p.done,
+                        p.total,
+                        &p.seed[..p.seed.len().min(8)],
+                        p.hops,
+                        p.stop,
+                        p.rpc_calls,
+                        p.rpc_calls as f64 / elapsed,
+                        elapsed,
+                    );
+                });
 
             std::fs::write(&out, sample.to_json()?)
                 .with_context(|| format!("writing {}", out.display()))?;

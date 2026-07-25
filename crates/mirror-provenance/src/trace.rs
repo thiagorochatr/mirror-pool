@@ -105,6 +105,26 @@ impl ChainStop {
     }
 }
 
+/// What a caller learns as each seed completes.
+///
+/// Collection is bounded by network latency, not by work, so a run over a few
+/// hundred seeds takes tens of minutes with nothing to show for it. Reporting
+/// per seed is the difference between a tool that looks hung and one that does
+/// not.
+///
+/// A callback rather than printing: a library that writes to stdout takes a
+/// decision that belongs to whoever is calling it.
+#[derive(Debug, Clone, Copy)]
+pub struct Progress<'a> {
+    pub done: usize,
+    pub total: usize,
+    pub seed: &'a str,
+    pub hops: usize,
+    pub stop: ChainStop,
+    /// RPC calls made across the whole run so far.
+    pub rpc_calls: u64,
+}
+
 /// One member's provenance chain, seed first.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chain {
@@ -215,22 +235,48 @@ impl<'a> Collector<'a> {
 
     /// Collects every seed and assembles the sample.
     pub fn collect(
-        mut self,
+        self,
         seeds: &[String],
         check: &EndpointCheck,
         thresholds: &Thresholds,
         now: i64,
     ) -> Sample {
+        self.collect_with_progress(seeds, check, thresholds, now, |_| {})
+    }
+
+    /// Collects every seed, reporting each one as it completes.
+    pub fn collect_with_progress<F: FnMut(Progress<'_>)>(
+        mut self,
+        seeds: &[String],
+        check: &EndpointCheck,
+        thresholds: &Thresholds,
+        now: i64,
+        mut on_progress: F,
+    ) -> Sample {
         let mut chains = Vec::with_capacity(seeds.len());
         let mut excluded_non_wallet = Vec::new();
-        for seed in seeds {
-            match self.is_wallet(seed) {
-                Ok(true) => chains.push(self.trace(seed)),
-                Ok(false) => excluded_non_wallet.push(seed.clone()),
+        for (index, seed) in seeds.iter().enumerate() {
+            let chain = match self.is_wallet(seed) {
+                Ok(true) => Some(self.trace(seed)),
+                Ok(false) => {
+                    excluded_non_wallet.push(seed.clone());
+                    None
+                }
                 // An endpoint failure here is not evidence that the seed is not
                 // a wallet, so it stays in the frame and fails honestly during
                 // the trace.
-                Err(_) => chains.push(self.trace(seed)),
+                Err(_) => Some(self.trace(seed)),
+            };
+            if let Some(chain) = chain {
+                on_progress(Progress {
+                    done: index + 1,
+                    total: seeds.len(),
+                    seed,
+                    hops: chain.visited.len(),
+                    stop: chain.stop,
+                    rpc_calls: self.client.calls_made(),
+                });
+                chains.push(chain);
             }
         }
         Sample {

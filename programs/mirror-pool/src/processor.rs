@@ -318,11 +318,25 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
     if req.payload.len() > MAX_PAYLOAD {
         return Err(MirrorProgramError::PayloadTooLarge.into());
     }
+    // Refuse a shape settlement could never satisfy, here rather than at
+    // settlement. Reaching settlement means the nullifier has already burned,
+    // and there is no instruction that can amend or refund a spend — so a
+    // record that cannot settle is a note destroyed. The binding covers these
+    // fields too; this check turns a griefing attempt into a failed transaction
+    // instead of a failed transaction plus a dead note.
+    match req.selector {
+        SELECTOR_TRANSFER if req.action_accounts != 0 => {
+            return Err(MirrorProgramError::MalformedInstruction.into());
+        }
+        SELECTOR_TRANSFER | SELECTOR_INVOKE => {}
+        _ => return Err(MirrorProgramError::UnknownSelector.into()),
+    }
     let binding = mirror_core::action_binding(
         req.selector,
         &req.target_program,
         &req.beneficiary,
         req.relay_fee,
+        req.action_accounts,
         &req.payload,
     );
 

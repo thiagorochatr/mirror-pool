@@ -116,16 +116,27 @@ pub fn field_from_digest(digest: [u8; 32]) -> Field {
 /// | `beneficiary` | redirect the outcome |
 /// | `relay_fee` | inflate its own cut |
 /// | `payload` | change the action's parameters |
+/// | `action_accounts` | declare a count settlement cannot satisfy |
+///
+/// `action_accounts` is here because leaving it out was a live griefing vector:
+/// it is relay-supplied, it is written verbatim into the spend record, and
+/// settlement refuses any spend whose declared count does not match its
+/// selector. A relay handed a valid transfer proof could submit it with
+/// `action_accounts = 1`, burn the nullifier, and leave a note that can never
+/// settle and can never be refunded — for free, and undetectably until
+/// settlement.
 ///
 /// Keccak rather than Poseidon because the payload is variable length and
 /// Poseidon is a fixed-arity compression. The circuit never computes this — it
 /// takes the result as an opaque public input — so the choice costs no
 /// constraints.
+#[allow(clippy::too_many_arguments)]
 pub fn action_binding(
     selector: u64,
     target_program: &[u8; 32],
     beneficiary: &[u8; 32],
     relay_fee: u64,
+    action_accounts: u8,
     payload: &[u8],
 ) -> Field {
     let digest = solana_keccak_hasher::hashv(&[
@@ -134,6 +145,7 @@ pub fn action_binding(
         target_program,
         beneficiary,
         &relay_fee.to_le_bytes(),
+        &[action_accounts],
         payload,
     ]);
     field_from_digest(digest.to_bytes())
@@ -201,7 +213,7 @@ mod tests {
     fn the_action_binding_covers_every_field_a_relay_could_change() {
         let bob = [7u8; 32];
         let payload = b"stake 0.1".as_slice();
-        let base = action_binding(1, &PROG, &bob, 5_000, payload);
+        let base = action_binding(1, &PROG, &bob, 5_000, 0, payload);
 
         let mut carol = [7u8; 32];
         carol[31] = 8;
@@ -210,35 +222,35 @@ mod tests {
 
         assert_ne!(
             base,
-            action_binding(2, &PROG, &bob, 5_000, payload),
+            action_binding(2, &PROG, &bob, 5_000, 0, payload),
             "selector"
         );
         assert_ne!(
             base,
-            action_binding(1, &other_prog, &bob, 5_000, payload),
+            action_binding(1, &other_prog, &bob, 5_000, 0, payload),
             "target program"
         );
         assert_ne!(
             base,
-            action_binding(1, &PROG, &carol, 5_000, payload),
+            action_binding(1, &PROG, &carol, 5_000, 0, payload),
             "beneficiary"
         );
         assert_ne!(
             base,
-            action_binding(1, &PROG, &bob, 6_000, payload),
+            action_binding(1, &PROG, &bob, 6_000, 0, payload),
             "relay fee"
         );
         assert_ne!(
             base,
-            action_binding(1, &PROG, &bob, 5_000, b"stake 1.0"),
+            action_binding(1, &PROG, &bob, 5_000, 0, b"stake 1.0"),
             "payload"
         );
     }
 
     #[test]
     fn the_binding_is_deterministic_and_lands_in_the_field() {
-        let a = action_binding(1, &PROG, &[9u8; 32], 1, b"x");
-        let b = action_binding(1, &PROG, &[9u8; 32], 1, b"x");
+        let a = action_binding(1, &PROG, &[9u8; 32], 1, 0, b"x");
+        let b = action_binding(1, &PROG, &[9u8; 32], 1, 0, b"x");
         assert_eq!(a, b);
         // Canonical by construction: the top byte is cleared.
         assert_eq!(a.to_bytes()[0], 0);
@@ -248,8 +260,8 @@ mod tests {
     #[test]
     fn an_empty_payload_is_a_distinct_action_from_a_zero_byte_one() {
         assert_ne!(
-            action_binding(1, &PROG, &[1u8; 32], 0, b""),
-            action_binding(1, &PROG, &[1u8; 32], 0, b"\0"),
+            action_binding(1, &PROG, &[1u8; 32], 0, 0, b""),
+            action_binding(1, &PROG, &[1u8; 32], 0, 0, b"\0"),
         );
     }
 
@@ -268,7 +280,7 @@ mod tests {
     fn the_domain_tag_separates_bindings_from_raw_hashes() {
         // Without the tag, a preimage assembled elsewhere could collide with a
         // binding. With it, an attacker must also control the tag.
-        let with_tag = action_binding(0, &[0u8; 32], &[0u8; 32], 0, b"");
+        let with_tag = action_binding(0, &[0u8; 32], &[0u8; 32], 0, 0, b"");
         let raw = field_from_digest(
             solana_keccak_hasher::hashv(&[
                 &0u64.to_le_bytes(),

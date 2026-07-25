@@ -36,7 +36,12 @@ build-sbf:
 	@ls -l $(SBF_TARGET_DIR)/deploy/*.so
 
 # Everything CI runs, in the order CI runs it.
-verify: lint test build-sbf
+#
+# build-sbf comes before test, and the order is load-bearing: the end-to-end
+# suite loads the .so this produces into a real SVM, and the artifact is
+# gitignored. With test first, `make verify` fails on a fresh clone at the one
+# command the README tells a reader to run.
+verify: lint build-sbf test
 
 clean:
 	cargo clean

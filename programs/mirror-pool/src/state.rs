@@ -50,6 +50,16 @@ pub const POOL_LEN: usize = offset::END;
 /// reinterpreting their bytes.
 pub const POOL_VERSION: u8 = 1;
 
+/// Smallest permitted anonymity floor. One is not a crowd.
+pub const MIN_K_FLOOR: u32 = 2;
+
+/// Largest permitted anonymity floor: the tree's capacity.
+///
+/// A floor above this can never be met, and since a pool is unique per
+/// denomination and creation is permissionless, that would permanently deny the
+/// protocol that denomination.
+pub const MAX_K_FLOOR: u32 = 1 << TREE_DEPTH;
+
 // Pin the layout. A field inserted in the middle would otherwise silently
 // reinterpret every deployed account.
 const _: () = assert!(offset::FILLED == 56);
@@ -147,10 +157,25 @@ impl<'a> Pool<'a> {
         if denomination == 0 {
             return Err(MirrorProgramError::InvalidParameter);
         }
-        // A zero floor would let a lone member act with an anonymity set of one,
-        // which is worse than not using the pool at all: it advertises that a
-        // privacy tool was used while providing no cover.
-        if k_floor == 0 {
+        // The floor must be reachable, and it must actually be a crowd.
+        //
+        // Pool creation is permissionless and a pool is unique per denomination
+        // forever, so an unbounded floor is a griefing vector rather than a
+        // configuration mistake: a floor above the tree's capacity makes every
+        // spend fail permanently, and because no second pool for that
+        // denomination can ever exist, every later depositor loses their deposit
+        // with no recovery. Costing a fraction of a SOL, that would deny the
+        // protocol one denomination at a time.
+        //
+        // MIN_K_FLOOR is 2 because a floor of one is the anonymity set of one
+        // this check exists to prevent — it advertises that a privacy tool was
+        // used while providing no cover.
+        if !(MIN_K_FLOOR..=MAX_K_FLOOR).contains(&k_floor) {
+            return Err(MirrorProgramError::InvalidParameter);
+        }
+        // An entry fee at or above the denomination costs more to join than the
+        // note is worth.
+        if entry_fee >= denomination {
             return Err(MirrorProgramError::InvalidParameter);
         }
 
@@ -280,7 +305,11 @@ mod tests {
         let mut data = blank();
         {
             let mut pool = Pool::load_uninitialised(&mut data).unwrap();
-            pool.initialise(254, 253, denomination, 1_000, 4).unwrap();
+            // The fee has to stay below the denomination, so scale it rather
+            // than hardcoding one that only suits large pools.
+            let entry_fee = denomination / 100;
+            pool.initialise(254, 253, denomination, entry_fee, 4)
+                .unwrap();
         }
         data
     }
@@ -292,7 +321,7 @@ mod tests {
         assert_eq!(pool.bump(), 254);
         assert_eq!(pool.vault_bump(), 253);
         assert_eq!(pool.denomination(), 100_000);
-        assert_eq!(pool.entry_fee(), 1_000);
+        assert_eq!(pool.entry_fee(), 1_000); // 1% of 100_000
         assert_eq!(pool.k_floor(), 4);
         assert_eq!(pool.deposit_count(), 0);
         assert_eq!(pool.spend_count(), 0);
@@ -365,6 +394,47 @@ mod tests {
             pool.initialise(1, 1, 100, 0, 0),
             Err(MirrorProgramError::InvalidParameter)
         ));
+    }
+
+    /// A floor nobody can reach is a permanent denial of that denomination,
+    /// because pools are unique per denomination and creation is permissionless.
+    /// A griefer paying one pool's rent would otherwise lock out every honest
+    /// depositor for that size, forever, and take their deposits with it.
+    #[test]
+    fn an_unreachable_anonymity_floor_is_refused() {
+        let mut data = blank();
+        let mut pool = Pool::load_uninitialised(&mut data).unwrap();
+        assert!(matches!(
+            pool.initialise(1, 1, 1_000_000, 0, u32::MAX),
+            Err(MirrorProgramError::InvalidParameter)
+        ));
+        assert!(matches!(
+            pool.initialise(1, 1, 1_000_000, 0, MAX_K_FLOOR + 1),
+            Err(MirrorProgramError::InvalidParameter)
+        ));
+        assert!(pool.initialise(1, 1, 1_000_000, 0, MAX_K_FLOOR).is_ok());
+    }
+
+    #[test]
+    fn a_floor_of_one_is_refused_because_one_is_not_a_crowd() {
+        let mut data = blank();
+        let mut pool = Pool::load_uninitialised(&mut data).unwrap();
+        assert!(matches!(
+            pool.initialise(1, 1, 1_000_000, 0, 1),
+            Err(MirrorProgramError::InvalidParameter)
+        ));
+        assert!(pool.initialise(1, 1, 1_000_000, 0, MIN_K_FLOOR).is_ok());
+    }
+
+    #[test]
+    fn an_entry_fee_worth_more_than_the_note_is_refused() {
+        let mut data = blank();
+        let mut pool = Pool::load_uninitialised(&mut data).unwrap();
+        assert!(matches!(
+            pool.initialise(1, 1, 1_000, 1_000, 4),
+            Err(MirrorProgramError::InvalidParameter)
+        ));
+        assert!(pool.initialise(1, 1, 1_000, 999, 4).is_ok());
     }
 
     #[test]

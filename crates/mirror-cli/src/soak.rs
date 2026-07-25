@@ -226,6 +226,7 @@ impl Soak {
             &[0u8; 32],
             &beneficiary.to_bytes(),
             RELAY_FEE,
+            0,
             &[],
         );
         let witness = Witness {
@@ -431,6 +432,7 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
             &[0u8; 32],
             &beneficiary.to_bytes(),
             RELAY_FEE,
+            0,
             &[],
         );
         let witness = Witness {

@@ -9,12 +9,18 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
 
+# One job running `make verify`, which is the command the README tells a reader
+# to run. Splitting the host checks from the SBF build let them drift: the
+# end-to-end suite needs the .so, so a job without the Solana toolchain ran
+# twenty tests that could only panic, and the artifact never crossed between
+# runners. If CI and the documented command are the same command, they cannot
+# disagree.
 jobs:
-  check:
-    name: fmt / clippy / test
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -23,23 +29,21 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets --all-features
-      - run: cargo test --workspace --all-features
 
-  program:
-    name: build-sbf
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Agave toolchain
+      - name: Cache the Solana toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/solana
+          key: ${{ runner.os }}-solana-stable
+
+      - name: Install Agave
         run: |
-          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          if [ ! -x "$HOME/.local/share/solana/install/active_release/bin/solana" ]; then
+            sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          fi
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
       - run: solana --version
-      - name: Build the on-chain program
-        # Isolated target dir: see the note in the Makefile. Sharing one with the
-        # host build makes cargo feed a host .dylib to the SBF rustc.
-        run: make build-sbf
-      - name: Run the on-chain test suite against the built .so
-        run: cargo test -p mirror-pool-program --all-features
+
+      - name: make verify
+        run: make verify
