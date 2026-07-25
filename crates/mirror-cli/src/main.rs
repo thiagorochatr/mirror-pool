@@ -39,6 +39,21 @@ enum Command {
         #[arg(long, default_value = "programs/mirror-pool/src/vk.rs")]
         out: PathBuf,
     },
+    /// Checks that an RPC endpoint can actually serve the history a provenance
+    /// measurement depends on, and refuses it otherwise.
+    ///
+    /// Run this before trusting any number a collection produces. A truncated
+    /// endpoint does not error on old data — it returns nothing — so a collector
+    /// pointed at one reports every old funding event as absent and produces a
+    /// graph that looks like a finding.
+    CheckEndpoint {
+        #[arg(long, default_value = "https://api.mainnet-beta.solana.com")]
+        endpoint: String,
+        /// Requests per second. The public endpoint sustains a measured
+        /// 0.28-0.55, far below its documented allowance.
+        #[arg(long, default_value_t = 0.4)]
+        rps: f64,
+    },
     /// Recomputes the verifying key from a seed and reports its digest.
     ///
     /// This is the check a third party runs. It binds the *whole* key — alpha,
@@ -76,6 +91,29 @@ fn main() -> Result<()> {
             println!("public inputs: {}", svk.public_input_count());
             println!("vk sha256:     {}", vk_digest(&svk));
             Ok(())
+        }
+        Command::CheckEndpoint { endpoint, rps } => {
+            let mut client = mirror_provenance::RpcClient::new(&endpoint, rps);
+            match client.check_preconditions() {
+                Ok(check) => {
+                    println!("endpoint             {}", check.endpoint);
+                    println!("first available block {}", check.first_available_block);
+                    println!(
+                        "archival probe slot   {} ok",
+                        mirror_provenance::rpc::ARCHIVAL_PROBE_SLOT
+                    );
+                    println!("\nUSABLE — this endpoint serves history to genesis.");
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("REFUSED: {e}");
+                    eprintln!(
+                        "\nA measurement taken here would report old funding events as \
+                         absent and the resulting unresolved bucket would be an artifact."
+                    );
+                    std::process::exit(2);
+                }
+            }
         }
         Command::VerifySetup { seed, expect } => {
             let keys = mirror_circuit::generate_reproducible(seed.as_bytes())
