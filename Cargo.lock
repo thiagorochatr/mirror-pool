@@ -1829,14 +1829,25 @@ name = "mirror-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "ark-std 0.5.0",
+ "base64",
+ "bincode",
  "clap",
  "hex",
  "mirror-circuit",
  "mirror-core",
+ "mirror-pool-program",
  "mirror-provenance",
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "solana-keypair",
+ "solana-message",
+ "solana-program",
+ "solana-signer",
+ "solana-system-interface",
+ "solana-transaction",
+ "ureq",
 ]
 
 [[package]]
@@ -2358,6 +2369,15 @@ checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-big-array"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11fc7cc2c76d73e0f27ee52abbd64eec84d46f370c88371120433196934e4b7f"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -3039,6 +3059,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8e7db78c122d02189619490b1fef04a2a042c389662920617c0e6381fdf8fdd"
 dependencies = [
  "num-traits",
+ "serde",
+ "serde_derive",
  "solana-program-error",
 ]
 
@@ -3163,6 +3185,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2666e0ff38557ad1239d0fc42f4688fb9df0817fb12c041dbae90c2b2e3fa55"
 dependencies = [
  "blake3",
+ "serde",
+ "serde_derive",
  "solana-address 2.6.1",
  "solana-hash",
  "solana-instruction",
@@ -3558,6 +3582,8 @@ dependencies = [
  "ed25519-dalek",
  "five8",
  "serde",
+ "serde-big-array",
+ "serde_derive",
  "solana-sanitize",
  "wincode",
 ]
@@ -3849,6 +3875,8 @@ version = "4.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6aa9b0f8543b99e1cb7db16a7c1a392139d82db57a90d262fb0a394807337bec"
 dependencies = [
+ "serde",
+ "serde_derive",
  "solana-address 2.6.1",
  "solana-hash",
  "solana-instruction",
@@ -3886,6 +3914,8 @@ version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a37cf28c58b03878d38c38411f0414d3a99a9e3b7e5ebb0f83f3317b2796d18"
 dependencies = [
+ "serde",
+ "serde_derive",
  "solana-instruction-error",
  "solana-sanitize",
 ]

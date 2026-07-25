@@ -5,6 +5,9 @@ use clap::{Parser, Subcommand};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
+mod chain;
+mod soak;
+
 /// The seed the committed verifying key was generated from.
 ///
 /// Public on purpose. It makes the setup reproducible — anyone can re-derive the
@@ -112,6 +115,20 @@ enum Command {
     Analyze {
         #[arg(long, default_value = "sample.json")]
         sample: PathBuf,
+    },
+    /// Runs the whole lifecycle against a live cluster and prints every
+    /// signature, so the result is checkable rather than asserted.
+    Soak {
+        #[arg(long)]
+        program: String,
+        #[arg(long, default_value = "https://api.devnet.solana.com")]
+        url: String,
+        /// Payer and settler keypair.
+        #[arg(long, default_value = "~/.config/solana/id.json")]
+        keypair: String,
+        /// Where to write the evidence.
+        #[arg(long, default_value = "docs/PROOF.md")]
+        out: PathBuf,
     },
     /// Recomputes the verifying key from a seed and reports its digest.
     ///
@@ -400,6 +417,12 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Command::Soak {
+            program,
+            url,
+            keypair,
+            out,
+        } => soak::run(&program, &url, &keypair, &out),
         Command::VerifySetup { seed, expect } => {
             let keys = mirror_circuit::generate_reproducible(seed.as_bytes())
                 .map_err(|e| anyhow::anyhow!("{e}"))?;

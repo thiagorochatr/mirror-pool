@@ -291,6 +291,26 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
         }
     }
 
+    // The replay guard, and it runs before the pairing rather than after.
+    //
+    // A spent nullifier is knowable from one account read; verifying a proof
+    // costs about 95k compute units. Checking the cheap thing first means a
+    // replay is rejected at roughly 3k CU instead of 95k, which matters because
+    // replays are exactly what an attacker submits in bulk.
+    //
+    // It is also an explicit check rather than a reliance on account creation
+    // failing: a failed CPI terminates the instruction with the *system
+    // program's* error, so a replay would report a bare "already in use" that
+    // proves nothing about this program. Devnet evidence records error codes,
+    // and a code that could have come from anywhere is not evidence.
+    let (expected_spend, spend_bump) = spend_address(program_id, pool_account.key, &req.nullifier);
+    if *spend_account.key != expected_spend {
+        return Err(MirrorProgramError::InvalidPda.into());
+    }
+    if !spend_account.data_is_empty() || spend_account.lamports() > 0 {
+        return Err(MirrorProgramError::NullifierAlreadySpent.into());
+    }
+
     // Recomputed, never transmitted. If the relay altered the selector, the
     // beneficiary or its own fee, this binding differs from the one the prover
     // committed to and the pairing fails. There is no separate field that could
@@ -322,23 +342,6 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
     verifier
         .verify()
         .map_err(|_| MirrorProgramError::ProofVerificationFailed)?;
-
-    let (expected_spend, spend_bump) = spend_address(program_id, pool_account.key, &req.nullifier);
-    if *spend_account.key != expected_spend {
-        return Err(MirrorProgramError::InvalidPda.into());
-    }
-
-    // The replay guard, checked explicitly.
-    //
-    // Creating the account would fail on its own if it already existed, but a
-    // failed CPI terminates the instruction with the *system program's* error,
-    // so the transaction would report a bare "already in use" rather than
-    // anything of ours. Checking first means a replay produces a named code that
-    // devnet evidence can record and a third party can verify, instead of an
-    // error that could have come from anywhere.
-    if !spend_account.data_is_empty() || spend_account.lamports() > 0 {
-        return Err(MirrorProgramError::NullifierAlreadySpent.into());
-    }
 
     let rent = Rent::get()?;
     invoke_signed(
