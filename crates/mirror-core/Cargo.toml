@@ -9,4 +9,5 @@ license.workspace = true
 # cross this boundary as canonical 32-byte big-endian arrays.
 [dependencies]
 solana-poseidon.workspace = true
+solana-keccak-hasher.workspace = true
 thiserror.workspace = true

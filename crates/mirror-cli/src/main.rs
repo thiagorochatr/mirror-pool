@@ -70,6 +70,13 @@ enum Command {
         /// spread over more of the pool's lifetime.
         #[arg(long, default_value_t = 8)]
         pages: u32,
+        /// Transactions to fetch in total, spread across the pages.
+        ///
+        /// Sized from the measured deposit rate rather than guessed: about one
+        /// program transaction in eight is a deposit, so reaching N depositors
+        /// costs roughly 8N fetches.
+        #[arg(long, default_value_t = 400)]
+        scan: usize,
         /// Minimum lamports a payer must part with for it to count as a deposit.
         #[arg(long, default_value_t = 10_000_000)]
         min_deposit: u64,
@@ -171,6 +178,7 @@ fn main() -> Result<()> {
             program,
             n,
             pages,
+            scan,
             min_deposit,
             out,
             endpoint,
@@ -205,10 +213,11 @@ fn main() -> Result<()> {
                     seeds.len()
                 );
 
-                // Take from across the page rather than only its head, so the
-                // sample spans the page's time range instead of clustering.
-                let want_from_page = (n - seeds.len()).div_ceil((pages - page).max(1) as usize);
-                let stride = (batch.len() / want_from_page.max(1)).max(1);
+                // Spread the scan budget evenly over the pages, and stride
+                // within each page so the sample spans its time range instead of
+                // clustering at its head.
+                let scan_this_page = (scan / pages as usize).max(1);
+                let stride = (batch.len() / scan_this_page).max(1);
                 for info in batch.iter().step_by(stride) {
                     if info.err {
                         continue;

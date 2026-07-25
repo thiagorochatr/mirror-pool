@@ -1843,6 +1843,7 @@ dependencies = [
 name = "mirror-core"
 version = "0.1.0"
 dependencies = [
+ "solana-keccak-hasher",
  "solana-poseidon",
  "thiserror 2.0.19",
 ]

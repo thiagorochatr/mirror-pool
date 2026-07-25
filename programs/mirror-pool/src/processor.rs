@@ -4,7 +4,7 @@ use crate::{
     error::MirrorProgramError,
     instruction::Instruction,
     pda::{pool_address, spend_address, vault_address, POOL_SEED, SPEND_SEED, VAULT_SEED},
-    spend::{Spend, SPEND_LEN},
+    spend::{spend_len, Spend, MAX_PAYLOAD},
     state::{Pool, POOL_LEN},
 };
 use mirror_core::{hash_node, Field, TREE_DEPTH};
@@ -33,8 +33,11 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
             root,
             nullifier,
             selector,
+            target_program,
             beneficiary,
             relay_fee,
+            action_accounts,
+            payload,
         } => submit_spend(
             program_id,
             accounts,
@@ -45,8 +48,11 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
                 root,
                 nullifier,
                 selector,
+                target_program,
                 beneficiary,
                 relay_fee,
+                action_accounts,
+                payload,
             },
         ),
         Instruction::SettleEpoch { count } => settle_epoch(program_id, accounts, count),
@@ -61,8 +67,11 @@ struct SpendRequest {
     root: [u8; 32],
     nullifier: [u8; 32],
     selector: u64,
+    target_program: [u8; 32],
     beneficiary: [u8; 32],
     relay_fee: u64,
+    action_accounts: u8,
+    payload: Vec<u8>,
 }
 
 /// Creates the pool and its vault and seeds the accumulator to an empty tree.
@@ -286,8 +295,16 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
     // beneficiary or its own fee, this binding differs from the one the prover
     // committed to and the pairing fails. There is no separate field that could
     // be checked incorrectly or forgotten.
-    let binding = mirror_core::action_binding(req.selector, &req.beneficiary, req.relay_fee)
-        .map_err(MirrorProgramError::from)?;
+    if req.payload.len() > MAX_PAYLOAD {
+        return Err(MirrorProgramError::PayloadTooLarge.into());
+    }
+    let binding = mirror_core::action_binding(
+        req.selector,
+        &req.target_program,
+        &req.beneficiary,
+        req.relay_fee,
+        &req.payload,
+    );
 
     let public_inputs: [[u8; 32]; 3] = [
         root.to_bytes(),
@@ -328,8 +345,8 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
         &system_instruction::create_account(
             relay.key,
             spend_account.key,
-            rent.minimum_balance(SPEND_LEN),
-            SPEND_LEN as u64,
+            rent.minimum_balance(spend_len(req.payload.len())),
+            spend_len(req.payload.len()) as u64,
             program_id,
         ),
         &[relay.clone(), spend_account.clone(), system.clone()],
@@ -353,7 +370,10 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
         &req.beneficiary,
         &relay.key.to_bytes(),
         &pool_account.key.to_bytes(),
-    );
+        &req.target_program,
+        req.action_accounts,
+        &req.payload,
+    )?;
 
     // The spend counter is deliberately *not* advanced here. The note is
     // committed to be paid but has not been paid, so the vault must still cover
@@ -361,6 +381,21 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
     // bound on what is owed until settlement actually disburses.
     Ok(())
 }
+
+/// The plain-transfer action: pay the beneficiary, no CPI.
+///
+/// Kept as selector zero because a transfer is the degenerate action and the
+/// protocol should not need a target program to express it.
+pub const SELECTOR_TRANSFER: u64 = 0;
+
+/// Invoke `target_program` with the stored payload, signed by the pool.
+///
+/// This is what makes the pool a behavioural anonymity set rather than a value
+/// mixer. The brief asks for "Tornado Cash for behavioural patterns and
+/// withdrawals — not for funds": an observer should see that a stake, a swap or
+/// a vote happened and be unable to say which member asked for it. A pool that
+/// only moves lamports answers the wrong question.
+pub const SELECTOR_INVOKE: u64 = 1;
 
 /// How long a spend may wait before it can settle alone.
 ///
@@ -426,7 +461,7 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
             return Err(MirrorProgramError::InvalidOwner.into());
         }
 
-        let (relay_fee, payout) = {
+        let (relay_fee, payout, selector, action_accounts) = {
             let mut data = spend_account.try_borrow_mut_data()?;
             let mut record = Spend::load(&mut data)?;
 
@@ -455,15 +490,54 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
             let payout = denomination
                 .checked_sub(relay_fee)
                 .ok_or(MirrorProgramError::ArithmeticOverflow)?;
-            (relay_fee, payout)
+            (
+                relay_fee,
+                payout,
+                record.selector(),
+                record.action_accounts(),
+            )
         };
 
-        // The vault is owned by this program, so its lamports move by direct
-        // mutation rather than a system-program CPI. That means no signer seeds
-        // and no nested invoke on the hot path.
-        move_lamports(vault_account, beneficiary, payout)?;
+        // The relay is paid the same way regardless of what the action is.
         if relay_fee > 0 {
             move_lamports(vault_account, relay, relay_fee)?;
+        }
+
+        match selector {
+            SELECTOR_TRANSFER => {
+                if action_accounts != 0 {
+                    return Err(MirrorProgramError::MalformedInstruction.into());
+                }
+                // The vault is owned by this program, so lamports move by direct
+                // mutation rather than a system CPI: no signer seeds and no
+                // nested invoke on the hot path.
+                move_lamports(vault_account, beneficiary, payout)?;
+            }
+            SELECTOR_INVOKE => {
+                // The target program's own account comes first, because a CPI
+                // requires the callee to be present in the caller's account
+                // list. Its key is checked against the record, so a settler
+                // supplying a different program is refused before any value
+                // moves rather than discovered by the runtime.
+                let target_info = next_account_info(iter)?;
+
+                // Then the action's own accounts.
+                let mut action_infos = Vec::with_capacity(action_accounts as usize);
+                for _ in 0..action_accounts {
+                    action_infos.push(next_account_info(iter)?.clone());
+                }
+                invoke_action(
+                    program_id,
+                    pool_account,
+                    vault_account,
+                    spend_account,
+                    beneficiary,
+                    target_info,
+                    payout,
+                    &action_infos,
+                )?;
+            }
+            _ => return Err(MirrorProgramError::UnknownSelector.into()),
         }
         settled += 1;
     }
@@ -485,6 +559,82 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
         return Err(MirrorProgramError::InsolventVault.into());
     }
     Ok(())
+}
+
+/// Invokes the member's chosen program on their behalf, signed by the vault.
+///
+/// The vault PDA is the signer, so from the chain's point of view the action was
+/// taken by the pool. Every member's action carries the same signer, which is
+/// what makes an action unattributable: the on-chain trace of a stake made
+/// through this pool is identical whoever asked for it.
+///
+/// The payload and the target were both fixed at submit time and bound into the
+/// proof, so a settler chooses neither. What a settler does supply is the
+/// account list, and the accounts are the target program's problem to validate
+/// — exactly as they would be for any caller.
+#[allow(clippy::too_many_arguments)]
+fn invoke_action<'a>(
+    program_id: &Pubkey,
+    pool_account: &AccountInfo<'a>,
+    vault_account: &AccountInfo<'a>,
+    spend_account: &AccountInfo<'a>,
+    beneficiary: &AccountInfo<'a>,
+    target_info: &AccountInfo<'a>,
+    payout: u64,
+    action_infos: &[AccountInfo<'a>],
+) -> ProgramResult {
+    let (target, payload) = {
+        let mut data = spend_account.try_borrow_mut_data()?;
+        let record = Spend::load(&mut data)?;
+        (record.target_program(), record.payload().to_vec())
+    };
+    let vault_bump = {
+        let pool_data = pool_account.try_borrow_data()?;
+        *pool_data
+            .get(2)
+            .ok_or(MirrorProgramError::InvalidPoolAccount)?
+    };
+
+    // The pool never invokes itself. Doing so would let a member craft a payload
+    // that re-enters settlement, and re-entrancy around a lamport-moving loop is
+    // not something to leave to careful reading.
+    let target_key = Pubkey::new_from_array(target);
+    if target_key == *program_id {
+        return Err(MirrorProgramError::SelfInvocationRefused.into());
+    }
+    // The account supplied must be the program the member proved.
+    if *target_info.key != target_key {
+        return Err(MirrorProgramError::InvalidPda.into());
+    }
+
+    // Fund the action before invoking, so the target sees the value it is meant
+    // to act on. The vault signs, so the funds visibly come from the pool.
+    move_lamports(vault_account, beneficiary, payout)?;
+
+    let metas: Vec<solana_program::instruction::AccountMeta> = action_infos
+        .iter()
+        .map(|a| solana_program::instruction::AccountMeta {
+            pubkey: *a.key,
+            is_signer: a.is_signer || a.key == vault_account.key,
+            is_writable: a.is_writable,
+        })
+        .collect();
+
+    let ix = solana_program::instruction::Instruction {
+        program_id: target_key,
+        accounts: metas,
+        data: payload,
+    };
+
+    let mut infos = action_infos.to_vec();
+    infos.push(vault_account.clone());
+    infos.push(target_info.clone());
+
+    invoke_signed(
+        &ix,
+        &infos,
+        &[&[VAULT_SEED, pool_account.key.as_ref(), &[vault_bump]]],
+    )
 }
 
 /// Moves lamports between two accounts this program owns or may credit.

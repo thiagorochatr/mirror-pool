@@ -13,7 +13,8 @@ mod note;
 
 pub use field::{Field, MODULUS_BE};
 pub use hash::{
-    action_binding, commitment, hash_node, nullifier, poseidon1, poseidon2, poseidon3, poseidon4,
+    action_binding, commitment, field_from_digest, hash_node, nullifier, poseidon1, poseidon2,
+    poseidon3, ACTION_DOMAIN,
 };
 pub use merkle::{
     baked_ladder, zero_ladder, Frontier, MerkleProof, MerkleTree, TREE_DEPTH, ZERO_LADDER,

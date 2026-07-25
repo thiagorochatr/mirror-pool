@@ -19,20 +19,37 @@ mod offset {
     pub const VERSION: usize = 0;
     pub const STATUS: usize = 1;
     pub const BUMP: usize = 2;
-    pub const _RESERVED: usize = 3;
+    pub const ACTION_ACCOUNTS: usize = 3;
+    pub const PAYLOAD_LEN: usize = 4;
     pub const SELECTOR: usize = 8;
     pub const RELAY_FEE: usize = 16;
     pub const SUBMITTED_AT: usize = 24;
     pub const BENEFICIARY: usize = 32;
     pub const RELAY: usize = 64;
     pub const POOL: usize = 96;
-    pub const END: usize = 128;
+    pub const TARGET_PROGRAM: usize = 128;
+    pub const PAYLOAD: usize = 160;
 }
 
-pub const SPEND_LEN: usize = offset::END;
+/// Fixed part of the record. The payload follows it.
+pub const SPEND_BASE_LEN: usize = offset::PAYLOAD;
+
+/// Largest action payload a spend may carry.
+///
+/// Bounded because the payload lives in the record, which is what lets
+/// settlement batch several actions into one transaction: the instruction data
+/// is already on chain, so a settle transaction carries only account references.
+/// An unbounded payload would trade the synchronised crowd for expressiveness.
+pub const MAX_PAYLOAD: usize = 256;
+
 pub const SPEND_VERSION: u8 = 1;
 
-const _: () = assert!(SPEND_LEN == 128);
+const _: () = assert!(SPEND_BASE_LEN == 160);
+
+/// Account size for a record carrying `payload_len` bytes.
+pub fn spend_len(payload_len: usize) -> usize {
+    SPEND_BASE_LEN + payload_len
+}
 
 pub struct Spend<'a> {
     data: &'a mut [u8],
@@ -40,14 +57,20 @@ pub struct Spend<'a> {
 
 impl<'a> Spend<'a> {
     pub fn load(data: &'a mut [u8]) -> Result<Self, MirrorProgramError> {
-        if data.len() != SPEND_LEN || data[offset::VERSION] != SPEND_VERSION {
+        if data.len() < SPEND_BASE_LEN || data[offset::VERSION] != SPEND_VERSION {
             return Err(MirrorProgramError::InvalidSpendAccount);
         }
-        Ok(Spend { data })
+        let spend = Spend { data };
+        // The declared payload length must match the account, or a reader could
+        // be pointed past the end of the data it was given.
+        if spend.data.len() != spend_len(spend.payload_len()) {
+            return Err(MirrorProgramError::InvalidSpendAccount);
+        }
+        Ok(spend)
     }
 
     pub fn load_uninitialised(data: &'a mut [u8]) -> Result<Self, MirrorProgramError> {
-        if data.len() != SPEND_LEN {
+        if data.len() < SPEND_BASE_LEN || data.len() > spend_len(MAX_PAYLOAD) {
             return Err(MirrorProgramError::InvalidSpendAccount);
         }
         if data[offset::VERSION] != 0 {
@@ -66,10 +89,22 @@ impl<'a> Spend<'a> {
         beneficiary: &[u8; 32],
         relay: &[u8; 32],
         pool: &[u8; 32],
-    ) {
+        target_program: &[u8; 32],
+        action_accounts: u8,
+        payload: &[u8],
+    ) -> Result<(), MirrorProgramError> {
+        if payload.len() > MAX_PAYLOAD || self.data.len() != spend_len(payload.len()) {
+            return Err(MirrorProgramError::InvalidSpendAccount);
+        }
         self.data[offset::VERSION] = SPEND_VERSION;
         self.data[offset::STATUS] = STATUS_PENDING;
         self.data[offset::BUMP] = bump;
+        self.data[offset::ACTION_ACCOUNTS] = action_accounts;
+        self.data[offset::PAYLOAD_LEN..offset::PAYLOAD_LEN + 2]
+            .copy_from_slice(&(payload.len() as u16).to_le_bytes());
+        self.data[offset::TARGET_PROGRAM..offset::TARGET_PROGRAM + 32]
+            .copy_from_slice(target_program);
+        self.data[offset::PAYLOAD..offset::PAYLOAD + payload.len()].copy_from_slice(payload);
         self.data[offset::SELECTOR..offset::SELECTOR + 8].copy_from_slice(&selector.to_le_bytes());
         self.data[offset::RELAY_FEE..offset::RELAY_FEE + 8]
             .copy_from_slice(&relay_fee.to_le_bytes());
@@ -78,6 +113,31 @@ impl<'a> Spend<'a> {
         self.data[offset::BENEFICIARY..offset::BENEFICIARY + 32].copy_from_slice(beneficiary);
         self.data[offset::RELAY..offset::RELAY + 32].copy_from_slice(relay);
         self.data[offset::POOL..offset::POOL + 32].copy_from_slice(pool);
+        Ok(())
+    }
+
+    /// How many accounts the action's CPI expects.
+    pub fn action_accounts(&self) -> u8 {
+        self.data[offset::ACTION_ACCOUNTS]
+    }
+
+    pub fn payload_len(&self) -> usize {
+        let mut b = [0u8; 2];
+        b.copy_from_slice(&self.data[offset::PAYLOAD_LEN..offset::PAYLOAD_LEN + 2]);
+        u16::from_le_bytes(b) as usize
+    }
+
+    /// The program the pool will invoke on this member's behalf.
+    pub fn target_program(&self) -> [u8; 32] {
+        let mut b = [0u8; 32];
+        b.copy_from_slice(&self.data[offset::TARGET_PROGRAM..offset::TARGET_PROGRAM + 32]);
+        b
+    }
+
+    /// The instruction data for that invocation, stored at submit time so a
+    /// settle transaction carries only account references.
+    pub fn payload(&self) -> &[u8] {
+        &self.data[offset::PAYLOAD..offset::PAYLOAD + self.payload_len()]
     }
 
     pub fn status(&self) -> u8 {
@@ -137,8 +197,10 @@ impl<'a> Spend<'a> {
 mod tests {
     use super::*;
 
+    const PAYLOAD: &[u8] = b"delegate stake";
+
     fn fresh() -> Vec<u8> {
-        vec![0u8; SPEND_LEN]
+        vec![0u8; spend_len(PAYLOAD.len())]
     }
 
     fn init(data: &mut [u8]) {
@@ -151,7 +213,11 @@ mod tests {
             &[9u8; 32],
             &[4u8; 32],
             &[5u8; 32],
-        );
+            &[6u8; 32],
+            4,
+            PAYLOAD,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -167,6 +233,50 @@ mod tests {
         assert_eq!(s.beneficiary(), [9u8; 32]);
         assert_eq!(s.relay(), [4u8; 32]);
         assert_eq!(s.pool(), [5u8; 32]);
+        assert_eq!(s.target_program(), [6u8; 32]);
+        assert_eq!(s.action_accounts(), 4);
+        assert_eq!(s.payload(), PAYLOAD);
+    }
+
+    /// The action a member proved must survive settlement byte for byte: a
+    /// truncated or padded payload would invoke the target with parameters
+    /// nobody authorised.
+    #[test]
+    fn a_payload_round_trips_at_every_length() {
+        for len in [0usize, 1, 31, 32, 33, MAX_PAYLOAD] {
+            let payload: Vec<u8> = (0..len).map(|i| (i % 251) as u8).collect();
+            let mut data = vec![0u8; spend_len(len)];
+            {
+                let mut s = Spend::load_uninitialised(&mut data).unwrap();
+                s.initialise(
+                    1, 0, 0, 0, &[0u8; 32], &[0u8; 32], &[0u8; 32], &[0u8; 32], 0, &payload,
+                )
+                .unwrap();
+            }
+            let s = Spend::load(&mut data).unwrap();
+            assert_eq!(s.payload(), &payload[..], "length {len} did not round trip");
+            assert_eq!(s.payload_len(), len);
+        }
+    }
+
+    #[test]
+    fn a_payload_beyond_the_maximum_is_refused() {
+        let payload = vec![0u8; MAX_PAYLOAD + 1];
+        let mut data = vec![0u8; spend_len(payload.len())];
+        assert!(Spend::load_uninitialised(&mut data).is_err());
+    }
+
+    /// An account whose length disagrees with its declared payload length would
+    /// let a reader run past the end of what it was given.
+    #[test]
+    fn a_record_whose_length_contradicts_its_header_is_refused() {
+        let mut data = fresh();
+        init(&mut data);
+        data.push(0);
+        assert!(matches!(
+            Spend::load(&mut data),
+            Err(MirrorProgramError::InvalidSpendAccount)
+        ));
     }
 
     #[test]
@@ -194,7 +304,7 @@ mod tests {
 
     #[test]
     fn a_wrong_length_account_is_refused() {
-        let mut short = vec![0u8; SPEND_LEN - 1];
+        let mut short = vec![0u8; SPEND_BASE_LEN - 1];
         assert!(Spend::load(&mut short).is_err());
         assert!(Spend::load_uninitialised(&mut short).is_err());
     }
@@ -214,7 +324,11 @@ mod tests {
                 &[0xAB; 32],
                 &[0xCD; 32],
                 &[0xEF; 32],
-            );
+                &[0x12; 32],
+                7,
+                PAYLOAD,
+            )
+            .unwrap();
         }
         let s = Spend::load(&mut data).unwrap();
         assert_eq!(s.bump(), 0xEE);
@@ -224,5 +338,7 @@ mod tests {
         assert_eq!(s.beneficiary(), [0xAB; 32]);
         assert_eq!(s.relay(), [0xCD; 32]);
         assert_eq!(s.pool(), [0xEF; 32]);
+        assert_eq!(s.target_program(), [0x12; 32]);
+        assert_eq!(s.action_accounts(), 7);
     }
 }

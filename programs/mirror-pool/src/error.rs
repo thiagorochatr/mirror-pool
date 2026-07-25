@@ -56,6 +56,14 @@ pub enum MirrorProgramError {
     RelayFeeTooLarge = 20,
     /// The batch is below the crowd size and has not waited out the timeout.
     CrowdTooSmall = 21,
+    /// The action selector is not one this program implements.
+    UnknownSelector = 22,
+    /// An action tried to invoke this program. Refused: re-entering settlement
+    /// around a lamport-moving loop is not a property to leave to careful
+    /// reading.
+    SelfInvocationRefused = 23,
+    /// The action payload exceeds the maximum a spend record can carry.
+    PayloadTooLarge = 24,
 }
 
 impl From<MirrorProgramError> for ProgramError {

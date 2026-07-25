@@ -19,7 +19,10 @@
 //! | nullifier | 1 | `(k)` |
 //! | Merkle node | 2 | `(left, right)` |
 //! | note commitment | 3 | `(k, r, denom_tag)` |
-//! | action binding | 4 | `(selector, beneficiary_hi, beneficiary_lo, relay_fee)` |
+//!
+//! The action binding is not in this table: its payload is variable length, so
+//! it is a keccak digest rather than a Poseidon compression. See
+//! [`action_binding`].
 //!
 //! An explicit integer tag was the first design here and it was wrong: with a
 //! small tag constant, a Merkle node whose left child equals the tag collides
@@ -56,11 +59,6 @@ pub fn poseidon3(a: Field, b: Field, c: Field) -> Result<Field, MirrorError> {
     digest(&[a.as_bytes(), b.as_bytes(), c.as_bytes()])
 }
 
-/// Arity-4 Poseidon.
-pub fn poseidon4(a: Field, b: Field, c: Field, d: Field) -> Result<Field, MirrorError> {
-    digest(&[a.as_bytes(), b.as_bytes(), c.as_bytes(), d.as_bytes()])
-}
-
 /// Merkle internal node: `H2(left, right)`.
 pub fn hash_node(left: Field, right: Field) -> Result<Field, MirrorError> {
     poseidon2(left, right)
@@ -84,39 +82,61 @@ pub fn nullifier(k: Field) -> Result<Field, MirrorError> {
     poseidon1(k)
 }
 
-/// Action binding: `H4(selector, beneficiary_hi, beneficiary_lo, relay_fee)`.
+/// Domain tag for the action binding preimage.
+pub const ACTION_DOMAIN: &[u8] = b"mirror-pool:action:v1";
+
+/// Reduces a 256-bit digest to a canonical BN254 scalar.
 ///
-/// This is the value the circuit takes as its third public input and the value
-/// the program recomputes from the action it is about to execute. It lives here,
-/// shared by both, so the two cannot drift apart.
+/// The top byte is cleared, so the value is below `2^248` and therefore
+/// unconditionally below the modulus. Masking rather than reducing keeps the map
+/// deterministic and total — a modular reduction would need a bignum in the
+/// program, and rejecting out-of-range digests would make the binding fail for
+/// one preimage in roughly forty.
 ///
-/// It covers every economically meaningful field of a spend. The payout is the
-/// pool denomination minus `relay_fee`, so binding the beneficiary and the fee
-/// binds the amount too: a relay can neither redirect the payout nor inflate its
-/// own cut, because either change produces a different binding and the proof
-/// stops verifying.
+/// Eight bits are lost from 256. What remains is far beyond what collision
+/// resistance needs here: forging a binding still requires a keccak collision.
+pub fn field_from_digest(digest: [u8; 32]) -> Field {
+    let mut bytes = digest;
+    bytes[0] = 0;
+    Field::from_bytes(bytes).expect("cleared top byte is always canonical")
+}
+
+/// Action binding: a keccak digest over everything a relay could alter.
 ///
-/// A 32-byte public key does not fit in a BN254 scalar — the field is ~254 bits
-/// — so the key is split into two 16-byte halves. Each half is well under the
-/// modulus, the split is injective, and no reduction ever happens. Reducing a
-/// full key instead would let two distinct beneficiaries share one binding.
+/// This is the circuit's third public input and the value the program recomputes
+/// from the action it is about to execute. It lives here, shared by host and
+/// program, so the two cannot drift.
+///
+/// The preimage covers every field with economic or behavioural meaning:
+///
+/// | field | what altering it would let a relay do |
+/// |---|---|
+/// | `selector` | run a different kind of action |
+/// | `target_program` | invoke a different program entirely |
+/// | `beneficiary` | redirect the outcome |
+/// | `relay_fee` | inflate its own cut |
+/// | `payload` | change the action's parameters |
+///
+/// Keccak rather than Poseidon because the payload is variable length and
+/// Poseidon is a fixed-arity compression. The circuit never computes this — it
+/// takes the result as an opaque public input — so the choice costs no
+/// constraints.
 pub fn action_binding(
     selector: u64,
+    target_program: &[u8; 32],
     beneficiary: &[u8; 32],
     relay_fee: u64,
-) -> Result<Field, MirrorError> {
-    let mut hi = [0u8; 32];
-    hi[16..].copy_from_slice(&beneficiary[..16]);
-    let mut lo = [0u8; 32];
-    lo[16..].copy_from_slice(&beneficiary[16..]);
-
-    poseidon4(
-        Field::from_u64(selector),
-        // Both halves are < 2^128, so these constructions cannot fail.
-        Field::from_bytes(hi)?,
-        Field::from_bytes(lo)?,
-        Field::from_u64(relay_fee),
-    )
+    payload: &[u8],
+) -> Field {
+    let digest = solana_keccak_hasher::hashv(&[
+        ACTION_DOMAIN,
+        &selector.to_le_bytes(),
+        target_program,
+        beneficiary,
+        &relay_fee.to_le_bytes(),
+        payload,
+    ]);
+    field_from_digest(digest.to_bytes())
 }
 
 #[cfg(test)]
@@ -175,65 +195,90 @@ mod tests {
         );
     }
 
+    const PROG: [u8; 32] = [3u8; 32];
+
     #[test]
     fn the_action_binding_covers_every_field_a_relay_could_change() {
         let bob = [7u8; 32];
-        let base = action_binding(1, &bob, 5_000).unwrap();
+        let payload = b"stake 0.1".as_slice();
+        let base = action_binding(1, &PROG, &bob, 5_000, payload);
 
         let mut carol = [7u8; 32];
         carol[31] = 8;
+        let mut other_prog = PROG;
+        other_prog[0] = 4;
+
         assert_ne!(
             base,
-            action_binding(1, &carol, 5_000).unwrap(),
-            "a redirected beneficiary must change the binding"
+            action_binding(2, &PROG, &bob, 5_000, payload),
+            "selector"
         );
         assert_ne!(
             base,
-            action_binding(1, &bob, 6_000).unwrap(),
-            "an inflated relay fee must change the binding"
+            action_binding(1, &other_prog, &bob, 5_000, payload),
+            "target program"
         );
         assert_ne!(
             base,
-            action_binding(2, &bob, 5_000).unwrap(),
-            "a different action must change the binding"
+            action_binding(1, &PROG, &carol, 5_000, payload),
+            "beneficiary"
+        );
+        assert_ne!(
+            base,
+            action_binding(1, &PROG, &bob, 6_000, payload),
+            "relay fee"
+        );
+        assert_ne!(
+            base,
+            action_binding(1, &PROG, &bob, 5_000, b"stake 1.0"),
+            "payload"
         );
     }
 
     #[test]
-    fn the_beneficiary_split_is_injective_across_the_halfway_boundary() {
-        // Two keys differing only at byte 15 and two differing only at byte 16
-        // land in different halves. If the split dropped or overlapped a byte,
-        // one of these pairs would collide.
-        let base = [0u8; 32];
-        let mut a = base;
-        a[15] = 1;
-        let mut b = base;
-        b[16] = 1;
-        let zero = action_binding(0, &base, 0).unwrap();
-        let ha = action_binding(0, &a, 0).unwrap();
-        let hb = action_binding(0, &b, 0).unwrap();
-        assert_ne!(zero, ha);
-        assert_ne!(zero, hb);
-        assert_ne!(ha, hb);
+    fn the_binding_is_deterministic_and_lands_in_the_field() {
+        let a = action_binding(1, &PROG, &[9u8; 32], 1, b"x");
+        let b = action_binding(1, &PROG, &[9u8; 32], 1, b"x");
+        assert_eq!(a, b);
+        // Canonical by construction: the top byte is cleared.
+        assert_eq!(a.to_bytes()[0], 0);
+        assert!(Field::from_bytes(a.to_bytes()).is_ok());
     }
 
     #[test]
-    fn a_full_width_key_binds_without_reduction() {
-        // An all-0xff key exceeds the BN254 modulus. Reducing it whole would be
-        // a silent collision surface; the halves keep it exact.
-        let max = [0xffu8; 32];
-        assert!(
-            Field::from_bytes(max).is_err(),
-            "precondition: not canonical"
-        );
-        assert!(action_binding(0, &max, 0).is_ok());
-
-        let mut near = [0xffu8; 32];
-        near[0] = 0xfe;
+    fn an_empty_payload_is_a_distinct_action_from_a_zero_byte_one() {
         assert_ne!(
-            action_binding(0, &max, 0).unwrap(),
-            action_binding(0, &near, 0).unwrap()
+            action_binding(1, &PROG, &[1u8; 32], 0, b""),
+            action_binding(1, &PROG, &[1u8; 32], 0, b"\0"),
         );
+    }
+
+    #[test]
+    fn field_masking_is_total_over_every_digest() {
+        // Including a digest that would otherwise exceed the modulus. A binding
+        // that failed for some preimages would be a liveness bug that only
+        // appeared for one action in forty.
+        for probe in [[0xffu8; 32], [0u8; 32], crate::MODULUS_BE] {
+            let f = field_from_digest(probe);
+            assert_eq!(f.to_bytes()[0], 0);
+        }
+    }
+
+    #[test]
+    fn the_domain_tag_separates_bindings_from_raw_hashes() {
+        // Without the tag, a preimage assembled elsewhere could collide with a
+        // binding. With it, an attacker must also control the tag.
+        let with_tag = action_binding(0, &[0u8; 32], &[0u8; 32], 0, b"");
+        let raw = field_from_digest(
+            solana_keccak_hasher::hashv(&[
+                &0u64.to_le_bytes(),
+                &[0u8; 32],
+                &[0u8; 32],
+                &0u64.to_le_bytes(),
+            ])
+            .to_bytes(),
+        );
+        assert_ne!(with_tag, raw);
     }
 
     /// The anchor for the three-way parity.

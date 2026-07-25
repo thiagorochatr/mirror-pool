@@ -32,6 +32,11 @@ ark-std = { version = "0.5", default-features = false }
 # arkworks out of the .so — a pure-Rust Poseidon on SBF overflows the 4096-byte
 # stack frame and costs ~1500x the syscall even when it completes.
 solana-poseidon = "4.0"
+# Same cfg-gating as solana-poseidon: the syscall on-chain, sha3 off-chain.
+# Needed because an action payload is variable length and Poseidon is not.
+# The off-chain implementation sits behind the sha3 feature; without it the
+# host build compiles and then panics at first use.
+solana-keccak-hasher = { version = "3.1", features = ["sha3"] }
 # Host-only, and only for its published round constants, which the R1CS gadget
 # reads so that in-circuit hashing provably matches the syscall.
 light-poseidon = "0.4"

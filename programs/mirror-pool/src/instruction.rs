@@ -40,7 +40,7 @@ impl Tag {
 /// stack cost we can comfortably afford: 368 bytes against a 4 KB frame, decoded
 /// once per transaction. The size difference is deliberate.
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Instruction {
     /// Creates the pool and its vault, and seeds the accumulator to an empty
     /// tree.
@@ -70,8 +70,16 @@ pub enum Instruction {
         root: [u8; 32],
         nullifier: [u8; 32],
         selector: u64,
+        /// The program the pool will invoke on the member's behalf.
+        target_program: [u8; 32],
         beneficiary: [u8; 32],
         relay_fee: u64,
+        /// How many accounts that invocation expects.
+        action_accounts: u8,
+        /// Instruction data for the invocation, stored in the spend record so a
+        /// settle transaction carries only account references and several
+        /// actions still fit in one transaction.
+        payload: Vec<u8>,
     },
     /// Executes a batch of pending spends in one transaction, so every payout in
     /// an epoch shares a timestamp and an ordering.
@@ -86,8 +94,8 @@ pub enum Instruction {
 pub const INIT_POOL_LEN: usize = 1 + 8 + 8 + 4;
 /// `Deposit`: tag + one field element.
 pub const DEPOSIT_LEN: usize = 1 + 32;
-/// `SubmitSpend`: tag + proof + root + nullifier + selector + beneficiary + fee.
-pub const SUBMIT_SPEND_LEN: usize = 1 + 64 + 128 + 64 + 32 + 32 + 8 + 32 + 8;
+/// `SubmitSpend` without its payload. The encoding is variable length.
+pub const SUBMIT_SPEND_BASE_LEN: usize = 1 + 64 + 128 + 64 + 32 + 32 + 8 + 32 + 32 + 8 + 1 + 2;
 /// `SettleEpoch`: tag + count.
 pub const SETTLE_EPOCH_LEN: usize = 1 + 1;
 
@@ -137,7 +145,7 @@ impl Instruction {
                 Ok(Instruction::SettleEpoch { count: data[1] })
             }
             Tag::SubmitSpend => {
-                if data.len() != SUBMIT_SPEND_LEN {
+                if data.len() < SUBMIT_SPEND_BASE_LEN {
                     return Err(MirrorProgramError::MalformedInstruction);
                 }
                 let mut proof_a = [0u8; 64];
@@ -145,6 +153,7 @@ impl Instruction {
                 let mut proof_c = [0u8; 64];
                 let mut root = [0u8; 32];
                 let mut nullifier = [0u8; 32];
+                let mut target_program = [0u8; 32];
                 let mut beneficiary = [0u8; 32];
                 proof_a.copy_from_slice(&data[1..65]);
                 proof_b.copy_from_slice(&data[65..193]);
@@ -152,8 +161,18 @@ impl Instruction {
                 root.copy_from_slice(&data[257..289]);
                 nullifier.copy_from_slice(&data[289..321]);
                 let selector = read_u64(data, 321);
-                beneficiary.copy_from_slice(&data[329..361]);
-                let relay_fee = read_u64(data, 361);
+                target_program.copy_from_slice(&data[329..361]);
+                beneficiary.copy_from_slice(&data[361..393]);
+                let relay_fee = read_u64(data, 393);
+                let action_accounts = data[401];
+                let mut len_bytes = [0u8; 2];
+                len_bytes.copy_from_slice(&data[402..404]);
+                let payload_len = u16::from_le_bytes(len_bytes) as usize;
+                // The declared length must account for every remaining byte, so
+                // trailing data cannot ride along unread.
+                if data.len() != SUBMIT_SPEND_BASE_LEN + payload_len {
+                    return Err(MirrorProgramError::MalformedInstruction);
+                }
                 Ok(Instruction::SubmitSpend {
                     proof_a,
                     proof_b,
@@ -161,8 +180,11 @@ impl Instruction {
                     root,
                     nullifier,
                     selector,
+                    target_program,
                     beneficiary,
                     relay_fee,
+                    action_accounts,
+                    payload: data[SUBMIT_SPEND_BASE_LEN..].to_vec(),
                 })
             }
         }
@@ -196,10 +218,13 @@ impl Instruction {
                 root,
                 nullifier,
                 selector,
+                target_program,
                 beneficiary,
                 relay_fee,
+                action_accounts,
+                payload,
             } => {
-                let mut out = Vec::with_capacity(SUBMIT_SPEND_LEN);
+                let mut out = Vec::with_capacity(SUBMIT_SPEND_BASE_LEN + payload.len());
                 out.push(Tag::SubmitSpend as u8);
                 out.extend_from_slice(proof_a);
                 out.extend_from_slice(proof_b);
@@ -207,8 +232,12 @@ impl Instruction {
                 out.extend_from_slice(root);
                 out.extend_from_slice(nullifier);
                 out.extend_from_slice(&selector.to_le_bytes());
+                out.extend_from_slice(target_program);
                 out.extend_from_slice(beneficiary);
                 out.extend_from_slice(&relay_fee.to_le_bytes());
+                out.push(*action_accounts);
+                out.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+                out.extend_from_slice(payload);
                 out
             }
             Instruction::SettleEpoch { count } => {
@@ -249,8 +278,11 @@ mod tests {
             root: [0xD4; 32],
             nullifier: [0xE5; 32],
             selector: 0x0102_0304_0506_0708,
+            target_program: [0x7A; 32],
             beneficiary: [0xF6; 32],
             relay_fee: 0x1112_1314_1516_1718,
+            action_accounts: 3,
+            payload: vec![1, 2, 3, 4, 5],
         }
     }
 
@@ -266,10 +298,10 @@ mod tests {
         // These are the on-chain ABI. A change here breaks every deployed client.
         assert_eq!(init().pack().len(), INIT_POOL_LEN);
         assert_eq!(deposit().pack().len(), DEPOSIT_LEN);
-        assert_eq!(submit_spend().pack().len(), SUBMIT_SPEND_LEN);
+        assert_eq!(submit_spend().pack().len(), SUBMIT_SPEND_BASE_LEN + 5);
         assert_eq!(INIT_POOL_LEN, 21);
         assert_eq!(DEPOSIT_LEN, 33);
-        assert_eq!(SUBMIT_SPEND_LEN, 369);
+        assert_eq!(SUBMIT_SPEND_BASE_LEN, 404);
         assert_eq!(settle().pack().len(), SETTLE_EPOCH_LEN);
     }
 

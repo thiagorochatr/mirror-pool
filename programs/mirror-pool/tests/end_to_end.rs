@@ -13,10 +13,11 @@
 use litesvm::LiteSVM;
 use mirror_circuit::{generate_reproducible, prove, Keys, Witness};
 use mirror_core::{Field, MerkleTree, Note};
+#[allow(unused_imports)]
 use mirror_pool_program::{
     instruction::Instruction as MirrorIx,
     pda::{pool_address, spend_address, vault_address},
-    spend::{Spend, SPEND_LEN, STATUS_PENDING, STATUS_SETTLED},
+    spend::{spend_len, Spend, SPEND_BASE_LEN, STATUS_PENDING, STATUS_SETTLED},
     Pool, POOL_LEN,
 };
 use solana_keypair::Keypair;
@@ -33,7 +34,16 @@ const DENOMINATION: u64 = 100_000_000; // 0.1 SOL
 const ENTRY_FEE: u64 = 0;
 const K_FLOOR: u32 = 4;
 const RELAY_FEE: u64 = 1_000_000;
-const SELECTOR: u64 = 1;
+const SELECTOR: u64 = mirror_pool_program::processor::SELECTOR_TRANSFER;
+
+/// The real SPL Memo program, fetched from mainnet, used as a CPI target so the
+/// action path is exercised against a program that exists rather than a stub.
+const MEMO_PROGRAM: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+
+fn memo_bytes() -> Vec<u8> {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/spl_memo.so");
+    std::fs::read(path).expect("spl_memo.so fixture")
+}
 
 fn program_bytes() -> Vec<u8> {
     let path = concat!(
@@ -205,8 +215,11 @@ fn spend_ix(
             root: proof.public_inputs[0],
             nullifier,
             selector: SELECTOR,
+            target_program: [0u8; 32],
             beneficiary: beneficiary.to_bytes(),
             relay_fee: RELAY_FEE,
+            action_accounts: 0,
+            payload: Vec::new(),
         }
         .pack(),
         vec![
@@ -228,8 +241,13 @@ fn proof_for(
 ) -> mirror_circuit::SolanaProof {
     use ark_std::rand::SeedableRng;
     let merkle_proof = tree.proof(index as u64).unwrap();
-    let binding =
-        mirror_core::action_binding(SELECTOR, &beneficiary.to_bytes(), RELAY_FEE).unwrap();
+    let binding = mirror_core::action_binding(
+        SELECTOR,
+        &[0u8; 32],
+        &beneficiary.to_bytes(),
+        RELAY_FEE,
+        &[],
+    );
     let witness = Witness {
         note: notes[index],
         merkle_proof: &merkle_proof,
@@ -306,7 +324,11 @@ fn a_real_proof_verifies_on_chain_and_records_the_spend() {
         .get_account(&spend_pda)
         .expect("spend recorded")
         .data;
-    assert_eq!(data.len(), SPEND_LEN);
+    assert_eq!(
+        data.len(),
+        spend_len(0),
+        "a transfer action carries no payload"
+    );
     let record = Spend::load(&mut data).unwrap();
     assert_eq!(record.status(), STATUS_PENDING);
     assert_eq!(record.selector(), SELECTOR);
@@ -408,8 +430,11 @@ fn a_relay_cannot_inflate_its_own_fee() {
             root: proof.public_inputs[0],
             nullifier,
             selector: SELECTOR,
+            target_program: [0u8; 32],
             beneficiary: beneficiary.to_bytes(),
             relay_fee: RELAY_FEE * 50, // proved for RELAY_FEE
+            action_accounts: 0,
+            payload: Vec::new(),
         }
         .pack(),
         vec![
@@ -511,15 +536,30 @@ fn submit_batch(
 }
 
 fn settle_ix(env: &Env, batch: &[(Pubkey, Pubkey, Keypair)], settler: &Pubkey) -> Instruction {
+    settle_ix_with_targets(env, batch, settler, &[])
+}
+
+/// Settlement where some spends invoke a program. `targets[i]`, when present,
+/// is the program account for `batch[i]`, which a CPI requires to be in the
+/// caller's account list.
+fn settle_ix_with_targets(
+    env: &Env,
+    batch: &[(Pubkey, Pubkey, Keypair)],
+    settler: &Pubkey,
+    targets: &[Option<Pubkey>],
+) -> Instruction {
     let mut metas = vec![
         AccountMeta::new(*settler, true),
         AccountMeta::new(env.pool, false),
         AccountMeta::new(env.vault, false),
     ];
-    for (spend, beneficiary, relay) in batch {
+    for (i, (spend, beneficiary, relay)) in batch.iter().enumerate() {
         metas.push(AccountMeta::new(*spend, false));
         metas.push(AccountMeta::new(*beneficiary, false));
         metas.push(AccountMeta::new(relay.pubkey(), false));
+        if let Some(Some(target)) = targets.get(i) {
+            metas.push(AccountMeta::new_readonly(*target, false));
+        }
     }
     Instruction::new_with_bytes(
         env.program_id,
@@ -727,7 +767,8 @@ fn a_member_can_always_exit_without_any_relay() {
     let beneficiary = member.pubkey();
 
     let merkle_proof = tree.proof(0).unwrap();
-    let binding = mirror_core::action_binding(SELECTOR, &beneficiary.to_bytes(), 0).unwrap();
+    let binding =
+        mirror_core::action_binding(SELECTOR, &[0u8; 32], &beneficiary.to_bytes(), 0, &[]);
     let witness = Witness {
         note: notes[0],
         merkle_proof: &merkle_proof,
@@ -751,8 +792,11 @@ fn a_member_can_always_exit_without_any_relay() {
             root: proof.public_inputs[0],
             nullifier,
             selector: SELECTOR,
+            target_program: [0u8; 32],
             beneficiary: beneficiary.to_bytes(),
             relay_fee: 0,
+            action_accounts: 0,
+            payload: Vec::new(),
         }
         .pack(),
         vec![
@@ -786,5 +830,248 @@ fn a_member_can_always_exit_without_any_relay() {
         after - before >= DENOMINATION - 100_000,
         "expected roughly the full denomination back, got {}",
         after - before
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Behavioural actions
+//
+// The brief asks for "Tornado Cash for behavioural patterns and withdrawals —
+// not for funds". A pool that only moves lamports answers the wrong question:
+// what should be deniable is that *you* staked, swapped or voted, not merely
+// where your money went.
+//
+// These exercise the pool invoking a real third-party program on a member's
+// behalf. The target is the actual SPL Memo program, fetched from mainnet, so
+// the CPI path runs against something that exists.
+// ---------------------------------------------------------------------------
+
+const INVOKE: u64 = mirror_pool_program::processor::SELECTOR_INVOKE;
+
+/// A spend that asks the pool to invoke `target` with `payload`.
+fn action_ix(
+    env: &Env,
+    proof: &mirror_circuit::SolanaProof,
+    nullifier: [u8; 32],
+    target: &Pubkey,
+    beneficiary: &Pubkey,
+    relay: &Pubkey,
+    payload: &[u8],
+) -> Instruction {
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+    Instruction::new_with_bytes(
+        env.program_id,
+        &MirrorIx::SubmitSpend {
+            proof_a: proof.proof_a,
+            proof_b: proof.proof_b,
+            proof_c: proof.proof_c,
+            root: proof.public_inputs[0],
+            nullifier,
+            selector: INVOKE,
+            target_program: target.to_bytes(),
+            beneficiary: beneficiary.to_bytes(),
+            relay_fee: RELAY_FEE,
+            action_accounts: 0,
+            payload: payload.to_vec(),
+        }
+        .pack(),
+        vec![
+            AccountMeta::new(*relay, true),
+            AccountMeta::new(env.pool, false),
+            AccountMeta::new(spend_pda, false),
+            AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+        ],
+    )
+}
+
+fn action_proof(
+    keys: &Keys,
+    tree: &MerkleTree,
+    notes: &[Note],
+    index: usize,
+    target: &Pubkey,
+    beneficiary: &Pubkey,
+    payload: &[u8],
+) -> mirror_circuit::SolanaProof {
+    use ark_std::rand::SeedableRng;
+    let merkle_proof = tree.proof(index as u64).unwrap();
+    let binding = mirror_core::action_binding(
+        INVOKE,
+        &target.to_bytes(),
+        &beneficiary.to_bytes(),
+        RELAY_FEE,
+        payload,
+    );
+    let witness = Witness {
+        note: notes[index],
+        merkle_proof: &merkle_proof,
+        root: tree.root().unwrap(),
+        action_binding: binding,
+    };
+    let mut rng = ark_std::rand::rngs::StdRng::from_seed([200 + index as u8; 32]);
+    prove(keys, &witness, &mut rng).expect("proving")
+}
+
+/// The thesis, end to end: a crowd of members each perform the *same shape* of
+/// protocol action, the pool invokes the target program for every one of them in
+/// a single transaction, and every invocation carries the pool as its signer.
+///
+/// An observer sees four memos land at one timestamp, signed by one pool, and
+/// has nothing in the transaction that distinguishes which member asked for
+/// which.
+#[test]
+fn a_crowd_of_members_perform_a_real_protocol_action_together() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let memo: Pubkey = MEMO_PROGRAM.parse().unwrap();
+    env.svm
+        .add_program(memo, &memo_bytes())
+        .expect("loading the real SPL Memo program");
+
+    let mut batch = Vec::new();
+    for i in 0..K_FLOOR as usize {
+        let beneficiary = Pubkey::new_unique();
+        let relay = Keypair::new();
+        env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+        // Every member sends the identical payload, which is what makes the
+        // crowd a crowd: the actions are indistinguishable by content.
+        let payload = b"mirror-pool".as_slice();
+        let proof = action_proof(&keys, &tree, &notes, i, &memo, &beneficiary, payload);
+        let nullifier = proof.public_inputs[1];
+        let ix = action_ix(
+            &env,
+            &proof,
+            nullifier,
+            &memo,
+            &beneficiary,
+            &relay.pubkey(),
+            payload,
+        );
+        env.send(ix, &relay)
+            .unwrap_or_else(|e| panic!("submitting action {i}: {e}"));
+        let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+        batch.push((spend_pda, beneficiary, relay));
+    }
+
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let targets: Vec<Option<Pubkey>> = batch.iter().map(|_| Some(memo)).collect();
+    let ix = settle_ix_with_targets(&env, &batch, &settler.pubkey(), &targets);
+    let cu = env.send_expect_cu(ix, &settler);
+    println!(
+        "settled {} real CPI actions in one transaction, {cu} CU",
+        batch.len()
+    );
+
+    for (spend, beneficiary, _) in &batch {
+        let mut data = env.svm.get_account(spend).unwrap().data;
+        let record = Spend::load(&mut data).unwrap();
+        assert_eq!(record.status(), STATUS_SETTLED);
+        assert_eq!(record.target_program(), memo.to_bytes());
+        assert_eq!(record.payload(), b"mirror-pool");
+        // The action was funded, so the target acted on real value.
+        assert!(env.svm.get_account(beneficiary).unwrap().lamports > 0);
+    }
+}
+
+#[test]
+fn a_relay_cannot_swap_the_target_program() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let memo: Pubkey = MEMO_PROGRAM.parse().unwrap();
+    env.svm.add_program(memo, &memo_bytes()).unwrap();
+
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+    let payload = b"hello".as_slice();
+    let proof = action_proof(&keys, &tree, &notes, 0, &memo, &beneficiary, payload);
+    let nullifier = proof.public_inputs[1];
+
+    // Proved for the memo program; submitted for something else.
+    let impostor = Pubkey::new_unique();
+    let ix = action_ix(
+        &env,
+        &proof,
+        nullifier,
+        &impostor,
+        &beneficiary,
+        &relay.pubkey(),
+        payload,
+    );
+    let err = env
+        .send(ix, &relay)
+        .expect_err("a swapped target program was accepted");
+    println!("target swap rejected: {err}");
+    assert!(err.contains("Custom(18)"), "expected proof failure: {err}");
+}
+
+#[test]
+fn a_relay_cannot_alter_the_action_payload() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let memo: Pubkey = MEMO_PROGRAM.parse().unwrap();
+    env.svm.add_program(memo, &memo_bytes()).unwrap();
+
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+    let proof = action_proof(&keys, &tree, &notes, 1, &memo, &beneficiary, b"stake 0.1");
+    let nullifier = proof.public_inputs[1];
+
+    let ix = action_ix(
+        &env,
+        &proof,
+        nullifier,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        b"stake 9.9", // proved for a different amount
+    );
+    let err = env
+        .send(ix, &relay)
+        .expect_err("a tampered action payload was accepted");
+    println!("payload tamper rejected: {err}");
+    assert!(err.contains("Custom(18)"), "expected proof failure: {err}");
+}
+
+#[test]
+fn an_action_cannot_re_enter_the_pool() {
+    // A payload that invokes mirror-pool itself would re-enter settlement in the
+    // middle of a lamport-moving loop. Refused explicitly rather than left to
+    // careful reading of the loop.
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+
+    let self_target = env.program_id;
+    let payload = b"reenter".as_slice();
+    let proof = action_proof(&keys, &tree, &notes, 2, &self_target, &beneficiary, payload);
+    let nullifier = proof.public_inputs[1];
+    let ix = action_ix(
+        &env,
+        &proof,
+        nullifier,
+        &self_target,
+        &beneficiary,
+        &relay.pubkey(),
+        payload,
+    );
+    env.send(ix, &relay).expect("submitting is allowed");
+
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+
+    // Alone, so wait out the timeout.
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+
+    let batch = vec![(spend_pda, beneficiary, relay.insecure_clone())];
+    let ix = settle_ix_with_targets(&env, &batch, &settler.pubkey(), &[Some(self_target)]);
+    let err = env.send(ix, &settler).expect_err("the pool invoked itself");
+    println!("self-invocation rejected: {err}");
+    assert!(
+        err.contains("Custom(23)"),
+        "expected SelfInvocationRefused: {err}"
     );
 }
