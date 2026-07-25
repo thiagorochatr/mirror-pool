@@ -15,6 +15,7 @@ pub mod facts;
 pub mod metrics;
 pub mod outcome;
 pub mod rpc;
+pub mod trace;
 
 pub use classify::{AnchorSet, Classifier, SetStructure, Thresholds};
 pub use edge::{FundingEdge, TransactionView};
@@ -22,3 +23,4 @@ pub use facts::{AddressFacts, SigCount};
 pub use metrics::Anonymity;
 pub use outcome::{Census, Outcome, TerminalRule, Unresolved};
 pub use rpc::{RpcClient, RpcError};
+pub use trace::{classify_sample, Chain, CollectionConfig, Collector, Sample, Scope};

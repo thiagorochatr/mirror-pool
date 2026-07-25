@@ -1,0 +1,703 @@
+//! Pass one: walk the birth-edge chain and record what was seen.
+//!
+//! The only networked step. Everything it observes is written to a sample file,
+//! and pass two runs over that file with no network at all — so a published
+//! number can be recomputed by anyone holding the sample, without RPC access and
+//! without trusting that our endpoint behaved the same way on their machine.
+//!
+//! ## Why the oldest edge
+//!
+//! Funding is, by definition, among an address's *oldest* transactions.
+//! `getSignaturesForAddress` returns newest-first with no forward cursor, so for
+//! an address with fewer than one page of lifetime signatures the birth
+//! transaction is the **last element of the first page**.
+//!
+//! A competing tracer scans the six most **recent** transactions of each
+//! address. For anything with more than six transactions that is the wrong end
+//! of the history, and it manufactures "unresolved" for exactly the active
+//! wallets a funding trace most wants to follow.
+//!
+//! ## Where pass one stops
+//!
+//! Only on rules that are properties of the address itself: it is a program or a
+//! PDA, it has no incoming edge, the edge is too small, or the budget ran out.
+//! The set-level rules wait for pass two, which sees the whole sample. Stopping
+//! early on an address-local rule is safe because pass two would fire the same
+//! rule at the same place; the recorded chain is always a superset of what pass
+//! two needs.
+
+use crate::{
+    classify::Thresholds,
+    facts::{AddressFacts, SigCount},
+    outcome::Unresolved,
+    rpc::{EndpointCheck, RpcClient, RpcError, SYSTEM_PROGRAM},
+};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+
+/// Which value flows the run followed.
+///
+/// Recorded in the manifest because it bounds what the result can mean: a wallet
+/// funded in USDC has no SOL funding event to find, and `getSignaturesForAddress`
+/// does not index the recipient's wallet for a token transfer into an existing
+/// account. A SOL-only run is structurally blind to the dominant exchange
+/// withdrawal path, and its unresolved bucket is partly that blindness rather
+/// than a property of the pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Scope {
+    /// Native SOL only.
+    Sol,
+    /// SOL plus SPL token flows. Two and a half to three times the call count.
+    SolAndSpl,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollectionConfig {
+    pub scope: Scope,
+    /// Hops to follow before giving up.
+    pub depth_max: u32,
+    /// Credits below this are not treated as funding.
+    pub min_edge_lamports: u64,
+    /// Signature pages to read before declaring the address high-activity.
+    pub sig_page_cap: u32,
+    pub page_size: u32,
+}
+
+impl Default for CollectionConfig {
+    fn default() -> Self {
+        CollectionConfig {
+            scope: Scope::Sol,
+            depth_max: 6,
+            // Below the rent-exempt minimum for an empty account, so account
+            // creation itself always counts as funding.
+            min_edge_lamports: 500_000,
+            sig_page_cap: 20,
+            page_size: 1_000,
+        }
+    }
+}
+
+/// Why pass one stopped walking a chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChainStop {
+    /// An address-local terminal rule fired. Pass two decides which.
+    LocalTerminal,
+    NoIncomingEdge,
+    BelowThreshold,
+    DepthExceeded,
+    PageCapHit,
+    RpcFailure,
+}
+
+impl ChainStop {
+    /// The unresolved reason this stop maps to when no rule fires in pass two.
+    pub fn as_unresolved(&self) -> Unresolved {
+        match self {
+            // A local terminal that pass two does not confirm means the address
+            // stopped being classifiable, which is a budget outcome rather than
+            // evidence about the chain.
+            ChainStop::LocalTerminal | ChainStop::DepthExceeded => Unresolved::DepthExceeded,
+            ChainStop::NoIncomingEdge => Unresolved::NoIncomingEdge,
+            ChainStop::BelowThreshold => Unresolved::BelowThreshold,
+            ChainStop::PageCapHit => Unresolved::PageCapHit,
+            ChainStop::RpcFailure => Unresolved::RpcFailure,
+        }
+    }
+}
+
+/// One member's provenance chain, seed first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Chain {
+    pub seed: String,
+    pub visited: Vec<String>,
+    pub stop: ChainStop,
+}
+
+/// What the manifest records so a reader can judge the run without rerunning it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Manifest {
+    pub endpoint: String,
+    pub first_available_block: u64,
+    pub archival_probe_ok: bool,
+    pub collected_at: i64,
+    pub config: CollectionConfig,
+    pub thresholds_hub_signatures: u64,
+    pub thresholds_distributor_fanout: usize,
+    pub thresholds_cluster_min_size: usize,
+    pub rpc_calls: u64,
+    /// Seeds dropped before tracing because they are not wallets: a program, a
+    /// PDA, a token account, or an address with no account at all.
+    ///
+    /// This is a **definitional** frame criterion, not an outcome-correlated
+    /// one. A token account is not a person and cannot be a member of an
+    /// anonymity set, so including it would measure something other than the
+    /// pool. Excluding addresses because they looked *hard to trace* would be a
+    /// different thing entirely and is exactly the bias that inflates a
+    /// competing measurement's untraceable bucket — so the count is published
+    /// rather than quietly applied.
+    pub excluded_non_wallet: Vec<String>,
+    /// Share of observed credits whose source was one of several debited
+    /// accounts, so the funder is a set rather than a single address.
+    pub ambiguous_attribution_rate: f64,
+}
+
+/// Everything pass one produced. This is the artifact that gets committed, and
+/// pass two needs nothing else.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sample {
+    pub manifest: Manifest,
+    pub chains: Vec<Chain>,
+    pub facts: BTreeMap<String, AddressFacts>,
+}
+
+impl Sample {
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(self)
+    }
+
+    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(s)
+    }
+}
+
+/// Walks chains from each seed, recording facts along the way.
+pub struct Collector<'a> {
+    client: &'a mut RpcClient,
+    config: CollectionConfig,
+    facts: BTreeMap<String, AddressFacts>,
+    /// Addresses whose observation is *complete*, meaning signatures were paged
+    /// and the birth edge resolved.
+    ///
+    /// Distinct from "we know the owner". Frame validation learns the owner of
+    /// every seed before tracing, so keying the cache on the owner alone would
+    /// make the trace believe every seed was already done and skip the paging
+    /// entirely — which yields a run where nothing resolves and nothing errors.
+    fully_observed: std::collections::BTreeSet<String>,
+    ambiguous: u64,
+    edges_seen: u64,
+}
+
+impl<'a> Collector<'a> {
+    pub fn new(client: &'a mut RpcClient, config: CollectionConfig) -> Self {
+        Collector {
+            client,
+            config,
+            facts: BTreeMap::new(),
+            fully_observed: std::collections::BTreeSet::new(),
+            ambiguous: 0,
+            edges_seen: 0,
+        }
+    }
+
+    /// Collects every seed and assembles the sample.
+    pub fn collect(
+        mut self,
+        seeds: &[String],
+        check: &EndpointCheck,
+        thresholds: &Thresholds,
+        now: i64,
+    ) -> Sample {
+        let mut chains = Vec::with_capacity(seeds.len());
+        let mut excluded_non_wallet = Vec::new();
+        for seed in seeds {
+            match self.is_wallet(seed) {
+                Ok(true) => chains.push(self.trace(seed)),
+                Ok(false) => excluded_non_wallet.push(seed.clone()),
+                // An endpoint failure here is not evidence that the seed is not
+                // a wallet, so it stays in the frame and fails honestly during
+                // the trace.
+                Err(_) => chains.push(self.trace(seed)),
+            }
+        }
+        Sample {
+            manifest: Manifest {
+                endpoint: check.endpoint.clone(),
+                first_available_block: check.first_available_block,
+                archival_probe_ok: check.archival_probe_ok,
+                collected_at: now,
+                config: self.config.clone(),
+                thresholds_hub_signatures: thresholds.hub_signatures,
+                thresholds_distributor_fanout: thresholds.distributor_fanout,
+                thresholds_cluster_min_size: thresholds.cluster_min_size,
+                rpc_calls: self.client.calls_made(),
+                excluded_non_wallet,
+                ambiguous_attribution_rate: if self.edges_seen == 0 {
+                    0.0
+                } else {
+                    self.ambiguous as f64 / self.edges_seen as f64
+                },
+            },
+            chains,
+            facts: self.facts,
+        }
+    }
+
+    /// Whether a seed belongs in the frame at all.
+    ///
+    /// A member of an anonymity set is a person's wallet: an existing account
+    /// owned by the system program. A token account, a PDA, a program, or an
+    /// address whose account has been closed is none of those.
+    fn is_wallet(&mut self, address: &str) -> Result<bool, RpcError> {
+        let owner = self.client.account_owner(address)?;
+        let verdict = match &owner {
+            None => false,
+            Some(o) => o.owner == SYSTEM_PROGRAM && !o.executable,
+        };
+        // Keep what we learned; the trace would otherwise fetch it again.
+        let entry = self
+            .facts
+            .entry(address.to_string())
+            .or_insert_with(|| AddressFacts::new(address));
+        entry.executable = owner.as_ref().is_some_and(|o| o.executable);
+        entry.owner = owner.map(|o| o.owner);
+        Ok(verdict)
+    }
+
+    fn trace(&mut self, seed: &str) -> Chain {
+        let mut visited = Vec::new();
+        let mut current = seed.to_string();
+
+        for hop in 0..=self.config.depth_max {
+            visited.push(current.clone());
+
+            let stop = match self.observe(&current) {
+                Err(_) => Some(ChainStop::RpcFailure),
+                Ok(local_terminal) if local_terminal => Some(ChainStop::LocalTerminal),
+                Ok(_) => None,
+            };
+            if let Some(stop) = stop {
+                return Chain {
+                    seed: seed.to_string(),
+                    visited,
+                    stop,
+                };
+            }
+
+            if hop == self.config.depth_max {
+                return Chain {
+                    seed: seed.to_string(),
+                    visited,
+                    stop: ChainStop::DepthExceeded,
+                };
+            }
+
+            let facts = &self.facts[&current];
+            let Some(edge) = facts.birth_edge.clone() else {
+                let stop = if matches!(facts.signatures, SigCount::AtLeast(_)) {
+                    ChainStop::PageCapHit
+                } else {
+                    ChainStop::NoIncomingEdge
+                };
+                return Chain {
+                    seed: seed.to_string(),
+                    visited,
+                    stop,
+                };
+            };
+            if edge.value < self.config.min_edge_lamports {
+                return Chain {
+                    seed: seed.to_string(),
+                    visited,
+                    stop: ChainStop::BelowThreshold,
+                };
+            }
+
+            // Follow the first source. With one source this is exact; with
+            // several the edge is already flagged ambiguous and the rate is
+            // reported, rather than the choice being hidden.
+            let next = edge.sources[0].clone();
+            self.note_funding(&next, &current);
+            current = next;
+        }
+
+        Chain {
+            seed: seed.to_string(),
+            visited,
+            stop: ChainStop::DepthExceeded,
+        }
+    }
+
+    /// Records that `funder` created `child`, for the fan-out rule.
+    fn note_funding(&mut self, funder: &str, child: &str) {
+        let entry = self
+            .facts
+            .entry(funder.to_string())
+            .or_insert_with(|| AddressFacts::new(funder));
+        if !entry.funded.iter().any(|f| f == child) {
+            entry.funded.push(child.to_string());
+        }
+    }
+
+    /// Fills in one address's facts. Returns whether an address-local terminal
+    /// rule fired, which is the only reason pass one stops early.
+    fn observe(&mut self, address: &str) -> Result<bool, RpcError> {
+        if self.fully_observed.contains(address) {
+            // Seen completely on another chain. Re-fetching would cost calls and
+            // could return a different answer as the chain advances, which would
+            // make the sample internally inconsistent.
+            let existing = &self.facts[address];
+            return Ok(is_local_terminal(existing));
+        }
+
+        let mut facts = self
+            .facts
+            .remove(address)
+            .unwrap_or_else(|| AddressFacts::new(address));
+
+        // Frame validation may already have fetched this; do not pay twice.
+        if facts.owner.is_none() && !facts.executable {
+            let owner = self.client.account_owner(address)?;
+            facts.executable = owner.as_ref().is_some_and(|o| o.executable);
+            facts.owner = owner.map(|o| o.owner);
+        }
+
+        if is_local_terminal(&facts) {
+            // A program or PDA terminates here; its funding history is not a
+            // person's and costs calls to walk.
+            self.facts.insert(address.to_string(), facts);
+            self.fully_observed.insert(address.to_string());
+            return Ok(true);
+        }
+
+        self.page_to_birth(address, &mut facts)?;
+        self.facts.insert(address.to_string(), facts);
+        self.fully_observed.insert(address.to_string());
+        Ok(false)
+    }
+
+    /// Pages backwards to the oldest signature and reads the birth edge from it.
+    fn page_to_birth(&mut self, address: &str, facts: &mut AddressFacts) -> Result<(), RpcError> {
+        let mut before: Option<String> = None;
+        let mut seen: u64 = 0;
+        let mut oldest: Option<crate::rpc::SignatureInfo> = None;
+
+        for page in 0..self.config.sig_page_cap {
+            let batch = self.client.signatures_for_address(
+                address,
+                before.as_deref(),
+                self.config.page_size,
+            )?;
+            if batch.is_empty() {
+                break;
+            }
+            seen += batch.len() as u64;
+            let last = batch.last().expect("non-empty").clone();
+            before = Some(last.signature.clone());
+            oldest = Some(last);
+
+            if (batch.len() as u32) < self.config.page_size {
+                // A short page is the end of the history: this is exact.
+                facts.signatures = SigCount::Exact(seen);
+                break;
+            }
+            if page + 1 == self.config.sig_page_cap {
+                // The cap is a classification signal with a name, never a
+                // silent unresolved: the count is a lower bound and says so.
+                facts.signatures = SigCount::AtLeast(seen);
+                return Ok(());
+            }
+        }
+
+        let Some(oldest) = oldest else {
+            facts.signatures = SigCount::Exact(0);
+            return Ok(());
+        };
+        if !facts.signatures.is_exact() && seen > 0 {
+            facts.signatures = SigCount::Exact(seen);
+        }
+        facts.first_seen = oldest.block_time;
+
+        let tx = self.client.transaction(&oldest.signature)?;
+        // The fee payer is the first key, and it is what fee-payer clustering
+        // groups on.
+        if let Some(payer) = tx.account_keys.first() {
+            if !facts.fee_payers.iter().any(|p| p == payer) {
+                facts.fee_payers.push(payer.clone());
+            }
+        }
+        if let Some(edge) = tx.edge_crediting(address) {
+            self.edges_seen += 1;
+            if edge.ambiguous_attribution {
+                self.ambiguous += 1;
+            }
+            facts.birth_edge = Some(edge);
+        }
+        Ok(())
+    }
+}
+
+/// Address-local terminal test: a program or a PDA.
+fn is_local_terminal(facts: &AddressFacts) -> bool {
+    facts
+        .owner
+        .as_ref()
+        .is_some_and(|o| o != SYSTEM_PROGRAM || facts.executable)
+}
+
+/// Pass two: the first terminal along each chain, over the complete sample.
+pub fn classify_sample(
+    sample: &Sample,
+    anchors: &crate::classify::AnchorSet,
+    thresholds: &Thresholds,
+    now: i64,
+) -> (
+    Vec<(String, crate::outcome::Outcome)>,
+    crate::outcome::Census,
+) {
+    use crate::{
+        classify::{Classifier, SetStructure},
+        outcome::{Census, Outcome},
+    };
+
+    let structure = SetStructure::build(&sample.facts, thresholds);
+    let classifier = Classifier {
+        anchors,
+        structure: &structure,
+        thresholds,
+        now,
+    };
+
+    let mut results = Vec::with_capacity(sample.chains.len());
+    let mut census = Census::default();
+
+    for chain in &sample.chains {
+        let mut outcome = None;
+        for (depth, address) in chain.visited.iter().enumerate() {
+            // The seed itself is a member, not its own origin.
+            if depth == 0 {
+                continue;
+            }
+            if let Some(facts) = sample.facts.get(address) {
+                if let Some(found) = classifier.classify(facts) {
+                    outcome = Some(found);
+                    break;
+                }
+            }
+        }
+        let outcome = outcome.unwrap_or(Outcome::Unresolved {
+            reason: chain.stop.as_unresolved(),
+            depth: chain.visited.len().saturating_sub(1) as u32,
+        });
+        census.record(&outcome);
+        results.push((chain.seed.clone(), outcome));
+    }
+
+    (results, census)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{classify::AnchorSet, edge::FundingEdge, outcome::Outcome};
+
+    const NOW: i64 = 1_800_000_000;
+
+    fn wallet(address: &str) -> AddressFacts {
+        let mut f = AddressFacts::new(address);
+        f.owner = Some(SYSTEM_PROGRAM.to_string());
+        f
+    }
+
+    fn edge(sink: &str, source: &str, value: u64) -> FundingEdge {
+        FundingEdge {
+            sink: sink.into(),
+            sources: vec![source.into()],
+            value,
+            signature: "sig".into(),
+            slot: 1,
+            block_time: Some(NOW - 1_000),
+            ambiguous_attribution: false,
+        }
+    }
+
+    fn sample_with(chains: Vec<Chain>, facts: Vec<AddressFacts>) -> Sample {
+        Sample {
+            manifest: Manifest {
+                endpoint: "test".into(),
+                first_available_block: 0,
+                archival_probe_ok: true,
+                collected_at: NOW,
+                config: CollectionConfig::default(),
+                thresholds_hub_signatures: 5_000,
+                thresholds_distributor_fanout: 20,
+                thresholds_cluster_min_size: 3,
+                rpc_calls: 0,
+                excluded_non_wallet: Vec::new(),
+                ambiguous_attribution_rate: 0.0,
+            },
+            chains,
+            facts: facts.into_iter().map(|f| (f.address.clone(), f)).collect(),
+        }
+    }
+
+    #[test]
+    fn a_chain_resolves_at_the_first_terminal_past_the_seed() {
+        let mut program = wallet("Vault1");
+        program.owner = Some("Whirlpoo1111111111111111111111111111111111".into());
+        let sample = sample_with(
+            vec![Chain {
+                seed: "member".into(),
+                visited: vec!["member".into(), "hop1".into(), "Vault1".into()],
+                stop: ChainStop::LocalTerminal,
+            }],
+            vec![wallet("member"), wallet("hop1"), program],
+        );
+        let (results, census) =
+            classify_sample(&sample, &AnchorSet::default(), &Thresholds::default(), NOW);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1.label().unwrap(), "program:Vault1");
+        assert_eq!(census.resolved, 1);
+    }
+
+    /// The seed is the member being measured, so it must not classify itself.
+    /// Without this a member who happens to be a busy address would be its own
+    /// provenance class, which is meaningless.
+    #[test]
+    fn a_seed_is_never_its_own_origin() {
+        let mut busy_seed = wallet("member");
+        busy_seed.signatures = SigCount::AtLeast(50_000);
+        busy_seed.first_seen = Some(NOW - 400 * 24 * 3_600);
+
+        let sample = sample_with(
+            vec![Chain {
+                seed: "member".into(),
+                visited: vec!["member".into()],
+                stop: ChainStop::NoIncomingEdge,
+            }],
+            vec![busy_seed],
+        );
+        let (results, _) =
+            classify_sample(&sample, &AnchorSet::default(), &Thresholds::default(), NOW);
+        assert!(
+            matches!(
+                results[0].1,
+                Outcome::Unresolved {
+                    reason: Unresolved::NoIncomingEdge,
+                    ..
+                }
+            ),
+            "the seed classified itself: {:?}",
+            results[0].1
+        );
+    }
+
+    #[test]
+    fn every_chain_stop_maps_to_a_named_outcome() {
+        // No stop may fall through to a default, and an RPC failure must stay
+        // distinguishable from a genuine dead end.
+        for (stop, expected) in [
+            (ChainStop::NoIncomingEdge, Unresolved::NoIncomingEdge),
+            (ChainStop::BelowThreshold, Unresolved::BelowThreshold),
+            (ChainStop::DepthExceeded, Unresolved::DepthExceeded),
+            (ChainStop::PageCapHit, Unresolved::PageCapHit),
+            (ChainStop::RpcFailure, Unresolved::RpcFailure),
+        ] {
+            assert_eq!(stop.as_unresolved(), expected, "{stop:?} mapped wrongly");
+        }
+    }
+
+    #[test]
+    fn an_rpc_failure_stays_a_failure_and_is_excluded_from_the_distribution() {
+        let sample = sample_with(
+            vec![Chain {
+                seed: "member".into(),
+                visited: vec!["member".into(), "hop1".into()],
+                stop: ChainStop::RpcFailure,
+            }],
+            vec![wallet("member"), wallet("hop1")],
+        );
+        let (_, census) =
+            classify_sample(&sample, &AnchorSet::default(), &Thresholds::default(), NOW);
+        assert_eq!(census.rpc_failure, 1);
+        assert_eq!(census.measurable(), 0);
+        assert!(
+            !census.may_publish(),
+            "a run that is all failure must not publish"
+        );
+    }
+
+    /// Two members funded through the same exchange land in the same class even
+    /// though their chains differ in length. That is the whole mechanism.
+    #[test]
+    fn members_sharing_an_origin_share_a_class() {
+        let sample = sample_with(
+            vec![
+                Chain {
+                    seed: "alice".into(),
+                    visited: vec!["alice".into(), "ExchangeHot".into()],
+                    stop: ChainStop::LocalTerminal,
+                },
+                Chain {
+                    seed: "bob".into(),
+                    visited: vec!["bob".into(), "hop".into(), "ExchangeHot".into()],
+                    stop: ChainStop::LocalTerminal,
+                },
+            ],
+            vec![
+                wallet("alice"),
+                wallet("bob"),
+                wallet("hop"),
+                wallet("ExchangeHot"),
+            ],
+        );
+        let anchors = AnchorSet::from_pairs([("ExchangeHot", "someexchange")]);
+        let (results, _) = classify_sample(&sample, &anchors, &Thresholds::default(), NOW);
+        assert_eq!(results[0].1.label(), results[1].1.label());
+        assert_eq!(results[0].1.label().unwrap(), "entity:someexchange");
+    }
+
+    #[test]
+    fn a_sample_round_trips_through_json() {
+        let mut funded = wallet("funder");
+        funded.birth_edge = Some(edge("funder", "upstream", 1_000_000));
+        funded.funded = vec!["a".into(), "b".into()];
+        let sample = sample_with(
+            vec![Chain {
+                seed: "member".into(),
+                visited: vec!["member".into(), "funder".into()],
+                stop: ChainStop::DepthExceeded,
+            }],
+            vec![wallet("member"), funded],
+        );
+        let json = sample.to_json().unwrap();
+        let back = Sample::from_json(&json).unwrap();
+        assert_eq!(
+            sample, back,
+            "the committed artifact must survive a round trip"
+        );
+    }
+
+    /// The property the whole two-pass design exists for: analysis of a
+    /// committed sample is a pure function, so anyone can recompute the headline
+    /// without RPC access.
+    #[test]
+    fn classifying_the_same_sample_twice_gives_the_same_answer() {
+        let mut hub = wallet("Hub");
+        hub.signatures = SigCount::AtLeast(50_000);
+        hub.first_seen = Some(NOW - 400 * 24 * 3_600);
+        let sample = sample_with(
+            vec![Chain {
+                seed: "member".into(),
+                visited: vec!["member".into(), "Hub".into()],
+                stop: ChainStop::LocalTerminal,
+            }],
+            vec![wallet("member"), hub],
+        );
+        let a = classify_sample(&sample, &AnchorSet::default(), &Thresholds::default(), NOW);
+        let b = classify_sample(&sample, &AnchorSet::default(), &Thresholds::default(), NOW);
+        assert_eq!(a.0, b.0);
+        assert_eq!(a.1, b.1);
+        assert_eq!(a.0[0].1.label().unwrap(), "busy-unlabelled:Hub");
+    }
+
+    #[test]
+    fn the_default_edge_threshold_admits_account_creation() {
+        // Rent exemption for an empty account is about 890,880 lamports, so a
+        // threshold above it would discard the very event that creates a wallet.
+        let c = CollectionConfig::default();
+        assert!(
+            c.min_edge_lamports < 890_880,
+            "the threshold would reject account creation itself"
+        );
+    }
+}

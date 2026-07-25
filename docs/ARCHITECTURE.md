@@ -1,0 +1,220 @@
+# Architecture
+
+## What the protocol is
+
+An anonymity set for *actions*. Members deposit a fixed denomination; later, a
+member proves in zero knowledge that they own some note in the set and directs
+the pool to act. The pool executes. An observer sees that an action happened and
+cannot say which member asked for it.
+
+Four crates and one program:
+
+```
+mirror-core        field, Poseidon, Merkle accumulator, notes   (linked on-chain)
+mirror-circuit     R1CS gadget, membership circuit, prover      (host only)
+mirror-pool        the on-chain program
+mirror-provenance  funding-provenance measurement               (host only)
+mirror-cli         setup, endpoint check, collect, analyze
+```
+
+`mirror-core` is shared by the program and the host deliberately: a commitment,
+a nullifier and an action binding each have exactly one implementation, so the
+two sides cannot compute different answers and discover it in production.
+
+## The note model
+
+```
+note        = (k, r)
+commitment  = H3(k, r, denom_tag)     the Merkle leaf
+nullifier   = H1(k)                   revealed on spend, spent once ever
+```
+
+**The denomination is a pool constant, not a field in the note.** One pool serves
+one denomination, so the escrowed lamports and the hidden commitment cannot
+disagree. This is not a stylistic choice — it makes a class of drain
+unrepresentable rather than merely untested. Two competing submissions in this
+bounty are drainable at exactly this point: one escrows an amount that is never
+bound to its commitment, so a depositor of one lamport can withdraw the whole
+pool with an entirely valid proof; the other issues an epoch-scoped nullifier
+against a value payout, so one deposit pays out once per epoch forever.
+
+Nullifiers here are spend-once, never epoch-scoped.
+
+### Domain separation by arity
+
+Poseidon instances of different width are different permutations, so arity is
+itself a domain separator and a free one:
+
+| value | arity |
+|---|---|
+| nullifier | 1 |
+| Merkle node | 2 |
+| note commitment | 3 |
+| action binding | 4 |
+
+An integer tag was the first design and it was wrong: with a small tag constant,
+a Merkle node whose left child equals the tag collides with a nullifier.
+Reaching that state needs a Poseidon preimage, so it was not exploitable — but
+arity separation removes the question rather than bounding it.
+
+## The accounting invariant
+
+```
+vault.lamports  >=  denomination × (deposits − settled_spends) + rent
+```
+
+The amount owed is a function of two counters and the pool's constant
+denomination. Nothing a prover supplies can influence it. It is re-read from the
+vault *after* lamports move rather than inferred from the arithmetic that moved
+them, and the spend counter refuses to exceed the deposit counter outright.
+
+Escrow lives in its own vault PDA holding no data, so the invariant reads against
+a balance containing nothing but escrow and its own rent. Entry fees accrue on
+the pool account instead, where they can never be mistaken for lamports backing
+an unspent note.
+
+## The circuit
+
+*I know `(k, r, denom_tag)` such that `H3(k, r, denom_tag)` is a leaf of the tree
+with root `R`, my nullifier is `H1(k)`, and this proof is bound to `action`.*
+
+Three public inputs, and that is a cost decision. On-chain verification measures
+at `74,179 + 5,661 × N` compute units, so each input costs about 5.7k CU.
+
+| public input | why it cannot be a witness |
+|---|---|
+| `root` | the program checks it against its own root history |
+| `nullifier` | the program records it to prevent replay |
+| `action_binding` | the program recomputes it from the action it executes |
+
+`denom_tag` stays a witness because Merkle membership already constrains it: a
+pool's tree only ever contains leaves committed at that pool's denomination.
+
+The action binding is squared under constraint. A Groth16 public input
+participates in verification only through the R1CS columns that reference it; an
+input used in no constraint has an all-zero column, its `gamma_abc` term is the
+identity, and *any* value satisfies the equation. Without that one constraint a
+relay could swap the action after proving and the proof would still verify.
+`tests/onchain_layout.rs` tampers with that exact input and asserts the real
+verifier rejects it, so the property is checked rather than reasoned about.
+
+### Three-way parity
+
+The gadget, the host and the syscall must compute one function. `solana-poseidon`
+is the only Poseidon entry point, and it is cfg-gated upstream to the syscall
+on-chain and to light-poseidon off-chain, so host and program agree by
+construction. The R1CS gadget then reads light-poseidon's published round
+constants rather than re-deriving them.
+
+All three are checked against circomlib's published `poseidon([1,2])` vector
+rather than against each other, so all three agreeing on a wrong answer is not a
+reachable state. Several published Solana projects ship a gadget whose native and
+in-circuit hashes are different functions; that failure only appears at proving
+time, and this is the test that catches it.
+
+A pure-Rust Poseidon on SBF overflows the 4 KB stack frame and costs roughly
+1,500× the syscall even where codegen lets it complete, so no arkworks code is
+linked into the program.
+
+## Instructions
+
+**`init_pool`** — permissionless. One pool per denomination, globally: splitting
+deposits of the same size across pools splits the anonymity set, and a split set
+is worse for every member in it. There is no privileged authority, so no key
+whose loss freezes the escrow.
+
+**`deposit`** — escrows exactly the pool's denomination, read from the pool and
+never from the instruction, and appends the commitment to the accumulator.
+
+**`submit_spend`** — verifies the Groth16 proof on-chain, burns the nullifier,
+records the authorised action. Pays out nothing.
+
+The action binding is never transmitted. It is recomputed on-chain from the
+selector, the beneficiary and the relay fee and used as the third public input,
+so a relay that alters any of them produces a different binding and the pairing
+fails. There is no separate field that could be checked incorrectly.
+
+The relay signs, never the member. A member paying their own fee would sign with
+their own wallet and destroy their own anonymity, so no member key appears on
+chain on this path.
+
+**`settle_epoch`** — executes a batch in one transaction so every payout shares a
+timestamp and an ordering.
+
+The crowd rule is conditional: a batch needs `k_floor` spends, **or** every spend
+in it must have waited out an hour. Requiring the crowd unconditionally is a
+liveness hazard — a quiet pool could hold a member's funds until a crowd that
+never comes. Dropping it makes "synchronised" a word rather than a property.
+
+### The permissionless exit
+
+There is no `self_spend` instruction because none is needed. A member acts as
+their own relay with a zero fee, and settlement is already permissionless, so
+they settle their own batch once the timeout passes. Nothing in the protocol can
+hold their escrow.
+
+The cost is the expected one: their own wallet signs, giving up the anonymity the
+relay path provides. It is an escape hatch, not a mode of operation.
+
+## What the k floor does and does not do
+
+`k_floor` bounds **program-visible membership**: how many notes the tree holds.
+That is all a program can check, because the thing that actually shrinks an
+anonymity set is not visible on chain.
+
+An observer can partition members by where their capital came from. Learning a
+member's funding class leaves only that class to guess within, so the anonymity
+that survives is the size of the class rather than `k`. No deposit pool controls
+where its users' money came from.
+
+So the protocol does two things about it, and claims exactly those two:
+
+1. **The action side is closed.** Actions are executed by the pool PDA, so the
+   on-chain funding trace of an action leads to the pool and is identical for
+   every member.
+2. **The membership side is measured.** `mirror-provenance` computes it from real
+   chain data, and the method and its limits are published with the number.
+
+## The measurement
+
+Two passes, and the split is the point.
+
+**Pass one** walks each member's funding chain by the birth edge — the oldest
+value credit, the event that created the account — and writes everything it
+observed to a sample file. It is the only networked step.
+
+**Pass two** classifies over the complete sample, offline. Two of the five
+terminal rules are properties of the *set* rather than of an address, so
+classifying during traversal would make a member's class depend on visit order.
+Given the same sample, pass two always produces the same partition, which is what
+lets someone else check a published number without RPC access.
+
+Design choices that exist to avoid specific published defects:
+
+- Edges come from **balance deltas**, not instruction parsing, which is blind to
+  every program that moves lamports by direct account mutation.
+- The **birth edge** is the oldest credit. A competing tracer scans the six most
+  *recent* transactions, which is the wrong end of the history for anything with
+  more than six.
+- The **hub threshold is decoupled from the paging cap**. In a competing tracer
+  the two are the same number, so "reaches an attributable origin" there means
+  "hit the RPC page cap".
+- **RPC failures are never evidence.** They are counted separately and excluded
+  from the distribution, and above a 1% failure rate the run refuses to print a
+  headline rather than printing a warning above one.
+- The endpoint is **checked before the run**. A truncated endpoint returns `null`
+  rather than an error for pruned history, so a collection against one would look
+  healthy and report every old funding event as absent.
+- Seeds that are not wallets are excluded on a **definitional** criterion and the
+  count is published. Excluding addresses for looking hard to trace would be a
+  different thing and is the bias that inflates a competing measurement.
+
+The headline is the loss factor `ρ = 2^−H(C)` rather than effective-k, because it
+is independent of `k` and therefore comparable across pools. Effective-k measured
+at small `k` systematically understates the steady-state loss and cannot be
+extrapolated upward.
+
+`2^H(C)` — entropy over the class-size distribution — is widely quoted as the
+effective anonymity set and is **inverted**: it is maximised when every member
+stands alone, which is total deanonymisation. It is the leakage. The anonymity is
+`2^H(X|C)`.
