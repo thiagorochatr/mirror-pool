@@ -30,7 +30,12 @@ So this submission claims exactly two things:
    action's on-chain funding trace leads to the pool and is identical for every
    member.
 2. **The membership side is measured**, from real mainnet data, with the method
-   and its limits published beside the number.
+   and its limits published beside the number. Measured on a live pool's
+   depositors: `ρ = 0.1219`, inside an unresolved bracket of `0.0253 … 0.1837`,
+   from a clean census with zero infrastructure failures — and the tool declines
+   to call that a result, because 40 of 84 members reached a class and two-thirds
+   of the class distribution was never observed. `docs/MEASUREMENT_LOG.md` has
+   every run, including the two that produced nothing.
 
 Anything we cannot support with a measurement whose method is published, we do
 not say. There is a section below of things we deliberately do not claim.

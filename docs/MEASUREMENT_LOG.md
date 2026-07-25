@@ -67,10 +67,90 @@ anything was wrong.
 
 ---
 
-## Run 2 — planned
+## Run 2 — 2026-07-25, member-weighted frame, refused on failure rate
 
-**Frame.** Depositors of a live pool, enumerated from its deposit instructions,
-each address counted once regardless of how often it transacts.
+**Frame.** 100 depositors of Privacy Cash (`9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD`),
+enumerated by `mirror seeds` from the program's own deposit transactions and
+strided across signature pages so the sample spans the pool's history rather than
+its most recent minute. 13 excluded as non-wallets before tracing; 87 attempted.
 
-This is the member-weighted frame, and it is the only one from which an
-effective-k for that pool means anything.
+**Endpoint.** Alchemy, archival probes passed. Depth 8, page cap 60. 4,852 calls.
+
+```
+attempted 87 | resolved 47 | evidence-unresolved 8 | budget-unresolved 19
+             | scope-unresolved 0 | rpc failures 13 (14.94%)
+```
+
+**No headline.** The failure rate is 14.94%, so `analyze` refused. This was the
+frame working and the endpoint not: 47 of 87 members reached a class, against
+zero under Run 1's transaction-weighted frame.
+
+**What the failures actually were.** The collector reported every failure as
+`RpcFailure` with no cause, which made the census honest and the run
+undiagnosable. Instrumenting it showed HTTP 429 arriving at **0.7 requests per
+second** — far below any documented rate limit. Providers meter by compute units,
+not request count, and a 1,000-signature page is expensive in those terms. So the
+cause was not the request rate, and lowering it would not have helped; the cause
+was a page cap of 60, set on the mistaken belief that paging deeper would resolve
+more chains.
+
+It would not have. The volume-hub rule needs enough history to clear its
+threshold and estimate an age — about eight pages. The other fifty-two were
+waste that bought nothing and spent the budget that made the endpoint refuse.
+
+## Run 3 — 2026-07-25, clean census, honest bracket
+
+**Frame.** The same 100 depositors. 16 excluded as non-wallets; 84 attempted.
+
+**Endpoint.** Alchemy, archival probes passed. Depth 8, **page cap 8**. 1,029
+calls — a fifth of Run 2 — at 1.5 requests per second.
+
+```
+attempted 84 | resolved 40 | evidence-unresolved 5 | budget-unresolved 39
+             | scope-unresolved 0 | rpc failures 0 (0.00%)
+```
+
+**Zero infrastructure failures.** Nothing in the unresolved bucket is ours.
+
+| quantity | value |
+|---|---|
+| resolved members | 40 |
+| provenance classes | 17 |
+| **loss factor ρ (point)** | **0.1219** |
+| **ρ (unresolved bracket)** | **0.0253 … 0.1837** |
+| effective-k, Shannon | 4.88 |
+| effective-k, min-entropy | 2.35 |
+| Shannon leakage | 3.04 bits |
+| Good–Turing coverage | 0.65 |
+| Chao1 richness | 108 classes, against 17 observed |
+
+**The tool declines to call this a result, and it is right.** Two gates fire:
+
+*Not informative.* 40 of 84 members reached a class — just under half. The
+bracket's two readings, unresolved merged into one class versus split into
+singletons, differ by more than sevenfold. Quoting either alone would describe
+the sampling budget rather than the pool.
+
+*Under-sampled.* Chao1 estimates 108 provenance classes against 17 observed, and
+Good–Turing coverage is 0.65. Most of the class distribution was never seen, and
+effective-k measured at small k understates the steady-state loss and does not
+extrapolate upward.
+
+**What this run does establish.** The pipeline works end to end against live
+mainnet with a clean census; the member-weighted frame resolves a near-majority
+where the transaction-weighted one resolved nothing; and the honesty machinery is
+load-bearing rather than decorative — it refused three consecutive runs, twice on
+the failure gate and once on the bracket, and each refusal was correct.
+
+**What a publishable ρ would need.** More resolution, not more members: 39 of the
+44 unresolved are budget outcomes, chains that ran out of depth or paging before
+reaching a class. That is a bigger call budget spent on depth rather than on
+sample size, which is a straightforward thing to buy and not something this
+submission claims to have bought.
+
+## What we do not conclude
+
+Nothing about how private Privacy Cash is. ρ = 0.1219 is a point estimate inside
+a bracket that spans an order of magnitude, from a sample whose class
+distribution is two-thirds unobserved. The number is published because the method
+is published, not because it settles anything.

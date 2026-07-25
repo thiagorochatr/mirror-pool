@@ -334,7 +334,7 @@ fn main() -> Result<()> {
                     // started throttling.
                     let elapsed = started.elapsed().as_secs_f64().max(0.001);
                     eprintln!(
-                        "  [{:>3}/{}] {}… {} hops, {:?}  ({} calls, {:.1}/s, {:.0}s elapsed)",
+                        "  [{:>3}/{}] {}… {} hops, {:?}  ({} calls, {:.1}/s, {:.0}s elapsed){}",
                         p.done,
                         p.total,
                         &p.seed[..p.seed.len().min(8)],
@@ -343,6 +343,10 @@ fn main() -> Result<()> {
                         p.rpc_calls,
                         p.rpc_calls as f64 / elapsed,
                         elapsed,
+                        p.error
+                            .as_deref()
+                            .map(|e| format!("\n        -> {}", &e[..e.len().min(160)]))
+                            .unwrap_or_default(),
                     );
                 });
 

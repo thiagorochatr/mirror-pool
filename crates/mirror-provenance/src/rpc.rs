@@ -98,7 +98,11 @@ impl RpcClient {
         RpcClient {
             endpoint: endpoint.into(),
             agent: ureq::AgentBuilder::new()
-                .timeout(Duration::from_secs(30))
+                . // A full signature page is a large response, and the slowest ones on a
+              // busy address exceeded thirty seconds — which arrived as a
+              // transport failure and was counted against the run rather than
+              // retried.
+              timeout(Duration::from_secs(90))
                 .build(),
             min_interval: interval,
             last_call: None,
@@ -147,9 +151,13 @@ impl RpcClient {
             "params": params,
         });
 
-        let mut wait = std::time::Duration::from_millis(800);
+        // Providers meter by compute units, not request count, and a full
+        // signature page is expensive in those terms — so a 429 arrives even at
+        // well under one request per second, and the budget needs seconds to
+        // refill rather than milliseconds.
+        let mut wait = std::time::Duration::from_secs(2);
         let mut response: Option<JsonRpcResponse> = None;
-        for attempt in 0..6 {
+        for attempt in 0..8 {
             self.pace();
             self.calls += 1;
             match self.agent.post(&self.endpoint).send_json(body.clone()) {
@@ -157,7 +165,7 @@ impl RpcClient {
                     response = Some(r.into_json().map_err(|e| RpcError::Shape(e.to_string()))?);
                     break;
                 }
-                Err(ureq::Error::Status(429 | 502 | 503, _)) if attempt < 5 => {
+                Err(ureq::Error::Status(429 | 502 | 503, _)) if attempt < 7 => {
                     std::thread::sleep(wait);
                     wait *= 2;
                 }

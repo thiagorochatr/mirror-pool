@@ -59,6 +59,14 @@ pub struct CollectionConfig {
     /// Credits below this are not treated as funding.
     pub min_edge_lamports: u64,
     /// Signature pages to read before declaring the address high-activity.
+    ///
+    /// Small on purpose. Paging exists to find the birth edge, and for an
+    /// address busy enough not to reach it, what we actually need is only enough
+    /// history to clear the volume-hub threshold and estimate an age — a few
+    /// thousand signatures, not tens of thousands. Raising this buys almost
+    /// nothing and costs a great deal: providers meter by compute units, and a
+    /// deep page walk over busy funders is what makes an endpoint start
+    /// refusing.
     pub sig_page_cap: u32,
     pub page_size: u32,
 }
@@ -114,7 +122,7 @@ impl ChainStop {
 ///
 /// A callback rather than printing: a library that writes to stdout takes a
 /// decision that belongs to whoever is calling it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Progress<'a> {
     pub done: usize,
     pub total: usize,
@@ -123,6 +131,13 @@ pub struct Progress<'a> {
     pub stop: ChainStop,
     /// RPC calls made across the whole run so far.
     pub rpc_calls: u64,
+    /// When the chain stopped on a failure, what the endpoint actually said.
+    ///
+    /// Collapsing every failure to "RpcFailure" made the census honest and the
+    /// run undiagnosable: a rate limit, a timeout on a large page and a
+    /// malformed response are three different problems with three different
+    /// fixes, and they looked identical.
+    pub error: Option<String>,
 }
 
 /// One member's provenance chain, seed first.
@@ -217,6 +232,7 @@ pub struct Collector<'a> {
     /// make the trace believe every seed was already done and skip the paging
     /// entirely — which yields a run where nothing resolves and nothing errors.
     fully_observed: std::collections::BTreeSet<String>,
+    last_error: Option<String>,
     ambiguous: u64,
     edges_seen: u64,
 }
@@ -228,6 +244,7 @@ impl<'a> Collector<'a> {
             config,
             facts: BTreeMap::new(),
             fully_observed: std::collections::BTreeSet::new(),
+            last_error: None,
             ambiguous: 0,
             edges_seen: 0,
         }
@@ -275,6 +292,7 @@ impl<'a> Collector<'a> {
                     hops: chain.visited.len(),
                     stop: chain.stop,
                     rpc_calls: self.client.calls_made(),
+                    error: self.last_error.take(),
                 });
                 chains.push(chain);
             }
@@ -331,7 +349,10 @@ impl<'a> Collector<'a> {
             visited.push(current.clone());
 
             let stop = match self.observe(&current) {
-                Err(_) => Some(ChainStop::RpcFailure),
+                Err(e) => {
+                    self.last_error = Some(e.to_string());
+                    Some(ChainStop::RpcFailure)
+                }
                 Ok(local_terminal) if local_terminal => Some(ChainStop::LocalTerminal),
                 Ok(_) => None,
             };
