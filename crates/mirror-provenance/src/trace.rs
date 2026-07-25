@@ -113,9 +113,33 @@ pub struct Chain {
     pub stop: ChainStop,
 }
 
+/// Strips credentials from an endpoint before it is written down.
+///
+/// The manifest is a committed artifact, and provider URLs carry API keys in the
+/// path or the query string. Recording the host tells a reader which provider
+/// served the run — which is what they need to judge it — without publishing a
+/// key that would then have to be rotated.
+pub fn redact_endpoint(url: &str) -> String {
+    let without_query = url.split(['?', '#']).next().unwrap_or(url);
+    // Keep scheme and host, drop the path: Alchemy and Helius put the key there.
+    match without_query.split_once("://") {
+        Some((scheme, rest)) => {
+            let host = rest.split('/').next().unwrap_or(rest);
+            format!("{scheme}://{host}")
+        }
+        None => without_query
+            .split('/')
+            .next()
+            .unwrap_or(without_query)
+            .to_string(),
+    }
+}
+
 /// What the manifest records so a reader can judge the run without rerunning it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Manifest {
+    /// Host only. Any credential in the path or query is stripped by
+    /// [`redact_endpoint`] before this is written.
     pub endpoint: String,
     pub first_available_block: u64,
     pub archival_probe_ok: bool,
@@ -211,7 +235,7 @@ impl<'a> Collector<'a> {
         }
         Sample {
             manifest: Manifest {
-                endpoint: check.endpoint.clone(),
+                endpoint: redact_endpoint(&check.endpoint),
                 first_available_block: check.first_available_block,
                 archival_probe_ok: check.archival_probe_ok,
                 collected_at: now,
@@ -759,6 +783,30 @@ mod tests {
         ));
         assert_eq!(census.page_cap_hit, 1);
         assert!(!Unresolved::PageCapHit.is_evidence());
+    }
+
+    /// The manifest is committed, so a provider key must never reach it.
+    #[test]
+    fn a_credential_never_reaches_the_manifest() {
+        for (url, expected) in [
+            (
+                "https://solana-mainnet.g.alchemy.com/v2/alch_SECRETKEY123",
+                "https://solana-mainnet.g.alchemy.com",
+            ),
+            (
+                "https://mainnet.helius-rpc.com/?api-key=deadbeef-cafe",
+                "https://mainnet.helius-rpc.com",
+            ),
+            (
+                "https://api.mainnet-beta.solana.com",
+                "https://api.mainnet-beta.solana.com",
+            ),
+        ] {
+            let got = redact_endpoint(url);
+            assert_eq!(got, expected);
+            assert!(!got.contains("SECRETKEY"), "key survived redaction: {got}");
+            assert!(!got.contains("deadbeef"), "key survived redaction: {got}");
+        }
     }
 
     #[test]

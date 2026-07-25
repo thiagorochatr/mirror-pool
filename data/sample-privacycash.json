@@ -3,7 +3,7 @@
     "endpoint": "https://api.mainnet-beta.solana.com",
     "first_available_block": 0,
     "archival_probe_ok": true,
-    "collected_at": 1784973206,
+    "collected_at": 1784975925,
     "config": {
       "scope": "Sol",
       "depth_max": 5,
@@ -14,13 +14,13 @@
     "thresholds_hub_signatures": 5000,
     "thresholds_distributor_fanout": 20,
     "thresholds_cluster_min_size": 3,
-    "rpc_calls": 590,
+    "rpc_calls": 627,
     "excluded_non_wallet": [
       "BU6qqvJ4Lr9rb6QiPyhs9cr6aUc69MKsGPr63n2WVmj4",
       "AxG818LtyEa88dJDoHeYHW2WyNXrCLYUzr6ifL5qn4KB",
       "2WQCfa31y6Qid5aBAbDE6arARchEochqGufAM6Y9Nsuy"
     ],
-    "ambiguous_attribution_rate": 0.28846153846153844
+    "ambiguous_attribution_rate": 0.2777777777777778
   },
   "chains": [
     {
@@ -170,9 +170,11 @@
     {
       "seed": "CrAWByBbF5qNRLS67cshtjenGvRmgSLCmAno9GRJqLqz",
       "visited": [
-        "CrAWByBbF5qNRLS67cshtjenGvRmgSLCmAno9GRJqLqz"
+        "CrAWByBbF5qNRLS67cshtjenGvRmgSLCmAno9GRJqLqz",
+        "qNvqCj1bm5QU6mS2az6CuRx59jTpt5Bz48LvCrwVtZe",
+        "FfTmAnvfoH1Jcki3t9xtknkbAneT11tnDgR64TgsrYXN"
       ],
-      "stop": "RpcFailure"
+      "stop": "NoIncomingEdge"
     },
     {
       "seed": "FX1veGSHZV1U88iDn4Tj9Jqsfk4Qru8wyWpJ6piR3GFz",
@@ -381,7 +383,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1772954466,
       "birth_edge": null,
       "fee_payers": [],
       "funded": []
@@ -491,7 +493,7 @@
       "owner": "11111111111111111111111111111111",
       "executable": false,
       "signatures": {
-        "Exact": 9764
+        "Exact": 9767
       },
       "first_seen": 1781265894,
       "birth_edge": {
@@ -518,7 +520,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1780918462,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -645,7 +647,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1784873051,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -873,7 +875,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1675029970,
       "birth_edge": null,
       "fee_payers": [],
       "funded": []
@@ -987,7 +989,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1783468695,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -1001,7 +1003,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1782630865,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -1029,7 +1031,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1784656384,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -1107,7 +1109,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1768579501,
       "birth_edge": null,
       "fee_payers": [],
       "funded": []
@@ -1119,7 +1121,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1783225581,
       "birth_edge": null,
       "fee_payers": [],
       "funded": []
@@ -1143,7 +1145,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1784446498,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -1182,7 +1184,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1743115811,
       "birth_edge": null,
       "fee_payers": [],
       "funded": []
@@ -1233,6 +1235,30 @@
       },
       "fee_payers": [
         "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
+      ],
+      "funded": []
+    },
+    "CrAWByBbF5qNRLS67cshtjenGvRmgSLCmAno9GRJqLqz": {
+      "address": "CrAWByBbF5qNRLS67cshtjenGvRmgSLCmAno9GRJqLqz",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 11230
+      },
+      "first_seen": 1781801872,
+      "birth_edge": {
+        "sink": "CrAWByBbF5qNRLS67cshtjenGvRmgSLCmAno9GRJqLqz",
+        "sources": [
+          "qNvqCj1bm5QU6mS2az6CuRx59jTpt5Bz48LvCrwVtZe"
+        ],
+        "value": 100000000,
+        "signature": "2B1U3i2nZKDXancwuyt9UxUa7AJcqgiVyuXzZhECVSZwiy5CKYE7xe5KcEgGymmMS2FcifLQRD7PNgDhhE3zGEkJ",
+        "slot": 427328708,
+        "block_time": 1781801872,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "qNvqCj1bm5QU6mS2az6CuRx59jTpt5Bz48LvCrwVtZe"
       ],
       "funded": []
     },
@@ -1330,7 +1356,7 @@
       "owner": "11111111111111111111111111111111",
       "executable": false,
       "signatures": {
-        "Exact": 498
+        "Exact": 509
       },
       "first_seen": 1778972678,
       "birth_edge": {
@@ -1462,7 +1488,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1775141178,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -1526,7 +1552,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1758757924,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -1557,6 +1583,22 @@
         "AF8VuwCncKd5ZBnLYYnMjqh4vLch8mjqE75sFe5ZjRFW"
       ],
       "funded": []
+    },
+    "FfTmAnvfoH1Jcki3t9xtknkbAneT11tnDgR64TgsrYXN": {
+      "address": "FfTmAnvfoH1Jcki3t9xtknkbAneT11tnDgR64TgsrYXN",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 18203
+      },
+      "first_seen": 1712861701,
+      "birth_edge": null,
+      "fee_payers": [
+        "Gvy8F7L7JjaiFSmNpgCjpDrArXbtRQkRKwijdLRdEv6J"
+      ],
+      "funded": [
+        "qNvqCj1bm5QU6mS2az6CuRx59jTpt5Bz48LvCrwVtZe"
+      ]
     },
     "FuasKFTCGY2EodUE7vDXkEf6a8TC3gFjCrW6DyLWyxSw": {
       "address": "FuasKFTCGY2EodUE7vDXkEf6a8TC3gFjCrW6DyLWyxSw",
@@ -1590,7 +1632,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1776054108,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -1657,7 +1699,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1776692095,
       "birth_edge": null,
       "fee_payers": [],
       "funded": []
@@ -1669,7 +1711,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1781821516,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -1771,7 +1813,7 @@
       "owner": "11111111111111111111111111111111",
       "executable": false,
       "signatures": {
-        "Exact": 145
+        "Exact": 156
       },
       "first_seen": 1784670576,
       "birth_edge": {
@@ -1901,7 +1943,7 @@
       "signatures": {
         "AtLeast": 20000
       },
-      "first_seen": null,
+      "first_seen": 1784781685,
       "birth_edge": null,
       "fee_payers": [],
       "funded": [
@@ -1931,6 +1973,32 @@
         "51JyiaMJn8BvSMspReePnX5uDiPqfMM4WSKkaPK6o83s"
       ],
       "funded": []
+    },
+    "qNvqCj1bm5QU6mS2az6CuRx59jTpt5Bz48LvCrwVtZe": {
+      "address": "qNvqCj1bm5QU6mS2az6CuRx59jTpt5Bz48LvCrwVtZe",
+      "owner": "11111111111111111111111111111111",
+      "executable": false,
+      "signatures": {
+        "Exact": 1946
+      },
+      "first_seen": 1762263640,
+      "birth_edge": {
+        "sink": "qNvqCj1bm5QU6mS2az6CuRx59jTpt5Bz48LvCrwVtZe",
+        "sources": [
+          "FfTmAnvfoH1Jcki3t9xtknkbAneT11tnDgR64TgsrYXN"
+        ],
+        "value": 10000000,
+        "signature": "2abx2yUwotMytWNz2EAiW6RTrAsz9otzWMXKPyVN8FjtaEa3hp4MTJYi2C3R8XrnUND8MyuMJ5T2yKEb4prkrBVJ",
+        "slot": 377877154,
+        "block_time": 1762263640,
+        "ambiguous_attribution": false
+      },
+      "fee_payers": [
+        "FfTmAnvfoH1Jcki3t9xtknkbAneT11tnDgR64TgsrYXN"
+      ],
+      "funded": [
+        "CrAWByBbF5qNRLS67cshtjenGvRmgSLCmAno9GRJqLqz"
+      ]
     },
     "sVwhzH6DgSNuc8q5uBDCrwbSQAEwYub42DrjgMqQehB": {
       "address": "sVwhzH6DgSNuc8q5uBDCrwbSQAEwYub42DrjgMqQehB",

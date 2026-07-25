@@ -137,6 +137,26 @@ And **"worst case is 1" is not a finding.** Under any heavy-tailed provenance
 prior somebody is always alone. It describes provenance in general, not the pool
 being measured.
 
+## Deployment
+
+Live on **devnet** at `8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa`. The whole
+lifecycle ran there against a real validator — pool creation, deposits, spends
+each carrying a Groth16 proof verified by the deployed program's own syscall, and
+a settlement that closed the vault to its rent-exempt minimum to the lamport.
+Every signature is in `docs/PROOF.md`.
+
+**Not on mainnet, and that is a decision rather than an omission.** The trusted
+setup here is reproducible, not secure: the seed is public, so the toxic waste is
+public, so proofs are forgeable by anyone who runs the setup. A live pool with
+that property would be inviting deposits it cannot protect. Publishing a threat
+model that says proofs are forgeable and simultaneously advertising a mainnet
+address would be incoherent.
+
+Devnet demonstrates everything mainnet would: same runtime, same `alt_bn128`
+syscall, same verifier, same bytes. What mainnet would add is a claim about
+readiness that this setup does not support yet. The prerequisite is a real
+multi-party ceremony, not more SOL.
+
 ## What we do not claim
 
 - Not "unlinkable", not "untraceable", not "anonymous" without a named adversary

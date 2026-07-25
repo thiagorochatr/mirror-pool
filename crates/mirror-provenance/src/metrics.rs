@@ -174,6 +174,66 @@ impl Anonymity {
     }
 }
 
+/// The bracket that must accompany any point estimate.
+///
+/// Members whose trace did not reach a class are **not** a class. Merging them
+/// assumes they are all alike, which is charitable to the pool and raises the
+/// figure; splitting them into singletons assumes they are all distinct, which
+/// is charitable to the adversary and lowers it. Neither is known, so both are
+/// reported and the truth is somewhere between.
+///
+/// A point estimate without this is not publishable output, because the reader
+/// cannot tell whether the number is driven by what was measured or by what was
+/// not.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Bracket {
+    /// Unresolved merged into one class: the most favourable reading.
+    pub upper: Anonymity,
+    /// Unresolved split into singletons: the least favourable reading.
+    pub lower: Anonymity,
+    /// Members that reached a class.
+    pub resolved: u64,
+    /// Members that did not, excluding infrastructure failures.
+    pub unresolved: u64,
+}
+
+impl Bracket {
+    /// Builds the bracket from resolved class sizes and a count of unresolved
+    /// members.
+    ///
+    /// `unresolved` must exclude RPC failures: those are our own and belong to
+    /// neither reading.
+    pub fn new(resolved_sizes: &[u64], unresolved: u64) -> Option<Self> {
+        let resolved: u64 = resolved_sizes.iter().sum();
+
+        let mut merged: Vec<u64> = resolved_sizes.to_vec();
+        if unresolved > 0 {
+            merged.push(unresolved);
+        }
+
+        let mut split: Vec<u64> = resolved_sizes.to_vec();
+        split.extend(std::iter::repeat_n(1, unresolved as usize));
+
+        Some(Bracket {
+            upper: Anonymity::from_class_sizes(&merged)?,
+            lower: Anonymity::from_class_sizes(&split)?,
+            resolved,
+            unresolved,
+        })
+    }
+
+    /// Whether the bracket is tight enough for the point estimate to carry the
+    /// argument on its own.
+    ///
+    /// When most members are unresolved the two readings diverge, and quoting
+    /// either as *the* result would be reporting the sampling budget rather than
+    /// the pool.
+    pub fn is_informative(&self) -> bool {
+        let total = self.resolved + self.unresolved;
+        total > 0 && self.resolved * 2 >= total
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -332,6 +392,44 @@ mod tests {
         // Four of 104 members are alone.
         let at_one = a.class_size_ccdf.iter().find(|(t, _)| *t == 1).unwrap().1;
         assert!(close(at_one, 4.0 / 104.0, 1e-12));
+    }
+
+    #[test]
+    fn the_bracket_spans_both_readings_of_the_unresolved() {
+        // Six resolved in two classes of three, six unresolved.
+        let b = Bracket::new(&[3, 3], 6).unwrap();
+
+        // Merged: three classes of three, six, three.
+        assert_eq!(b.upper.nominal_k, 12);
+        // Split: two classes of three plus six singletons.
+        assert_eq!(b.lower.nominal_k, 12);
+        assert_eq!(b.lower.classes, 8);
+        assert_eq!(b.upper.classes, 3);
+
+        assert!(
+            b.upper.eff_k_shannon > b.lower.eff_k_shannon,
+            "merging the unresolved must be the more favourable reading"
+        );
+        assert!(b.upper.loss_factor > b.lower.loss_factor);
+    }
+
+    #[test]
+    fn a_mostly_unresolved_sample_is_not_informative() {
+        // Two resolved, ten unresolved: the two readings are far apart and
+        // neither describes the pool.
+        let thin = Bracket::new(&[1, 1], 10).unwrap();
+        assert!(!thin.is_informative());
+
+        let solid = Bracket::new(&[4, 4, 4], 3).unwrap();
+        assert!(solid.is_informative());
+    }
+
+    #[test]
+    fn with_nothing_unresolved_the_bracket_collapses_to_a_point() {
+        let b = Bracket::new(&[5, 3, 2], 0).unwrap();
+        assert_eq!(b.upper, b.lower);
+        assert_eq!(b.unresolved, 0);
+        assert!(b.is_informative());
     }
 
     #[test]

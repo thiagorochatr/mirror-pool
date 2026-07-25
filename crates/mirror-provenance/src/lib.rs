@@ -22,7 +22,7 @@ pub use classify::{AnchorSet, Classifier, SetStructure, Thresholds};
 pub use edge::{FundingEdge, TransactionView};
 pub use facts::{AddressFacts, SigCount};
 pub use frame::depositor_of;
-pub use metrics::Anonymity;
+pub use metrics::{Anonymity, Bracket};
 pub use outcome::{Census, Outcome, TerminalRule, Unresolved};
 pub use rpc::{RpcClient, RpcError};
 pub use trace::{classify_sample, Chain, CollectionConfig, Collector, Sample, Scope};

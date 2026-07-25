@@ -106,6 +106,13 @@ enum Command {
         rps: f64,
         #[arg(long, default_value_t = 6)]
         depth: u32,
+        /// Signature pages to walk before declaring an address high-activity.
+        ///
+        /// Raising it buys a better age estimate for busy funders, which is what
+        /// lets the volume-hub rule classify them instead of leaving them in the
+        /// budget bucket.
+        #[arg(long, default_value_t = 20)]
+        page_cap: u32,
     },
     /// Pass two: classifies a committed sample and reports the anonymity ladder.
     ///
@@ -287,6 +294,7 @@ fn main() -> Result<()> {
             endpoint,
             rps,
             depth,
+            page_cap,
         } => {
             let text = std::fs::read_to_string(&seeds)
                 .with_context(|| format!("reading {}", seeds.display()))?;
@@ -309,6 +317,7 @@ fn main() -> Result<()> {
 
             let config = mirror_provenance::CollectionConfig {
                 depth_max: depth,
+                sig_page_cap: page_cap,
                 ..Default::default()
             };
             let thresholds = mirror_provenance::Thresholds::default();
@@ -377,6 +386,11 @@ fn main() -> Result<()> {
                 .iter()
                 .filter_map(|(_, o)| o.label().map(|s| s.to_string()))
                 .collect();
+
+            // Members that reached no class, excluding our own failures: those
+            // belong to neither reading of the bracket.
+            let unresolved = census.measurable() - census.resolved;
+
             match mirror_provenance::Anonymity::from_labels(&labels) {
                 None => {
                     println!("no member resolved to a class; nothing to report");
@@ -412,6 +426,51 @@ fn main() -> Result<()> {
                     println!("class-size CCDF (share of members in a class of at most t):");
                     for (t, share) in &a.class_size_ccdf {
                         println!("  t={t:<4} {:.4}", share);
+                    }
+
+                    // The bracket. A point estimate alone would not say whether
+                    // the number is driven by what was measured or by what was
+                    // not.
+                    let mut sizes: std::collections::BTreeMap<&str, u64> =
+                        std::collections::BTreeMap::new();
+                    for l in &labels {
+                        *sizes.entry(l.as_str()).or_insert(0) += 1;
+                    }
+                    let resolved_sizes: Vec<u64> = sizes.into_values().collect();
+                    if let Some(b) = mirror_provenance::Bracket::new(&resolved_sizes, unresolved) {
+                        println!();
+                        println!(
+                            "unresolved bracket ({} resolved, {} unresolved):",
+                            b.resolved, b.unresolved
+                        );
+                        println!(
+                            "  rho             {:.4} .. {:.4}",
+                            b.lower.loss_factor, b.upper.loss_factor
+                        );
+                        println!(
+                            "  effective-k     {:.4} .. {:.4}",
+                            b.lower.eff_k_shannon, b.upper.eff_k_shannon
+                        );
+                        if !b.is_informative() {
+                            println!();
+                            println!(
+                                "  NOT INFORMATIVE: fewer than half the members reached a class, so \
+                                 the two readings\n  diverge and either one quoted alone would \
+                                 describe the sampling budget rather than\n  the pool. The point \
+                                 estimate above is reported for completeness, not as a result."
+                            );
+                        }
+                    }
+
+                    if a.good_turing_coverage < 0.8 {
+                        println!();
+                        println!(
+                            "  UNDER-SAMPLED: Good-Turing coverage {:.2} and Chao1 estimates {:.0} \
+                             classes against\n  {} observed, so most of the class distribution \
+                             was never seen. Effective-k measured at\n  small k understates the \
+                             steady-state loss and does not extrapolate upward.",
+                            a.good_turing_coverage, a.chao1, a.classes
+                        );
                     }
                 }
             }
