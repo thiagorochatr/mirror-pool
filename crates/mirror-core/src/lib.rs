@@ -15,7 +15,9 @@ pub use field::{Field, MODULUS_BE};
 pub use hash::{
     action_binding, commitment, hash_node, nullifier, poseidon1, poseidon2, poseidon3, poseidon4,
 };
-pub use merkle::{Frontier, MerkleProof, MerkleTree, TREE_DEPTH};
+pub use merkle::{
+    baked_ladder, zero_ladder, Frontier, MerkleProof, MerkleTree, TREE_DEPTH, ZERO_LADDER,
+};
 pub use note::Note;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
