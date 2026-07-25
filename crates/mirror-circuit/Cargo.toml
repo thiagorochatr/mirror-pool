@@ -4,6 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# Host-only crate: proving, key generation and the R1CS gadget. Never linked
+# into the on-chain program.
 [dependencies]
 mirror-core.workspace = true
 ark-bn254.workspace = true
@@ -15,5 +17,9 @@ ark-groth16.workspace = true
 ark-snark.workspace = true
 ark-serialize.workspace = true
 ark-std.workspace = true
+ark-crypto-primitives.workspace = true
 light-poseidon.workspace = true
 thiserror.workspace = true
+
+[dev-dependencies]
+solana-poseidon.workspace = true
