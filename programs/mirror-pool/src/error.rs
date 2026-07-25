@@ -40,6 +40,20 @@ pub enum MirrorProgramError {
     /// because the two competing implementations are both drainable at exactly
     /// this point.
     InsolventVault = 13,
+    /// The spend account has the wrong length or an unrecognised version.
+    InvalidSpendAccount = 14,
+    /// This nullifier has already been recorded: the note is spent.
+    NullifierAlreadySpent = 15,
+    /// The spend has already been executed.
+    AlreadySettled = 16,
+    /// The proof references a root the pool does not retain.
+    UnknownRoot = 17,
+    /// The Groth16 proof did not verify.
+    ProofVerificationFailed = 18,
+    /// The pool holds fewer notes than its anonymity floor requires.
+    BelowAnonymityFloor = 19,
+    /// The relay fee is not less than the denomination.
+    RelayFeeTooLarge = 20,
 }
 
 impl From<MirrorProgramError> for ProgramError {

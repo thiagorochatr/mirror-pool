@@ -8,7 +8,9 @@ pub mod error;
 pub mod instruction;
 pub mod pda;
 pub mod processor;
+pub mod spend;
 pub mod state;
+pub mod vk;
 
 pub use error::MirrorProgramError;
 pub use instruction::Instruction;

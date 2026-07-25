@@ -3,7 +3,8 @@
 use crate::{
     error::MirrorProgramError,
     instruction::Instruction,
-    pda::{pool_address, vault_address, POOL_SEED, VAULT_SEED},
+    pda::{pool_address, spend_address, vault_address, POOL_SEED, SPEND_SEED, VAULT_SEED},
+    spend::{Spend, SPEND_LEN},
     state::{Pool, POOL_LEN},
 };
 use mirror_core::{hash_node, Field, TREE_DEPTH};
@@ -25,7 +26,42 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
             k_floor,
         } => init_pool(program_id, accounts, denomination, entry_fee, k_floor),
         Instruction::Deposit { commitment } => deposit(program_id, accounts, commitment),
+        Instruction::SubmitSpend {
+            proof_a,
+            proof_b,
+            proof_c,
+            root,
+            nullifier,
+            selector,
+            beneficiary,
+            relay_fee,
+        } => submit_spend(
+            program_id,
+            accounts,
+            SpendRequest {
+                proof_a,
+                proof_b,
+                proof_c,
+                root,
+                nullifier,
+                selector,
+                beneficiary,
+                relay_fee,
+            },
+        ),
     }
+}
+
+/// The fields of a spend, grouped so the handler takes one argument.
+struct SpendRequest {
+    proof_a: [u8; 64],
+    proof_b: [u8; 128],
+    proof_c: [u8; 64],
+    root: [u8; 32],
+    nullifier: [u8; 32],
+    selector: u64,
+    beneficiary: [u8; 32],
+    relay_fee: u64,
 }
 
 /// Creates the pool and its vault and seeds the accumulator to an empty tree.
@@ -172,6 +208,142 @@ fn deposit(program_id: &Pubkey, accounts: &[AccountInfo], commitment: [u8; 32]) 
     if vault_account.lamports() < required {
         return Err(MirrorProgramError::InsolventVault.into());
     }
+    Ok(())
+}
+
+/// Proves membership, burns the nullifier, and records the authorised action.
+///
+/// Nothing is paid out here. Settlement executes the batch, so every action in
+/// an epoch lands on one timestamp and in one ordering — which is the point of a
+/// synchronised crowd, and the reason a per-spend payout would leak exactly what
+/// the pool exists to hide.
+///
+/// The relay signs, not the member. A member who pays their own fee signs with
+/// their own wallet and destroys their own anonymity, so no member key appears
+/// on chain at any point in this path. Relaying is permissionless: any key may
+/// do it, and there is no authority whose absence freezes the pool.
+///
+/// Note the ordering. The proof is verified *before* the spend account is
+/// created, but the account's existence is what makes replay impossible, and
+/// account creation fails if it already exists. So a replayed proof — however
+/// valid — cannot produce a second record.
+fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest) -> ProgramResult {
+    let iter = &mut accounts.iter();
+    let relay = next_account_info(iter)?;
+    let pool_account = next_account_info(iter)?;
+    let spend_account = next_account_info(iter)?;
+    let system = next_account_info(iter)?;
+
+    if !relay.is_signer {
+        return Err(MirrorProgramError::MissingSignature.into());
+    }
+    if !system_program::check_id(system.key) {
+        return Err(MirrorProgramError::InvalidOwner.into());
+    }
+    if pool_account.owner != program_id {
+        return Err(MirrorProgramError::InvalidOwner.into());
+    }
+
+    // Canonical scalars, checked before anything else touches them. The Groth16
+    // verifier rejects public inputs at or above the modulus, and the Poseidon
+    // syscall rejects non-canonical preimages; doing it here turns both into one
+    // named error instead of an opaque failure deeper in.
+    let root = Field::from_bytes(req.root).map_err(MirrorProgramError::from)?;
+    let nullifier_field = Field::from_bytes(req.nullifier).map_err(MirrorProgramError::from)?;
+
+    let (denomination, k_floor, deposit_count) = {
+        let mut data = pool_account.try_borrow_mut_data()?;
+        let pool = Pool::load(&mut data)?;
+        (pool.denomination(), pool.k_floor(), pool.deposit_count())
+    };
+
+    // The relay is paid out of the denomination, so a fee at or above it would
+    // leave the member nothing and, at exactly the denomination, would let a
+    // relay take the whole note.
+    if req.relay_fee >= denomination {
+        return Err(MirrorProgramError::RelayFeeTooLarge.into());
+    }
+
+    // The anonymity floor. This bounds *program-visible* membership: how many
+    // notes the tree holds. It is not the effective anonymity set, which is
+    // smaller because an observer can partition members by funding provenance —
+    // that is measured off-chain and reported honestly rather than asserted away
+    // here.
+    if deposit_count < k_floor as u64 {
+        return Err(MirrorProgramError::BelowAnonymityFloor.into());
+    }
+
+    {
+        let mut data = pool_account.try_borrow_mut_data()?;
+        let pool = Pool::load(&mut data)?;
+        if !pool.knows_root(root) {
+            return Err(MirrorProgramError::UnknownRoot.into());
+        }
+    }
+
+    // Recomputed, never transmitted. If the relay altered the selector, the
+    // beneficiary or its own fee, this binding differs from the one the prover
+    // committed to and the pairing fails. There is no separate field that could
+    // be checked incorrectly or forgotten.
+    let binding = mirror_core::action_binding(req.selector, &req.beneficiary, req.relay_fee)
+        .map_err(MirrorProgramError::from)?;
+
+    let public_inputs: [[u8; 32]; 3] = [
+        root.to_bytes(),
+        nullifier_field.to_bytes(),
+        binding.to_bytes(),
+    ];
+    let mut verifier = groth16_solana::groth16::Groth16Verifier::<3>::new(
+        &req.proof_a,
+        &req.proof_b,
+        &req.proof_c,
+        &public_inputs,
+        &crate::vk::VERIFYING_KEY,
+    )
+    .map_err(|_| MirrorProgramError::ProofVerificationFailed)?;
+    verifier
+        .verify()
+        .map_err(|_| MirrorProgramError::ProofVerificationFailed)?;
+
+    let (expected_spend, spend_bump) = spend_address(program_id, pool_account.key, &req.nullifier);
+    if *spend_account.key != expected_spend {
+        return Err(MirrorProgramError::InvalidPda.into());
+    }
+
+    // Creation fails if the account already exists, which is the replay guard.
+    let rent = Rent::get()?;
+    invoke_signed(
+        &system_instruction::create_account(
+            relay.key,
+            spend_account.key,
+            rent.minimum_balance(SPEND_LEN),
+            SPEND_LEN as u64,
+            program_id,
+        ),
+        &[relay.clone(), spend_account.clone(), system.clone()],
+        &[&[
+            SPEND_SEED,
+            pool_account.key.as_ref(),
+            &req.nullifier,
+            &[spend_bump],
+        ]],
+    )
+    .map_err(|_| MirrorProgramError::NullifierAlreadySpent)?;
+
+    let mut spend_data = spend_account.try_borrow_mut_data()?;
+    let mut record = Spend::load_uninitialised(&mut spend_data)?;
+    record.initialise(
+        spend_bump,
+        req.selector,
+        req.relay_fee,
+        &req.beneficiary,
+        &relay.key.to_bytes(),
+    );
+
+    // The spend counter is deliberately *not* advanced here. The note is
+    // committed to be paid but has not been paid, so the vault must still cover
+    // it; leaving the counter alone keeps `required_vault_lamports` an upper
+    // bound on what is owed until settlement actually disburses.
     Ok(())
 }
 

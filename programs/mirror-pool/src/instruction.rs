@@ -18,6 +18,7 @@ use crate::error::MirrorProgramError;
 pub enum Tag {
     InitPool = 0,
     Deposit = 1,
+    SubmitSpend = 2,
 }
 
 impl Tag {
@@ -25,11 +26,18 @@ impl Tag {
         match v {
             0 => Ok(Tag::InitPool),
             1 => Ok(Tag::Deposit),
+            2 => Ok(Tag::SubmitSpend),
             _ => Err(MirrorProgramError::MalformedInstruction),
         }
     }
 }
 
+/// `SubmitSpend` carries a 256-byte proof, so it is far larger than the other
+/// variants. Boxing it — clippy's usual remedy — would move it to the heap, and
+/// a heap allocation inside an on-chain program costs compute units to avoid a
+/// stack cost we can comfortably afford: 368 bytes against a 4 KB frame, decoded
+/// once per transaction. The size difference is deliberate.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Instruction {
     /// Creates the pool and its vault, and seeds the accumulator to an empty
@@ -45,12 +53,32 @@ pub enum Instruction {
     /// The amount is not a parameter. It is read from the pool, so a deposit
     /// cannot claim a size the pool did not set.
     Deposit { commitment: [u8; 32] },
+    /// Proves membership, burns the nullifier, and records the authorised
+    /// action. Nothing is paid out here — settlement executes the batch.
+    ///
+    /// The action binding is **not** transmitted. It is recomputed on-chain from
+    /// `selector`, `beneficiary` and `relay_fee` and used as the third public
+    /// input, so a relay that alters any of them produces a different binding
+    /// and the pairing simply fails. There is no separate field to forget to
+    /// check.
+    SubmitSpend {
+        proof_a: [u8; 64],
+        proof_b: [u8; 128],
+        proof_c: [u8; 64],
+        root: [u8; 32],
+        nullifier: [u8; 32],
+        selector: u64,
+        beneficiary: [u8; 32],
+        relay_fee: u64,
+    },
 }
 
 /// `InitPool`: tag + u64 + u64 + u32.
 pub const INIT_POOL_LEN: usize = 1 + 8 + 8 + 4;
 /// `Deposit`: tag + one field element.
 pub const DEPOSIT_LEN: usize = 1 + 32;
+/// `SubmitSpend`: tag + proof + root + nullifier + selector + beneficiary + fee.
+pub const SUBMIT_SPEND_LEN: usize = 1 + 64 + 128 + 64 + 32 + 32 + 8 + 32 + 8;
 
 fn read_u64(data: &[u8], at: usize) -> u64 {
     let mut b = [0u8; 8];
@@ -91,6 +119,35 @@ impl Instruction {
                 commitment.copy_from_slice(&data[1..33]);
                 Ok(Instruction::Deposit { commitment })
             }
+            Tag::SubmitSpend => {
+                if data.len() != SUBMIT_SPEND_LEN {
+                    return Err(MirrorProgramError::MalformedInstruction);
+                }
+                let mut proof_a = [0u8; 64];
+                let mut proof_b = [0u8; 128];
+                let mut proof_c = [0u8; 64];
+                let mut root = [0u8; 32];
+                let mut nullifier = [0u8; 32];
+                let mut beneficiary = [0u8; 32];
+                proof_a.copy_from_slice(&data[1..65]);
+                proof_b.copy_from_slice(&data[65..193]);
+                proof_c.copy_from_slice(&data[193..257]);
+                root.copy_from_slice(&data[257..289]);
+                nullifier.copy_from_slice(&data[289..321]);
+                let selector = read_u64(data, 321);
+                beneficiary.copy_from_slice(&data[329..361]);
+                let relay_fee = read_u64(data, 361);
+                Ok(Instruction::SubmitSpend {
+                    proof_a,
+                    proof_b,
+                    proof_c,
+                    root,
+                    nullifier,
+                    selector,
+                    beneficiary,
+                    relay_fee,
+                })
+            }
         }
     }
 
@@ -115,6 +172,28 @@ impl Instruction {
                 out.extend_from_slice(commitment);
                 out
             }
+            Instruction::SubmitSpend {
+                proof_a,
+                proof_b,
+                proof_c,
+                root,
+                nullifier,
+                selector,
+                beneficiary,
+                relay_fee,
+            } => {
+                let mut out = Vec::with_capacity(SUBMIT_SPEND_LEN);
+                out.push(Tag::SubmitSpend as u8);
+                out.extend_from_slice(proof_a);
+                out.extend_from_slice(proof_b);
+                out.extend_from_slice(proof_c);
+                out.extend_from_slice(root);
+                out.extend_from_slice(nullifier);
+                out.extend_from_slice(&selector.to_le_bytes());
+                out.extend_from_slice(beneficiary);
+                out.extend_from_slice(&relay_fee.to_le_bytes());
+                out
+            }
         }
     }
 }
@@ -137,9 +216,23 @@ mod tests {
         }
     }
 
+    fn submit_spend() -> Instruction {
+        // Distinct byte patterns per field so a swapped offset cannot pass.
+        Instruction::SubmitSpend {
+            proof_a: [0xA1; 64],
+            proof_b: [0xB2; 128],
+            proof_c: [0xC3; 64],
+            root: [0xD4; 32],
+            nullifier: [0xE5; 32],
+            selector: 0x0102_0304_0506_0708,
+            beneficiary: [0xF6; 32],
+            relay_fee: 0x1112_1314_1516_1718,
+        }
+    }
+
     #[test]
     fn packing_then_unpacking_is_the_identity() {
-        for ix in [init(), deposit()] {
+        for ix in [init(), deposit(), submit_spend()] {
             assert_eq!(Instruction::unpack(&ix.pack()).unwrap(), ix);
         }
     }
@@ -149,8 +242,10 @@ mod tests {
         // These are the on-chain ABI. A change here breaks every deployed client.
         assert_eq!(init().pack().len(), INIT_POOL_LEN);
         assert_eq!(deposit().pack().len(), DEPOSIT_LEN);
+        assert_eq!(submit_spend().pack().len(), SUBMIT_SPEND_LEN);
         assert_eq!(INIT_POOL_LEN, 21);
         assert_eq!(DEPOSIT_LEN, 33);
+        assert_eq!(SUBMIT_SPEND_LEN, 369);
     }
 
     #[test]
@@ -163,7 +258,7 @@ mod tests {
 
     #[test]
     fn an_unknown_tag_is_refused() {
-        for tag in [2u8, 3, 99, 255] {
+        for tag in [3u8, 4, 99, 255] {
             assert!(
                 matches!(
                     Instruction::unpack(&[tag]),
@@ -178,7 +273,7 @@ mod tests {
     /// buffer must not be zero-extended and a long one must not be truncated.
     #[test]
     fn every_wrong_length_is_refused() {
-        for ix in [init(), deposit()] {
+        for ix in [init(), deposit(), submit_spend()] {
             let good = ix.pack();
             for len in 0..good.len() {
                 assert!(
