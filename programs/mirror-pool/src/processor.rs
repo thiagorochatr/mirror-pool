@@ -310,7 +310,18 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
         return Err(MirrorProgramError::InvalidPda.into());
     }
 
-    // Creation fails if the account already exists, which is the replay guard.
+    // The replay guard, checked explicitly.
+    //
+    // Creating the account would fail on its own if it already existed, but a
+    // failed CPI terminates the instruction with the *system program's* error,
+    // so the transaction would report a bare "already in use" rather than
+    // anything of ours. Checking first means a replay produces a named code that
+    // devnet evidence can record and a third party can verify, instead of an
+    // error that could have come from anywhere.
+    if !spend_account.data_is_empty() || spend_account.lamports() > 0 {
+        return Err(MirrorProgramError::NullifierAlreadySpent.into());
+    }
+
     let rent = Rent::get()?;
     invoke_signed(
         &system_instruction::create_account(
