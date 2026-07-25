@@ -12,6 +12,7 @@
 pub mod classify;
 pub mod edge;
 pub mod facts;
+pub mod frame;
 pub mod metrics;
 pub mod outcome;
 pub mod rpc;
@@ -20,6 +21,7 @@ pub mod trace;
 pub use classify::{AnchorSet, Classifier, SetStructure, Thresholds};
 pub use edge::{FundingEdge, TransactionView};
 pub use facts::{AddressFacts, SigCount};
+pub use frame::depositor_of;
 pub use metrics::Anonymity;
 pub use outcome::{Census, Outcome, TerminalRule, Unresolved};
 pub use rpc::{RpcClient, RpcError};

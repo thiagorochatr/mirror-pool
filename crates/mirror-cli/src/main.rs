@@ -54,6 +54,32 @@ enum Command {
         #[arg(long, default_value_t = 0.4)]
         rps: f64,
     },
+    /// Builds a member-weighted frame from a pool's depositors.
+    ///
+    /// Each depositor appears once however often they transact, and the sample
+    /// is spread across the pool's whole signature history rather than its most
+    /// recent minute. Nothing is dropped for looking hard to trace.
+    Seeds {
+        /// The pool program to enumerate depositors of.
+        #[arg(long)]
+        program: String,
+        /// How many distinct depositors to collect.
+        #[arg(long, default_value_t = 40)]
+        n: usize,
+        /// Signature pages to walk back through. More pages means a sample
+        /// spread over more of the pool's lifetime.
+        #[arg(long, default_value_t = 8)]
+        pages: u32,
+        /// Minimum lamports a payer must part with for it to count as a deposit.
+        #[arg(long, default_value_t = 10_000_000)]
+        min_deposit: u64,
+        #[arg(long, default_value = "seeds.txt")]
+        out: PathBuf,
+        #[arg(long, default_value = "https://api.mainnet-beta.solana.com")]
+        endpoint: String,
+        #[arg(long, default_value_t = 0.4)]
+        rps: f64,
+    },
     /// Pass one: walks each seed's funding chain and writes a sample file.
     ///
     /// The only step that touches the network. Everything it observes goes into
@@ -140,6 +166,94 @@ fn main() -> Result<()> {
                     std::process::exit(2);
                 }
             }
+        }
+        Command::Seeds {
+            program,
+            n,
+            pages,
+            min_deposit,
+            out,
+            endpoint,
+            rps,
+        } => {
+            let mut client = mirror_provenance::RpcClient::new(&endpoint, rps);
+            let check = client
+                .check_preconditions()
+                .map_err(|e| anyhow::anyhow!("endpoint refused: {e}"))?;
+            eprintln!(
+                "endpoint ok (first available block {})",
+                check.first_available_block
+            );
+
+            let mut seeds: Vec<String> = Vec::new();
+            let mut seen = std::collections::BTreeSet::new();
+            let mut before: Option<String> = None;
+            let mut scanned = 0usize;
+            let mut slots: Vec<u64> = Vec::new();
+
+            'paging: for page in 0..pages {
+                let batch = client
+                    .signatures_for_address(&program, before.as_deref(), 1_000)
+                    .map_err(|e| anyhow::anyhow!("listing program signatures: {e}"))?;
+                if batch.is_empty() {
+                    break;
+                }
+                before = Some(batch.last().expect("non-empty").signature.clone());
+                eprintln!(
+                    "page {page}: {} signatures, {} depositors so far",
+                    batch.len(),
+                    seeds.len()
+                );
+
+                // Take from across the page rather than only its head, so the
+                // sample spans the page's time range instead of clustering.
+                let want_from_page = (n - seeds.len()).div_ceil((pages - page).max(1) as usize);
+                let stride = (batch.len() / want_from_page.max(1)).max(1);
+                for info in batch.iter().step_by(stride) {
+                    if info.err {
+                        continue;
+                    }
+                    scanned += 1;
+                    let tx = match client.transaction(&info.signature) {
+                        Ok(t) => t,
+                        // A failure here drops one candidate; it never becomes a
+                        // claim about the pool.
+                        Err(_) => continue,
+                    };
+                    if let Some(d) = mirror_provenance::depositor_of(&tx, min_deposit) {
+                        if seen.insert(d.clone()) {
+                            slots.push(tx.slot);
+                            seeds.push(d);
+                            if seeds.len() >= n {
+                                break 'paging;
+                            }
+                        }
+                    }
+                }
+            }
+
+            anyhow::ensure!(!seeds.is_empty(), "no depositors found for {program}");
+            std::fs::write(&out, format!("{}\n", seeds.join("\n")))
+                .with_context(|| format!("writing {}", out.display()))?;
+
+            let span = match (slots.iter().min(), slots.iter().max()) {
+                (Some(lo), Some(hi)) => hi - lo,
+                _ => 0,
+            };
+            println!(
+                "wrote {} ({} distinct depositors)",
+                out.display(),
+                seeds.len()
+            );
+            println!(
+                "scanned {scanned} transactions, {} rpc calls",
+                client.calls_made()
+            );
+            println!(
+                "sample spans {span} slots (~{:.1} hours of chain time)",
+                span as f64 * 0.4 / 3600.0
+            );
+            Ok(())
         }
         Command::Collect {
             seeds,
