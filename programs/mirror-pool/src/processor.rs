@@ -586,9 +586,15 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
 /// through this pool is identical whoever asked for it.
 ///
 /// The payload and the target were both fixed at submit time and bound into the
-/// proof, so a settler chooses neither. What a settler does supply is the
-/// account list, and the accounts are the target program's problem to validate
-/// — exactly as they would be for any caller.
+/// proof, so a settler chooses neither, and the declared account count is bound
+/// too. What a settler still supplies is *which* accounts fill those slots, and
+/// those are the target program's problem to validate — exactly as they would be
+/// for any caller. For a target whose destination is an account rather than
+/// instruction data, that is a real limit, and the threat model says so.
+///
+/// The vault is appended by this program as the final account and marked signer.
+/// A settler that tries to place it in the action's own list is refused, because
+/// the same account appearing twice has its lamport change applied twice.
 #[allow(clippy::too_many_arguments)]
 fn invoke_action<'a>(
     program_id: &Pubkey,
@@ -628,11 +634,28 @@ fn invoke_action<'a>(
     // to act on. The vault signs, so the funds visibly come from the pool.
     move_lamports(vault_account, beneficiary, payout)?;
 
+    // The vault authorises the call through its seeds but is deliberately not
+    // one of the callee's accounts.
+    //
+    // This program has already moved the payout out of the vault by direct
+    // mutation. Handing that same account to a callee makes the runtime
+    // reconcile those lamports across the CPI boundary, and it rejects the whole
+    // instruction as unbalanced — with the vault marked writable or not. So the
+    // vault reaches `invoke_signed` in the account infos, which is what lets its
+    // seeds sign, and never appears in the instruction's account list.
+    //
+    // The consequence is a real limit, and THREAT_MODEL.md states it: an action
+    // whose target needs the pool itself as one of its accounts is not
+    // expressible here. Value reaches the action through the beneficiary.
+    if action_infos.iter().any(|a| a.key == vault_account.key) {
+        return Err(MirrorProgramError::MalformedInstruction.into());
+    }
+
     let metas: Vec<solana_program::instruction::AccountMeta> = action_infos
         .iter()
         .map(|a| solana_program::instruction::AccountMeta {
             pubkey: *a.key,
-            is_signer: a.is_signer || a.key == vault_account.key,
+            is_signer: a.is_signer,
             is_writable: a.is_writable,
         })
         .collect();
@@ -643,9 +666,16 @@ fn invoke_action<'a>(
         data: payload,
     };
 
+    // The vault and the target may already be among the action's accounts — the
+    // vault whenever the action needs the pool to sign for it, which is the
+    // normal case. Appending them unconditionally puts the same account in the
+    // list twice, and the runtime then reconciles its lamports against itself
+    // and fails the whole instruction as unbalanced.
     let mut infos = action_infos.to_vec();
     infos.push(vault_account.clone());
-    infos.push(target_info.clone());
+    if !infos.iter().any(|a| a.key == target_info.key) {
+        infos.push(target_info.clone());
+    }
 
     invoke_signed(
         &ix,

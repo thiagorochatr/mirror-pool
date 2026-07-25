@@ -68,11 +68,16 @@ epoch-scoped nullifier against a value payout, so one deposit pays out once per
 epoch forever.
 
 **A relay cannot redirect or re-price an action.** The action binding is never
-transmitted — it is recomputed on-chain from the selector, the beneficiary and
-the relay fee and used as the third public input, so altering any of them changes
-the binding and the pairing fails. There is no separate field that could be
-checked incorrectly. The test tampers with that exact input and asserts the real
+transmitted — it is recomputed on-chain from the selector, the target program,
+the beneficiary, the relay fee, the declared account count and the payload, then
+used as the third public input, so altering any of them changes the binding and
+the pairing fails. The test tampers with that exact input and asserts the real
 verifier rejects it.
+
+It does **not** bind *which* accounts fill an action's slots, only how many.
+Settlement is permissionless, so a settler chooses them; for a target whose
+destination is an account rather than instruction data, that is a real limit and
+`docs/THREAT_MODEL.md` states it.
 
 **No member key ever appears on chain** on the relay path.
 

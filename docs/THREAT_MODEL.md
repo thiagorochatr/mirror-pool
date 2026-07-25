@@ -78,6 +78,35 @@ that steals escrow. This is a named trust assumption, not a property.
 `solana program set-upgrade-authority --final` removes it and correspondingly
 removes the ability to fix anything.
 
+### The pool cannot be one of its own action's accounts
+
+The vault authorises an action through its seeds, but it is never one of the
+callee's accounts. It cannot be: settlement moves the payout out of the vault by
+direct mutation before invoking, and handing that same account to a callee makes
+the runtime reconcile those lamports across the CPI boundary and reject the whole
+instruction as unbalanced — whether the account is marked writable or not.
+
+So an action whose target needs the pool itself as an account is not expressible
+in this version. Value reaches an action through the beneficiary instead. A
+settler that tries to place the vault in the action's account list is refused
+rather than left to fail later.
+
+### The action's account list is chosen by the settler
+
+The proof binds the selector, the target program, the relay fee, the payload and
+**how many** accounts the action takes. It does not bind **which** accounts fill
+those slots — settlement is permissionless, so whoever settles picks them.
+
+For a target whose destination is instruction data this changes nothing. For a
+target whose destination is an *account* — an SPL token transfer, for instance —
+a settler could point the action at accounts the member did not choose. The
+member's own escrow is not at risk, because only this program can debit the
+vault, but anything the action itself would move is.
+
+Binding an account-list commitment into the proof would close this. It is not
+implemented, and the claim elsewhere that "a relay cannot redirect an action" is
+about the selector, target, fee and payload, not about the account list.
+
 ### Timing at submission
 
 Settlement batches payouts, but `submit_spend` is a transaction at a time of the

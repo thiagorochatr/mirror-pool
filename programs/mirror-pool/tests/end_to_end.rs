@@ -549,6 +549,18 @@ fn settle_ix_with_targets(
     settler: &Pubkey,
     targets: &[Option<Pubkey>],
 ) -> Instruction {
+    settle_ix_full(env, batch, settler, targets, &[])
+}
+
+/// Settlement carrying, per spend, an optional target program and that action's
+/// own account list — the shape a real CPI needs.
+fn settle_ix_full(
+    env: &Env,
+    batch: &[(Pubkey, Pubkey, Keypair)],
+    settler: &Pubkey,
+    targets: &[Option<Pubkey>],
+    action_accounts: &[Vec<AccountMeta>],
+) -> Instruction {
     let mut metas = vec![
         AccountMeta::new(*settler, true),
         AccountMeta::new(env.pool, false),
@@ -560,6 +572,9 @@ fn settle_ix_with_targets(
         metas.push(AccountMeta::new(relay.pubkey(), false));
         if let Some(Some(target)) = targets.get(i) {
             metas.push(AccountMeta::new_readonly(*target, false));
+        }
+        if let Some(accounts) = action_accounts.get(i) {
+            metas.extend(accounts.iter().cloned());
         }
     }
     Instruction::new_with_bytes(
@@ -859,6 +874,29 @@ fn action_ix(
     relay: &Pubkey,
     payload: &[u8],
 ) -> Instruction {
+    action_ix_n(
+        env,
+        proof,
+        nullifier,
+        target,
+        beneficiary,
+        relay,
+        0,
+        payload,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn action_ix_n(
+    env: &Env,
+    proof: &mirror_circuit::SolanaProof,
+    nullifier: [u8; 32],
+    target: &Pubkey,
+    beneficiary: &Pubkey,
+    relay: &Pubkey,
+    action_accounts: u8,
+    payload: &[u8],
+) -> Instruction {
     let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
     Instruction::new_with_bytes(
         env.program_id,
@@ -872,7 +910,7 @@ fn action_ix(
             target_program: target.to_bytes(),
             beneficiary: beneficiary.to_bytes(),
             relay_fee: RELAY_FEE,
-            action_accounts: 0,
+            action_accounts,
             payload: payload.to_vec(),
         }
         .pack(),
@@ -894,6 +932,20 @@ fn action_proof(
     beneficiary: &Pubkey,
     payload: &[u8],
 ) -> mirror_circuit::SolanaProof {
+    action_proof_n(keys, tree, notes, index, target, beneficiary, 0, payload)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn action_proof_n(
+    keys: &Keys,
+    tree: &MerkleTree,
+    notes: &[Note],
+    index: usize,
+    target: &Pubkey,
+    beneficiary: &Pubkey,
+    action_accounts: u8,
+    payload: &[u8],
+) -> mirror_circuit::SolanaProof {
     use ark_std::rand::SeedableRng;
     let merkle_proof = tree.proof(index as u64).unwrap();
     let binding = mirror_core::action_binding(
@@ -901,7 +953,7 @@ fn action_proof(
         &target.to_bytes(),
         &beneficiary.to_bytes(),
         RELAY_FEE,
-        0,
+        action_accounts,
         payload,
     );
     let witness = Witness {
@@ -973,6 +1025,116 @@ fn a_crowd_of_members_perform_a_real_protocol_action_together() {
         // The action was funded, so the target acted on real value.
         assert!(env.svm.get_account(beneficiary).unwrap().lamports > 0);
     }
+}
+
+/// The action path with a non-empty account list, which nothing exercised
+/// before: every action test passed zero accounts, so the loop that reads them
+/// and the metas built from them were dead code.
+///
+/// SPL Memo requires every account handed to it to have signed, so passing one
+/// makes the CPI's account list load-bearing rather than decorative — if the
+/// program dropped an account, mislabelled its signer flag, or miscounted, Memo
+/// rejects.
+#[test]
+fn an_action_runs_with_a_non_empty_account_list() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let memo: Pubkey = MEMO_PROGRAM.parse().unwrap();
+    env.svm.add_program(memo, &memo_bytes()).unwrap();
+
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+    let payload = b"signed by the pool".as_slice();
+
+    // One action account: the vault itself, which Memo will require to have
+    // signed.
+    // One action account, declared in the proof and therefore bound.
+    let proof = action_proof_n(&keys, &tree, &notes, 0, &memo, &beneficiary, 1, payload);
+    let nullifier = proof.public_inputs[1];
+    let ix = action_ix_n(
+        &env,
+        &proof,
+        nullifier,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        1,
+        payload,
+    );
+    env.send(ix, &relay).expect("submitting the action");
+
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+
+    // The settler itself is the action's account. It signs the transaction, so
+    // Memo's requirement that every account has signed is genuinely satisfied
+    // through the program's metas rather than by Memo having nothing to check.
+    let batch = vec![(spend_pda, beneficiary, relay.insecure_clone())];
+    let ix = settle_ix_full(
+        &env,
+        &batch,
+        &settler.pubkey(),
+        &[Some(memo)],
+        &[vec![AccountMeta::new_readonly(settler.pubkey(), true)]],
+    );
+    let cu = env.send_expect_cu(ix, &settler);
+    println!("settled a signed CPI action, {cu} CU");
+
+    let mut data = env.svm.get_account(&spend_pda).unwrap().data;
+    let record = Spend::load(&mut data).unwrap();
+    assert_eq!(record.status(), STATUS_SETTLED);
+    assert_eq!(record.action_accounts(), 1);
+    assert_eq!(record.payload(), payload);
+}
+
+/// A settler must not be able to hand the action a different account list than
+/// the member declared, because the count is now inside the binding.
+#[test]
+fn a_settler_cannot_change_how_many_accounts_an_action_gets() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let memo: Pubkey = MEMO_PROGRAM.parse().unwrap();
+    env.svm.add_program(memo, &memo_bytes()).unwrap();
+
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+    let payload = b"one account".as_slice();
+
+    let proof = action_proof_n(&keys, &tree, &notes, 1, &memo, &beneficiary, 1, payload);
+    let nullifier = proof.public_inputs[1];
+    let ix = action_ix_n(
+        &env,
+        &proof,
+        nullifier,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        1,
+        payload,
+    );
+    env.send(ix, &relay).expect("submitting");
+
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+
+    // Supply no action accounts where the record declares one. The program reads
+    // one account past this spend's own, so it consumes something that is not
+    // there and fails rather than invoking with a truncated list.
+    let batch = vec![(spend_pda, beneficiary, relay.insecure_clone())];
+    let ix = settle_ix_full(&env, &batch, &settler.pubkey(), &[Some(memo)], &[vec![]]);
+    let err = env
+        .send(ix, &settler)
+        .expect_err("settlement invoked with fewer accounts than declared");
+    println!("truncated action account list rejected: {err}");
 }
 
 #[test]
