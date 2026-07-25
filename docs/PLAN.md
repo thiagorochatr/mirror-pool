@@ -26,6 +26,8 @@ narrower and defensible:
 3. **The measurement is load-bearing.** A pool that cannot demonstrate an
    effective-`k` above a floor refuses to settle. The metric is a protocol
    parameter, not a marketing line.
+   *(Withdrawn during implementation — see "What actually got cut". A program
+   cannot check provenance, so this claim was not deliverable.)*
 
 If we cannot support a claim with a measurement whose method we publish, we do
 not make the claim.
@@ -54,6 +56,9 @@ nullifier, and directs the pool to execute one action disbursing exactly
 ```
 note        = (k, r)                 secret nullifier preimage, blinding
 commitment  = Poseidon(k, r)         the Merkle leaf
+                                     (shipped as Poseidon(k, r, denom_tag) —
+                                      binding the denomination in is cheap
+                                      defence in depth)
 nullifier   = Poseidon(k)            revealed on spend, spent once ever
 ```
 
@@ -137,7 +142,8 @@ competitor's implementation and asserted by its own test.
 
 A separate crate collects real mainnet funding data and reports effective
 anonymity at several label resolutions, with the raw sample committed so results
-reproduce without RPC access. Methodology is being finalised; the design targets
+reproduce without RPC access. The methodology is `docs/PROVENANCE_METHOD.md`; it
+targets
 the specific weaknesses found in the two published attempts: selection bias that
 inflates the untraceable bucket, a sample spanning four seconds of chain time
 presented as a population, and a class key defined at raw-address resolution so
@@ -188,6 +194,32 @@ with the multi-party path documented. Dwell rewards degrade to a flat entry fee.
 The provenance sample shrinks before its method weakens. **The accounting
 invariant, the negative tests, the honest limitations section and a green CI are
 never cut** — they are what separates this from the submissions it means to beat.
+
+### What actually got cut, and why
+
+This plan is as written on day zero. Six things in it did not ship, and each was
+a decision rather than an overrun:
+
+- **`open_epoch` and epoch state.** Folded into `submit_spend` and
+  `settle_epoch`, which need none: a spend records its own timestamp and
+  settlement reads the clock. Four instructions instead of seven.
+- **`claim_reward` and dwell rewards.** Cut to a flat entry fee, as the cut line
+  above anticipated. The fees accrue on the pool account and no instruction pays
+  them out, which is a known loose end rather than a feature.
+- **`self_spend`.** Not built because it is not needed: a member relays for
+  themselves at zero fee and settles their own batch after the timeout. Same
+  exit, one fewer instruction, less attack surface. Pinned by
+  `a_member_can_always_exit_without_any_relay`.
+- **The `audit` command.** Shipped as `analyze`.
+- **"The measurement is load-bearing."** Withdrawn rather than descoped. A
+  program cannot check funding provenance, so the on-chain `k_floor` bounds
+  program-visible membership only and the measurement lives beside it. Claiming
+  otherwise would have been exactly the marketing line this plan disavows.
+- **Mainnet.** Deliberately not deployed: the setup is reproducible rather than
+  secure, and a live pool with public toxic waste would invite deposits it cannot
+  protect. The README states the reasoning.
+
+`EFFECTIVE_K` shipped as `docs/PROVENANCE_METHOD.md`.
 
 ### Stretch, only if the above is complete
 

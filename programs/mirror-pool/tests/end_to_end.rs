@@ -341,8 +341,12 @@ fn a_real_proof_verifies_on_chain_and_records_the_spend() {
         "the relay that submitted must be the one paid at settlement"
     );
 
-    // No member key appears anywhere in this path.
-    assert_ne!(relay.pubkey(), beneficiary);
+    // No member key appears anywhere in this path. The spend was submitted by a
+    // relay and the record names only the relay and the beneficiary, neither of
+    // which is the depositor: every deposit in this pool came from its own fresh
+    // keypair inside `seeded_pool`, and none of those signed anything here.
+    assert_eq!(record.relay(), relay.pubkey().to_bytes());
+    assert_ne!(record.relay(), record.beneficiary());
 }
 
 #[test]
@@ -409,6 +413,10 @@ fn a_relay_cannot_redirect_the_payout() {
         .send(ix, &relay)
         .expect_err("a redirected payout was accepted");
     println!("redirect rejected: {err}");
+    assert!(
+        err.contains("Custom(18)"),
+        "expected ProofVerificationFailed: {err}"
+    );
 }
 
 #[test]
@@ -449,6 +457,10 @@ fn a_relay_cannot_inflate_its_own_fee() {
         .send(ix, &relay)
         .expect_err("an inflated relay fee was accepted");
     println!("fee inflation rejected: {err}");
+    assert!(
+        err.contains("Custom(18)"),
+        "expected ProofVerificationFailed: {err}"
+    );
 }
 
 #[test]
@@ -469,6 +481,7 @@ fn a_proof_against_an_unknown_root_is_rejected() {
         .send(ix, &relay)
         .expect_err("an unknown root was accepted");
     println!("unknown root rejected: {err}");
+    assert!(err.contains("Custom(17)"), "expected UnknownRoot: {err}");
 }
 
 #[test]
@@ -487,6 +500,10 @@ fn a_pool_below_its_anonymity_floor_refuses_to_act() {
         .send(ix, &relay)
         .expect_err("a spend below the anonymity floor was accepted");
     println!("below-floor rejected: {err}");
+    assert!(
+        err.contains("Custom(19)"),
+        "expected BelowAnonymityFloor: {err}"
+    );
 }
 
 #[test]
@@ -506,6 +523,10 @@ fn a_forged_proof_is_rejected() {
         .send(ix, &relay)
         .expect_err("a corrupted proof was accepted");
     println!("forged proof rejected: {err}");
+    assert!(
+        err.contains("Custom(18)"),
+        "expected ProofVerificationFailed: {err}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -759,6 +780,7 @@ fn settlement_refuses_a_beneficiary_the_proof_did_not_bind() {
         .send(ix, &settler)
         .expect_err("settlement paid an unbound beneficiary");
     println!("unbound beneficiary rejected: {err}");
+    assert!(err.contains("Custom(2)"), "expected InvalidPda: {err}");
 }
 
 /// The permissionless exit, demonstrated rather than added.
@@ -1135,6 +1157,66 @@ fn a_settler_cannot_change_how_many_accounts_an_action_gets() {
         .send(ix, &settler)
         .expect_err("settlement invoked with fewer accounts than declared");
     println!("truncated action account list rejected: {err}");
+    // The one negative case without a code of ours: the runtime runs out of
+    // accounts before the program can rule on it. Asserted explicitly so the
+    // exception stays visible rather than looking like an oversight.
+    assert!(
+        err.contains("NotEnoughAccountKeys"),
+        "expected the runtime to refuse before the program: {err}"
+    );
+}
+
+/// The vault can never be one of the callee's accounts, and a settler that tries
+/// is refused rather than left to fail deeper in the runtime. THREAT_MODEL.md
+/// states this; without a test it was the one claim there resting on reading.
+#[test]
+fn a_settler_cannot_place_the_vault_in_an_action_account_list() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let memo: Pubkey = MEMO_PROGRAM.parse().unwrap();
+    env.svm.add_program(memo, &memo_bytes()).unwrap();
+
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+    let payload = b"vault please".as_slice();
+
+    let proof = action_proof_n(&keys, &tree, &notes, 2, &memo, &beneficiary, 1, payload);
+    let nullifier = proof.public_inputs[1];
+    let ix = action_ix_n(
+        &env,
+        &proof,
+        nullifier,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        1,
+        payload,
+    );
+    env.send(ix, &relay).expect("submitting");
+
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+
+    let batch = vec![(spend_pda, beneficiary, relay.insecure_clone())];
+    let ix = settle_ix_full(
+        &env,
+        &batch,
+        &settler.pubkey(),
+        &[Some(memo)],
+        &[vec![AccountMeta::new(env.vault, false)]],
+    );
+    let err = env
+        .send(ix, &settler)
+        .expect_err("the vault was accepted as an action account");
+    println!("vault as action account rejected: {err}");
+    assert!(
+        err.contains("Custom(1)"),
+        "expected MalformedInstruction: {err}"
+    );
 }
 
 #[test]
@@ -1286,6 +1368,10 @@ fn a_relay_cannot_declare_an_account_count_the_member_did_not_authorise() {
         .send(ix, &relay)
         .expect_err("a relay inflated the account count and burnt the note");
     println!("inflated action_accounts rejected: {err}");
+    assert!(
+        err.contains("Custom(1)"),
+        "expected MalformedInstruction: {err}"
+    );
 
     // The nullifier must still be spendable: the griefing attempt cost the
     // member nothing.

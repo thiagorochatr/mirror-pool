@@ -174,8 +174,10 @@ multi-party ceremony, not more SOL.
   action side and measured on the membership side.
 - Not that the trusted setup is secure. It is *reproducible*, which is a
   different and lesser property: the seed is public, so the toxic waste is
-  public, so proofs are forgeable. `mirror verify-setup` lets anyone re-derive
-  the deployed key and check it against the circuit here. A competing submission
+  public, so proofs are forgeable. `mirror verify-setup` re-derives the key from
+  the public seed and compares it element by element against the one compiled
+  into the program — expected digest
+  `b0165d5eac6fe8273b6564c78e8ba548c97e6050ae785e9142de63c81aa905b7`. A competing submission
   publishes its entropy string *and* gitignores its proving key, so its setup is
   insecure and unreproducible at once — no third party can produce a valid proof
   for its deployed program at all.

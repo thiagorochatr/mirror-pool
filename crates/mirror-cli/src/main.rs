@@ -503,15 +503,60 @@ fn main() -> Result<()> {
         Command::VerifySetup { seed, expect } => {
             let keys = mirror_circuit::generate_reproducible(seed.as_bytes())
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let digest = vk_digest(&keys.solana_vk());
-            println!("vk sha256: {digest}");
+            let regenerated = keys.solana_vk();
+            let digest = vk_digest(&regenerated);
+            println!("vk sha256 (regenerated): {digest}");
+
+            // Compare against the key actually compiled into the program, not
+            // only against a digest the caller supplies. Printing a hash and
+            // exiting zero verifies nothing; the point of a reproducible setup
+            // is that a third party can confirm the *deployed* key is the one
+            // this circuit and this seed produce.
+            let baked = mirror_pool_program::vk::VERIFYING_KEY;
+            let mut mismatches: Vec<&str> = Vec::new();
+            if regenerated.alpha_g1 != baked.vk_alpha_g1 {
+                mismatches.push("alpha_g1");
+            }
+            if regenerated.beta_g2 != baked.vk_beta_g2 {
+                mismatches.push("beta_g2");
+            }
+            if regenerated.gamma_g2 != baked.vk_gamme_g2 {
+                mismatches.push("gamma_g2");
+            }
+            if regenerated.delta_g2 != baked.vk_delta_g2 {
+                mismatches.push("delta_g2");
+            }
+            if regenerated.ic.len() != baked.vk_ic.len()
+                || regenerated.ic.iter().zip(baked.vk_ic).any(|(a, b)| a != b)
+            {
+                mismatches.push("ic");
+            }
+
+            if mismatches.is_empty() {
+                println!(
+                    "MATCH — every element of the program's verifying key is reproduced \
+                     by this seed and this circuit ({} IC points checked)",
+                    regenerated.ic.len()
+                );
+            } else {
+                eprintln!(
+                    "MISMATCH against the program's baked key: {}",
+                    mismatches.join(", ")
+                );
+                eprintln!(
+                    "The deployed program does not verify proofs from this circuit. \
+                     A ceremony verifier that checked only delta would have passed this."
+                );
+                std::process::exit(1);
+            }
+
             match expect {
                 Some(want) if want.eq_ignore_ascii_case(&digest) => {
-                    println!("MATCH — this seed and this circuit produce that key");
+                    println!("and it matches the digest you supplied");
                     Ok(())
                 }
                 Some(want) => {
-                    eprintln!("MISMATCH — expected {want}");
+                    eprintln!("but the digest you supplied was {want}");
                     std::process::exit(1);
                 }
                 None => Ok(()),

@@ -67,9 +67,18 @@ controls where its users' money came from. What we do instead:
 
 It is *reproducible*, which is a different and lesser property. The seed is
 public, so the toxic waste is public, so **proofs are forgeable by anyone who
-runs the setup**. `mirror verify-setup` lets a third party re-derive the deployed
-key and confirm it matches this circuit — that is what reproducibility buys, and
-it is worth having, but it is not security.
+runs the setup**.
+
+`mirror verify-setup` is what reproducibility buys. It re-derives the key from the
+public seed and this circuit and compares it **element by element** — alpha, beta,
+gamma, delta and every IC point — against the key compiled into the program. The
+digest it should print is
+
+    b0165d5eac6fe8273b6564c78e8ba548c97e6050ae785e9142de63c81aa905b7
+
+Checking the whole key matters: a verifier that compared only `delta`, as one
+competing ceremony does, would certify a key belonging to an entirely different
+circuit. Reproducibility is worth having and it is not security.
 
 Production needs a multi-party ceremony. The scaffolding for one is not in this
 submission and we do not claim it is.
