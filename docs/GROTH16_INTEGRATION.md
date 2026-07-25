@@ -56,7 +56,10 @@ than a slice.
 
 ## Compute units
 
-Measured in LiteSVM against a real SBF build:
+Measured in LiteSVM against a real SBF build, with a scratch circuit per input
+count that is not part of this repository. The figure this repository does
+reproduce is the whole `submit_spend` instruction at three inputs — 97,860 CU,
+printed by `cargo test -p mirror-pool-program --test end_to_end -- --nocapture`.
 
 | Public inputs | `verify()` |
 |---|---|

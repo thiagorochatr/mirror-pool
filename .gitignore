@@ -7,3 +7,4 @@ target/
 keys/
 *.keypair.json
 notes/
+sp4/

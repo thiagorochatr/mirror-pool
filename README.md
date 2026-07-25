@@ -26,7 +26,7 @@ fixed by a better circuit. What it can be is *measured*, and measured honestly.
 
 So this submission claims exactly two things:
 
-1. **The action side is closed.** Actions execute from the pool PDA, so an
+1. **The action side is closed.** Actions execute from the pool's vault PDA, so an
    action's on-chain funding trace leads to the pool and is identical for every
    member.
 2. **The membership side is measured**, from real mainnet data, with the method
@@ -39,13 +39,13 @@ not say. There is a section below of things we deliberately do not claim.
 
 | | |
 |---|---|
-| `programs/mirror-pool` | The on-chain program. Groth16 verified on-chain at **99k CU**. |
+| `programs/mirror-pool` | The on-chain program. `submit_spend`, proof and all, measured at **97,860 CU** on a real SVM. |
 | `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain. |
 | `crates/mirror-circuit` | R1CS gadget, membership circuit, prover, key export. |
 | `crates/mirror-provenance` | The funding-provenance measurement. |
-| `crates/mirror-cli` | `setup`, `check-endpoint`, `seeds`, `collect`, `analyze`. |
+| `crates/mirror-cli` | `setup`, `verify-setup`, `check-endpoint`, `seeds`, `collect`, `analyze`, `soak`. |
 
-**152 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**179 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -87,25 +87,29 @@ settlement is permissionless, so they settle their own batch once the timeout
 passes. The cost is the expected one — their wallet signs, giving up anonymity —
 and the test pins that the exit works.
 
-**Gadget, host and syscall compute one hash.** All three are checked against
-circomlib's published `poseidon([1,2])` vector rather than against each other, so
-all three agreeing on a wrong answer is not reachable. Several published Solana
-projects ship a gadget whose native and in-circuit hashes differ; that only
-surfaces at proving time.
+**Gadget, host and syscall compute one hash.** The gadget and the host are each
+pinned to circomlib's published `poseidon([1,2])` vector rather than to each
+other, so the two agreeing on a wrong answer would need circomlib's own vector to
+be wrong. The syscall is then checked against the host on-chain: the end-to-end
+suite asserts the root the deployed program builds equals the root the host
+built. Several published Solana projects ship a gadget whose native and
+in-circuit hashes differ; that only surfaces at proving time.
 
 ## The measurement
 
-Two commands, and the split is the point:
+Three commands, two passes, and the split is the point:
 
 ```
-mirror seeds   --program <pool>     # member-weighted frame, one row per depositor
+mirror seeds   --program <program-id>  # member-weighted frame, one row per depositor
 mirror collect --seeds seeds.txt    # the only networked step; writes sample.json
 mirror analyze --sample sample.json # pure, offline, deterministic
 ```
 
-`sample.json` is the committed artifact. Anyone holding it recomputes the
-headline without RPC access and without trusting that our endpoint behaved the
-same way on their machine.
+`data/sample-privacycash.json` is the committed artifact. Anyone holding it
+recomputes the result without RPC access and without trusting that our endpoint
+behaved the same way on their machine — including the fact that this collection
+came back above the 1% RPC-failure limit and so yields no headline.
+`docs/MEASUREMENT_LOG.md` records every run.
 
 ### Design choices that exist to avoid specific published defects
 
@@ -191,4 +195,6 @@ selecting rather than reporting.
 | `docs/PROVENANCE_METHOD.md` | Adversary model, metrics, sampling, the honest-claims analysis. |
 | `docs/GROTH16_INTEGRATION.md` | The arkworks-to-Solana byte layout, verified by execution. |
 | `docs/MEASUREMENT_LOG.md` | Every run. |
+| `docs/THREAT_MODEL.md` | The adversary, what holds, and every place it stops. |
+| `docs/PROOF.md` | Devnet signatures for every flow, and the rejections. |
 | `docs/PLAN.md` | What was planned, and what was cut. |

@@ -162,8 +162,8 @@ mod tests {
     }
 
     /// Anchors the gadget to the same external constant `mirror-core` pins, so
-    /// gadget, host and syscall are each checked against circomlib rather than
-    /// against each other.
+    /// gadget and host are each checked against circomlib rather than against each
+    /// other, and the syscall is checked against the host on-chain.
     #[test]
     fn matches_the_published_circomlib_vector() {
         let (got, _) = in_circuit(&[Fr::from(1u64), Fr::from(2u64)]);

@@ -295,7 +295,7 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
     //
     // A spent nullifier is knowable from one account read; verifying a proof
     // costs about 95k compute units. Checking the cheap thing first means a
-    // replay is rejected at roughly 3k CU instead of 95k, which matters because
+    // replay is rejected at roughly 11k CU instead of 95k, which matters because
     // replays are exactly what an attacker submits in bulk.
     //
     // It is also an explicit check rather than a reliance on account creation

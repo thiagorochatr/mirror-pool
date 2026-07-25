@@ -298,10 +298,10 @@ mod tests {
     /// `poseidon([1, 2])` under circomlib's BN254 x5 instance is the published
     /// constant
     /// `7853200120776062878684798364095072458815029376092732009249414926327459813530`.
-    /// Pinning it here means the host, the syscall and the R1CS gadget in
-    /// `mirror-circuit` are each checked against an external published value
-    /// rather than against each other — so all three agreeing on a wrong answer
-    /// is not a reachable state.
+    /// Pinning it here means the host and the R1CS gadget in `mirror-circuit` are
+    /// each checked against an external published value rather than against each
+    /// other. The syscall is then checked against the host on-chain, by the
+    /// end-to-end suite asserting the deployed program's root equals the host's.
     #[test]
     fn poseidon2_matches_the_published_circomlib_vector() {
         const CIRCOMLIB_1_2: [u8; 32] = [

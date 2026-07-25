@@ -26,12 +26,15 @@ pool's notes.
 settler-signed. A member's wallet never touches the protocol after depositing.
 
 **A relay cannot alter what was authorised.** The action binding covers the
-selector, the target program, the beneficiary, the relay fee and the payload, and
-is recomputed on-chain rather than transmitted.
+selector, the target program, the beneficiary, the relay fee, the declared
+account count and the payload, under a domain tag, and is recomputed on-chain
+rather than transmitted.
 
-**Actions carry one signer.** The pool PDA invokes on every member's behalf, so
-the on-chain trace of a stake made through the pool is identical whoever asked
-for it.
+**Actions carry one caller.** Every action is invoked by the pool program on a
+member's behalf and funded out of the pool's vault, so the on-chain trace of a
+stake made through the pool is identical whoever asked for it. The vault
+authorises the CPI through its seeds but is never one of the callee's accounts —
+see below.
 
 **Payouts share a timestamp.** Settlement batches, so arrival time does not
 separate members within a batch.
@@ -54,7 +57,7 @@ survives is the size of the class rather than `k`.
 **This is not closed and cannot be by a better circuit.** No deposit pool
 controls where its users' money came from. What we do instead:
 
-- the *action* side is closed, because actions execute from the pool PDA;
+- the *action* side is closed, because actions execute from the pool's vault PDA;
 - the *membership* side is measured from real chain data, and the method, the
   failure census and the sampling frame are published beside the number.
 
@@ -93,8 +96,8 @@ rather than left to fail later.
 
 ### The action's account list is chosen by the settler
 
-The proof binds the selector, the target program, the relay fee, the payload and
-**how many** accounts the action takes. It does not bind **which** accounts fill
+The proof binds the selector, the target program, the beneficiary, the relay
+fee, the payload and **how many** accounts the action takes. It does not bind **which** accounts fill
 those slots — settlement is permissionless, so whoever settles picks them.
 
 For a target whose destination is instruction data this changes nothing. For a
@@ -130,7 +133,9 @@ measurement is the honest reading of what the set is worth.
 ### Not audited
 
 No external review. The end-to-end suite runs against the compiled program on a
-real SVM and the negative cases carry this program's own error codes, which is
+real SVM and every negative case but one carries this program's own error code —
+the truncated-account-list case is caught by the runtime before the program can
+rule on it — which is
 evidence of behaviour and not a substitute for an audit.
 
 ## Deliberate non-goals

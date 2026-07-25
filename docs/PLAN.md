@@ -17,7 +17,7 @@ We do not claim to hide provenance. Value moves one way on a ledger, and no
 deposit pool controls where its users' money came from. What we claim is
 narrower and defensible:
 
-1. **The action side is closed.** Actions are executed by the pool PDA, so the
+1. **The action side is closed.** Actions are executed by the pool's vault PDA, so the
    on-chain funding trace of an action leads to the pool and is identical for
    every member.
 2. **The membership side is measured, not asserted.** Effective anonymity is

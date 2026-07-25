@@ -14,7 +14,7 @@ mirror-core        field, Poseidon, Merkle accumulator, notes   (linked on-chain
 mirror-circuit     R1CS gadget, membership circuit, prover      (host only)
 mirror-pool        the on-chain program
 mirror-provenance  funding-provenance measurement               (host only)
-mirror-cli         setup, endpoint check, collect, analyze
+mirror-cli         setup, verify-setup, endpoint check, seeds, collect, analyze, soak
 ```
 
 `mirror-core` is shared by the program and the host deliberately: a commitment,
@@ -50,7 +50,10 @@ itself a domain separator and a free one:
 | nullifier | 1 |
 | Merkle node | 2 |
 | note commitment | 3 |
-| action binding | 4 |
+
+The action binding is not in this table. Its payload is variable length and
+Poseidon is a fixed-arity compression, so the binding is a keccak digest under
+the domain tag `mirror-pool:action:v1`, masked into the field.
 
 An integer tag was the first design and it was wrong: with a small tag constant,
 a Merkle node whose left child equals the tag collides with a nullifier.
@@ -79,7 +82,9 @@ an unspent note.
 with root `R`, my nullifier is `H1(k)`, and this proof is bound to `action`.*
 
 Three public inputs, and that is a cost decision. On-chain verification measures
-at `74,179 + 5,661 × N` compute units, so each input costs about 5.7k CU.
+as `74,179 + 5,661 × N` compute units, so each input costs about 5.7k CU. See
+`GROTH16_INTEGRATION.md`; the figure this repository reproduces directly is the
+whole `submit_spend` instruction at 97,860 CU.
 
 | public input | why it cannot be a witness |
 |---|---|
@@ -106,11 +111,13 @@ on-chain and to light-poseidon off-chain, so host and program agree by
 construction. The R1CS gadget then reads light-poseidon's published round
 constants rather than re-deriving them.
 
-All three are checked against circomlib's published `poseidon([1,2])` vector
-rather than against each other, so all three agreeing on a wrong answer is not a
-reachable state. Several published Solana projects ship a gadget whose native and
-in-circuit hashes are different functions; that failure only appears at proving
-time, and this is the test that catches it.
+The gadget and the host are each checked against circomlib's published
+`poseidon([1,2])` vector rather than against each other, and the syscall is then
+checked against the host on-chain — the end-to-end suite asserts the root the
+deployed program builds equals the root the host built. Several published Solana
+projects ship a gadget whose native and in-circuit hashes are different
+functions; that failure only appears at proving time, and this is the test that
+catches it.
 
 A pure-Rust Poseidon on SBF overflows the 4 KB stack frame and costs roughly
 1,500× the syscall even where codegen lets it complete, so no arkworks code is
@@ -130,13 +137,18 @@ never from the instruction, and appends the commitment to the accumulator.
 records the authorised action. Pays out nothing.
 
 The action binding is never transmitted. It is recomputed on-chain from the
-selector, the beneficiary and the relay fee and used as the third public input,
+selector, the target program, the beneficiary, the relay fee, the declared
+account count and the payload, and used as the third public input,
 so a relay that alters any of them produces a different binding and the pairing
 fails. There is no separate field that could be checked incorrectly.
 
 The relay signs, never the member. A member paying their own fee would sign with
 their own wallet and destroy their own anonymity, so no member key appears on
 chain on this path.
+
+Two limits follow, and `docs/THREAT_MODEL.md` states them: the binding fixes
+*how many* accounts an action takes but not *which* ones, and the vault can never
+be one of the callee's own accounts.
 
 **`settle_epoch`** — executes a batch in one transaction so every payout shares a
 timestamp and an ordering.
@@ -169,7 +181,7 @@ where its users' money came from.
 
 So the protocol does two things about it, and claims exactly those two:
 
-1. **The action side is closed.** Actions are executed by the pool PDA, so the
+1. **The action side is closed.** Actions are executed by the pool's vault PDA, so the
    on-chain funding trace of an action leads to the pool and is identical for
    every member.
 2. **The membership side is measured.** `mirror-provenance` computes it from real
