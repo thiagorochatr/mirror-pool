@@ -10,4 +10,17 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 mirror-core.workspace = true
 solana-program.workspace = true
+solana-system-interface.workspace = true
 groth16-solana.workspace = true
+
+[features]
+no-entrypoint = []
+
+# The entrypoint! macro emits these; declaring them keeps `-D warnings` honest
+# rather than silencing the lint wholesale.
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = [
+    'cfg(target_os, values("solana"))',
+    'cfg(feature, values("custom-heap", "custom-panic"))',
+]
