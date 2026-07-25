@@ -1,0 +1,9 @@
+target/
+**/target/
+.DS_Store
+*.so
+!programs/**/fixtures/*.so
+.env
+keys/
+*.keypair.json
+notes/

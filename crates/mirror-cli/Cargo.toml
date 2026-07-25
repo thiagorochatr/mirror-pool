@@ -1,0 +1,17 @@
+[package]
+name = "mirror-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mirror"
+path = "src/main.rs"
+
+[dependencies]
+mirror-core.workspace = true
+mirror-circuit.workspace = true
+mirror-provenance.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
