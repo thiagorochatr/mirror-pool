@@ -5,7 +5,9 @@
 #![forbid(unsafe_code)]
 
 pub mod error;
+pub mod instruction;
 pub mod state;
 
 pub use error::MirrorProgramError;
+pub use instruction::Instruction;
 pub use state::{Pool, POOL_LEN, POOL_VERSION, ROOT_HISTORY};
