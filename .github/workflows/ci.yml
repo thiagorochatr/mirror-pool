@@ -38,6 +38,8 @@ jobs:
           echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
       - run: solana --version
       - name: Build the on-chain program
-        run: cargo build-sbf --manifest-path programs/mirror-pool/Cargo.toml
+        # Isolated target dir: see the note in the Makefile. Sharing one with the
+        # host build makes cargo feed a host .dylib to the SBF rustc.
+        run: make build-sbf
       - name: Run the on-chain test suite against the built .so
         run: cargo test -p mirror-pool-program --all-features
