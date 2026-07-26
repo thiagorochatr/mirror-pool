@@ -26,7 +26,7 @@ use solana_transaction::Transaction;
 // pool. Changing it starts a clean one, which is how the evidence run gets to
 // record its own `init_pool` rather than reusing a pool an earlier run created
 // and leaving the creation step undocumented.
-const DENOMINATION: u64 = 20_000_007; // 0.02 SOL
+const DENOMINATION: u64 = 20_000_017; // 0.02 SOL
 const ENTRY_FEE: u64 = 0;
 const K_FLOOR: u32 = 4;
 const RELAY_FEE: u64 = 200_000;
@@ -105,6 +105,8 @@ pub struct Soak {
     /// Case name, the program's own error code, and what the rejection proves.
     pub negatives: Vec<(String, String, String)>,
     pub accounting: Option<Accounting>,
+    /// The callee's own log line naming the pool's vault as a signer.
+    pub signed_action: Option<String>,
 }
 
 impl Soak {
@@ -120,6 +122,7 @@ impl Soak {
             steps: Vec::new(),
             negatives: Vec::new(),
             accounting: None,
+            signed_action: None,
         }
     }
 
@@ -169,9 +172,32 @@ impl Soak {
     }
 
     /// Creates the pool, unless a previous run already did.
+    ///
+    /// Reusing a pool is allowed only while it is empty. The accounting claim
+    /// this run publishes — that the vault came to rest on its rent-exempt floor
+    /// with a remainder of zero — is a statement about a pool whose every
+    /// deposit this run also settles. A pool carrying notes from an earlier run
+    /// cannot satisfy it, and finding that out at the assertion means having
+    /// already spent the deposits to get there. It is checked before the money
+    /// moves instead.
     pub fn init_pool(&mut self) -> Result<()> {
-        if self.client.account_data(&self.pool)?.is_some() {
-            println!("  pool already exists, reusing it");
+        if let Some(data) = self.client.account_data(&self.pool)? {
+            let mut data = data;
+            let pool = mirror_pool_program::Pool::load(&mut data)
+                .map_err(|e| anyhow!("the account at the pool address is not a pool: {e:?}"))?;
+            let outstanding = pool
+                .outstanding_notes()
+                .map_err(|e| anyhow!("reading the pool: {e:?}"))?;
+            if outstanding > 0 {
+                return Err(anyhow!(
+                    "the pool for denomination {DENOMINATION} already holds {outstanding} \
+                     unspent note(s), so this run cannot close its vault to the rent-exempt \
+                     floor and the accounting table would be a different claim than the one \
+                     it makes. Raise DENOMINATION in soak.rs for a clean pool — the note \
+                     ledger is keyed by it, so a new denomination starts a new ledger too."
+                ));
+            }
+            println!("  pool already exists and is empty, reusing it");
             return Ok(());
         }
         let ix = Instruction::new_with_bytes(
@@ -420,9 +446,36 @@ impl Soak {
         }
     }
 
+    /// Reads the callee's own logs to confirm the pool signed the inner call.
+    ///
+    /// The settle signature proves a transaction landed. It says nothing about
+    /// who signed the instruction the pool made *inside* it, and that is the
+    /// claim worth checking, so this asks the cluster for the logs and looks for
+    /// what SPL Memo says. Memo names every signer it was given and refuses any
+    /// account that has not signed, so its own words are the evidence — and if
+    /// they are absent the run fails here rather than publishing the claim.
+    pub fn confirm_pool_signed(&mut self, signature: &str) -> Result<()> {
+        let logs = self.client.transaction_logs(signature)?;
+        let vault = self.vault.to_string();
+        let line = logs
+            .iter()
+            .find(|l| l.contains("Signed by") && l.contains(&vault))
+            .ok_or_else(|| {
+                anyhow!(
+                    "settlement landed but SPL Memo did not report the pool's vault \
+                     ({vault}) as a signer, so the pool did not actually sign. Logs:\n{}",
+                    logs.join("\n")
+                )
+            })?
+            .clone();
+        println!("  the callee's own log: {}", line.trim());
+        self.signed_action = Some(line);
+        Ok(())
+    }
+
     /// Settles a batch. An entry carrying a target program is a CPI action, and
     /// the vault follows it as that action's one account.
-    pub fn settle(&mut self, batch: &[Settlement]) -> Result<()> {
+    pub fn settle(&mut self, batch: &[Settlement]) -> Result<String> {
         let mut metas = vec![
             AccountMeta::new(self.payer.pubkey(), true),
             AccountMeta::new(self.pool, false),
@@ -460,8 +513,8 @@ impl Soak {
                 batch.len()
             )
         };
-        self.record("settle_epoch", sig, note);
-        Ok(())
+        self.record("settle_epoch", sig.clone(), note);
+        Ok(sig)
     }
 
     pub fn pool(&self) -> Pubkey {
@@ -579,7 +632,14 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
 
     println!("\npositive path:");
     soak.init_pool()?;
-    let ledger = std::path::Path::new("data/soak-notes.json");
+
+    // The ledger is scoped to the denomination because the pool is. `deposit`
+    // refuses to run when the ledger and the chain disagree on how many leaves
+    // exist, and tells you to use a fresh denomination — advice that a single
+    // shared ledger file would make impossible to follow, since the fresh pool
+    // starts empty and the old notes are still in the file.
+    let ledger_path = format!("data/soak-notes-{DENOMINATION}.json");
+    let ledger = std::path::Path::new(&ledger_path);
     let (tree, notes) = soak.deposit(K_FLOOR as u64, ledger)?;
 
     // Spend the notes this run deposited, not the earliest ones. A rerun
@@ -625,7 +685,8 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     }
 
     let vault_before = soak.balance(&soak.vault())?;
-    soak.settle(&batch)?;
+    let settle_sig = soak.settle(&batch)?;
+    soak.confirm_pool_signed(&settle_sig)?;
     let vault_after = soak.balance(&soak.vault())?;
     // The vault carries no data, so its floor is the rent-exempt minimum for a
     // zero-byte account — asked of the cluster rather than assumed.
@@ -802,6 +863,30 @@ fn write_proof(soak: &Soak, url: &str, out: &std::path::Path) -> Result<()> {
              successfully.\n",
             a.vault_after_settle
                 .saturating_sub(a.vault_rent_exempt_minimum)
+        ));
+    }
+
+    if let Some(line) = &soak.signed_action {
+        md.push_str("\n## The pool signed an action, and the callee said so\n\n");
+        md.push_str(
+            "The settlement above carried four spends, and one of them was not a transfer: \
+             the pool invoked SPL Memo as that member's **authority**, in the same \
+             transaction as the other three. That is the capability a stake delegation or a \
+             governance vote needs and a payment does not.\n\n",
+        );
+        md.push_str(
+            "A signature only proves the transaction landed. It says nothing about who \
+             signed the instruction the pool made *inside* it, so the evidence has to come \
+             from the callee. SPL Memo refuses any account handed to it that has not signed, \
+             and names the ones that did:\n\n",
+        );
+        md.push_str(&format!("```\n{}\n```\n\n", line.trim()));
+        md.push_str(&format!(
+            "That is the pool's vault, `{}`, which has no private key — it signed through \
+             seeds only the program holds. The soak reads this line back from the cluster \
+             and fails the run if it is absent, so this section cannot appear without the \
+             callee having said it.\n",
+            soak.vault()
         ));
     }
 

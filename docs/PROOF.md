@@ -4,24 +4,24 @@ Every line here is a transaction that landed. Nothing is simulated: the proof is
 
 - cluster: `devnet`
 - program: `8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa`
-- pool: `J68VyjjKQTvg7tsZJHoCEQ5nMYGnUVs4esA7EF1nP8Ui`
-- vault: `54PT56YwQWJA6UAYNsnqKPJq4SrCW2gnF7HVvU8QDk7a`
+- pool: `AM7MrJGDWj83poTTRK4gVpCuGgybUKzNvZRW41x3yCfJ`
+- vault: `3x8NUzCzQdbjEX2T7gapDAgg6nJU8Y3ZsbUFPnqfhyLV`
 
 ## Flows
 
 | step | signature | note |
 |---|---|---|
-| init_pool | [`2i2dSth52MNMboBjL7s28MaArrh9Vmj2z7Rm21CYpig79czESepPUyqkDPiyvM8UvV2NP587kyZUqxhZYB2CJrdB`](https://explorer.solana.com/tx/2i2dSth52MNMboBjL7s28MaArrh9Vmj2z7Rm21CYpig79czESepPUyqkDPiyvM8UvV2NP587kyZUqxhZYB2CJrdB?cluster=devnet) | denomination 20000007, k_floor 4 |
-| deposit | [`3uFCoMKsmeyWFbvRFE2qiwWm3VRTZmdMW4tnsSxLMCMuXfhzrt7irdjE9S1R86HmzC3vc7j1BKpNbj893CrzW8RX`](https://explorer.solana.com/tx/3uFCoMKsmeyWFbvRFE2qiwWm3VRTZmdMW4tnsSxLMCMuXfhzrt7irdjE9S1R86HmzC3vc7j1BKpNbj893CrzW8RX?cluster=devnet) | note 1 |
-| deposit | [`4dtLcdt9CdCdoimcgNLouG8Kh72oMfy1jrB2p5e8muAUXc4asGk2SsSgsERhzUjXNHZSmr2xMWfWXcnJvX9sav2H`](https://explorer.solana.com/tx/4dtLcdt9CdCdoimcgNLouG8Kh72oMfy1jrB2p5e8muAUXc4asGk2SsSgsERhzUjXNHZSmr2xMWfWXcnJvX9sav2H?cluster=devnet) | note 2 |
-| deposit | [`4nRS8qTSW9h58kimVCX8D7YWHHw4uicBnCfZcPqqLdcHcUCxnhGbX7GTjRKuy9RLSeHbrALGp7Gu3RAgfRMaJkSX`](https://explorer.solana.com/tx/4nRS8qTSW9h58kimVCX8D7YWHHw4uicBnCfZcPqqLdcHcUCxnhGbX7GTjRKuy9RLSeHbrALGp7Gu3RAgfRMaJkSX?cluster=devnet) | note 3 |
-| deposit | [`4F5nMtQTdEHiBb2yDcZhwMtscsdFbxEZXxJvAt3ZAxYvTLJsC2bgQbiiw8pCsMYizuFUivHgQcz3JXG75x5efYEs`](https://explorer.solana.com/tx/4F5nMtQTdEHiBb2yDcZhwMtscsdFbxEZXxJvAt3ZAxYvTLJsC2bgQbiiw8pCsMYizuFUivHgQcz3JXG75x5efYEs?cluster=devnet) | note 4 |
-| submit_spend | [`48RWESn6bf5ipZi9uYhUo31XJw4RcqZyxT3vk3U8g2UZ8bceZihUmUJrZCJTt9e18Mi2ymfQW8j26Vvoo2fKgYZu`](https://explorer.solana.com/tx/48RWESn6bf5ipZi9uYhUo31XJw4RcqZyxT3vk3U8g2UZ8bceZihUmUJrZCJTt9e18Mi2ymfQW8j26Vvoo2fKgYZu?cluster=devnet) | note 0, relay-signed |
-| submit_spend | [`4QFM6p4cniHTmATLJPuMR89DyYohFM5N3wrXYGJJpiAQ3xzNLgz8hCD5pN5BEoyysRYDc6FcQD2xbRZggrw2Nsmi`](https://explorer.solana.com/tx/4QFM6p4cniHTmATLJPuMR89DyYohFM5N3wrXYGJJpiAQ3xzNLgz8hCD5pN5BEoyysRYDc6FcQD2xbRZggrw2Nsmi?cluster=devnet) | note 1, relay-signed |
-| submit_spend | [`FHHgBrh8ytutD58XtSTGUKBJpgqq5rV9krBgq9VheaBJQEpQcucZkU85mHX9KnuvEiazDA753Se2azDSPb4RmtZ`](https://explorer.solana.com/tx/FHHgBrh8ytutD58XtSTGUKBJpgqq5rV9krBgq9VheaBJQEpQcucZkU85mHX9KnuvEiazDA753Se2azDSPb4RmtZ?cluster=devnet) | note 2, relay-signed |
-| submit_spend | [`4ZFy3xaCokZoqWYvEw3iwRYQQr6obpMqdKjUvtUqhaPZqRW3RFSzX3Eva7QdvJLpnpMRXhvw9cEB26NY9Tbh8o6P`](https://explorer.solana.com/tx/4ZFy3xaCokZoqWYvEw3iwRYQQr6obpMqdKjUvtUqhaPZqRW3RFSzX3Eva7QdvJLpnpMRXhvw9cEB26NY9Tbh8o6P?cluster=devnet) | note 3, relay-signed |
-| settle_epoch | [`67SdKHQ2fHcJ8nommceaaJnnFaCL5mtKwtuyy2uTHB2Lz8aauyDtGDTQ8SJFC28LMM33jZQHjb3cm3x9BXRiPM8W`](https://explorer.solana.com/tx/67SdKHQ2fHcJ8nommceaaJnnFaCL5mtKwtuyy2uTHB2Lz8aauyDtGDTQ8SJFC28LMM33jZQHjb3cm3x9BXRiPM8W?cluster=devnet) | 4 spends |
-| deposit | [`4fcgHaFewWfoy2QMqpGTChxuhfFg8fTeWts6sW45rR1ZhJMk9fR4X6AQnZXBxiZW3Si55VNpSzuxh8FtL1p8ENtt`](https://explorer.solana.com/tx/4fcgHaFewWfoy2QMqpGTChxuhfFg8fTeWts6sW45rR1ZhJMk9fR4X6AQnZXBxiZW3Si55VNpSzuxh8FtL1p8ENtt?cluster=devnet) | note 5 |
+| init_pool | [`nbk64A6kCYWh3yJKvZYrqKzNjQfFHnMREDqnbBMZGPRiJMch4TZXVMd3LLYozVKSbPYoMsgtUvJbo1yrKShQFQh`](https://explorer.solana.com/tx/nbk64A6kCYWh3yJKvZYrqKzNjQfFHnMREDqnbBMZGPRiJMch4TZXVMd3LLYozVKSbPYoMsgtUvJbo1yrKShQFQh?cluster=devnet) | denomination 20000017, k_floor 4 |
+| deposit | [`4rh44zFpUrdyPaoNaiLDoKddzszpKwUGM3PmGX7XSF2StbJUYkjzu5k9NpCXhY9NWFuN4Ww1jxpGuSs5m6bU9QFu`](https://explorer.solana.com/tx/4rh44zFpUrdyPaoNaiLDoKddzszpKwUGM3PmGX7XSF2StbJUYkjzu5k9NpCXhY9NWFuN4Ww1jxpGuSs5m6bU9QFu?cluster=devnet) | note 1 |
+| deposit | [`3mogP7EotT5F6s6B9vrdWzDSxs2WEskDk6GSzWK8vw8N1hpaEmX1KJ4nBrEgzBaNUCkqcxNdkEnAx6Td54SgRNa4`](https://explorer.solana.com/tx/3mogP7EotT5F6s6B9vrdWzDSxs2WEskDk6GSzWK8vw8N1hpaEmX1KJ4nBrEgzBaNUCkqcxNdkEnAx6Td54SgRNa4?cluster=devnet) | note 2 |
+| deposit | [`4rj33jkYepFCZfEpncBBjeNBp7DS1LA9priRMsdPWpSMBiJL218g9rMwAD8WUwnX1pJ5GuvQEsve6Q417poK3CCL`](https://explorer.solana.com/tx/4rj33jkYepFCZfEpncBBjeNBp7DS1LA9priRMsdPWpSMBiJL218g9rMwAD8WUwnX1pJ5GuvQEsve6Q417poK3CCL?cluster=devnet) | note 3 |
+| deposit | [`3YUQ7upP47RjUujKPe1Tcgv4ods1W8mCsV7jpWcqmRSEaU5GgRiivxHX8pFJmmgSgJ9ZpTfNGH9RCdeXhhYGpL47`](https://explorer.solana.com/tx/3YUQ7upP47RjUujKPe1Tcgv4ods1W8mCsV7jpWcqmRSEaU5GgRiivxHX8pFJmmgSgJ9ZpTfNGH9RCdeXhhYGpL47?cluster=devnet) | note 4 |
+| submit_spend | [`4xkzxNGCqUo3Qu2TqoG15e6ZDWR1H9edad3V88ox3oYtmAAEKbJ4uzP5qkg7cfJaHbA6uREiLpmQWFU4h8L12CpH`](https://explorer.solana.com/tx/4xkzxNGCqUo3Qu2TqoG15e6ZDWR1H9edad3V88ox3oYtmAAEKbJ4uzP5qkg7cfJaHbA6uREiLpmQWFU4h8L12CpH?cluster=devnet) | note 0, relay-signed |
+| submit_spend | [`49H8PgT13fUC9gNXJWaJ7ui3hBqwngPunwvTH4wFicNGe8BdGGKmbivorApnSE8JKT3VBfhwFc2nY8XMJ5RczmdV`](https://explorer.solana.com/tx/49H8PgT13fUC9gNXJWaJ7ui3hBqwngPunwvTH4wFicNGe8BdGGKmbivorApnSE8JKT3VBfhwFc2nY8XMJ5RczmdV?cluster=devnet) | note 1, relay-signed |
+| submit_spend | [`2c5AyyspfzfBsJ8mW2LYKuUE8zTDx5wxFxheWZxjVyU6Lc7LtqqBcsgT8vJvurMAoPQetpiELBnxVGbMRnvqqoCk`](https://explorer.solana.com/tx/2c5AyyspfzfBsJ8mW2LYKuUE8zTDx5wxFxheWZxjVyU6Lc7LtqqBcsgT8vJvurMAoPQetpiELBnxVGbMRnvqqoCk?cluster=devnet) | note 2, relay-signed |
+| submit_spend | [`4129ftZy7XoZ5vZLMtCZgoXsfphBAQr5fNtKNNJaViVZMfmbUS9SN5F8owbqdYaGTMBZTNVx7e3hCeyKXHcbERou`](https://explorer.solana.com/tx/4129ftZy7XoZ5vZLMtCZgoXsfphBAQr5fNtKNNJaViVZMfmbUS9SN5F8owbqdYaGTMBZTNVx7e3hCeyKXHcbERou?cluster=devnet) | note 3, relay-signed, action: pool-signed CPI to SPL Memo |
+| settle_epoch | [`3wPUYgdYdC9AXfL1XYXeHP9YMWMJeZvGhBpq91qWRH6ZWQc4fmJkykjgzAR2GdUrUFumswNHKLjyEdewHW14EJPj`](https://explorer.solana.com/tx/3wPUYgdYdC9AXfL1XYXeHP9YMWMJeZvGhBpq91qWRH6ZWQc4fmJkykjgzAR2GdUrUFumswNHKLjyEdewHW14EJPj?cluster=devnet) | 4 spends in one transaction, 1 of them a CPI the pool signed |
+| deposit | [`3L3qxxDpNf9rHRqXhf62xRfrDEZQEDeY52vmAti6gn3dokUk2HnmrpXoiUPHS7RKt1Fnz8vPPBfcNRBHmtGjDV2w`](https://explorer.solana.com/tx/3L3qxxDpNf9rHRqXhf62xRfrDEZQEDeY52vmAti6gn3dokUk2HnmrpXoiUPHS7RKt1Fnz8vPPBfcNRBHmtGjDV2w?cluster=devnet) | note 5 |
 
 ## Vault accounting
 
@@ -29,16 +29,28 @@ The accounting invariant is a statement about the vault's lamports, so here are 
 
 | quantity | lamports |
 |---|---|
-| denomination | 20000007 |
+| denomination | 20000017 |
 | notes settled | 4 |
 | relay fee (taken out of the denomination, not added) | 200000 |
-| vault before settlement | 80890908 |
+| vault before settlement | 80890948 |
 | vault after settlement | 890880 |
 | rent-exempt minimum, 0 bytes | 890880 |
-| **paid out** | **80000028** |
-| **owed** (denomination × notes) | **80000028** |
+| **paid out** | **80000068** |
+| **owed** (denomination × notes) | **80000068** |
 
 Paid out equals owed, and the vault came to rest on its floor with a remainder of 0 lamports. The soak asserts both and fails the run otherwise, so this table cannot record a discrepancy and still exit successfully.
+
+## The pool signed an action, and the callee said so
+
+The settlement above carried four spends, and one of them was not a transfer: the pool invoked SPL Memo as that member's **authority**, in the same transaction as the other three. That is the capability a stake delegation or a governance vote needs and a payment does not.
+
+A signature only proves the transaction landed. It says nothing about who signed the instruction the pool made *inside* it, so the evidence has to come from the callee. SPL Memo refuses any account handed to it that has not signed, and names the ones that did:
+
+```
+Program log: Signed by 3x8NUzCzQdbjEX2T7gapDAgg6nJU8Y3ZsbUFPnqfhyLV
+```
+
+That is the pool's vault, `3x8NUzCzQdbjEX2T7gapDAgg6nJU8Y3ZsbUFPnqfhyLV`, which has no private key — it signed through seeds only the program holds. The soak reads this line back from the cluster and fails the run if it is absent, so this section cannot appear without the callee having said it.
 
 ## Rejections
 

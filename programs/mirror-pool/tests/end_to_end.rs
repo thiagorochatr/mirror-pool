@@ -1375,6 +1375,99 @@ fn the_pool_signs_an_action_as_its_own_authority() {
     assert_eq!(Spend::load(&mut data).unwrap().status(), STATUS_SETTLED);
 }
 
+/// A mixed batch: plain transfers and a call the pool signs, settled together.
+///
+/// This is the case a live cluster found and a single-spend test could not. The
+/// runtime's objection is not to a signed call following a payout *for that
+/// member* — it is to a signed call following any lamport this program moved in
+/// the same instruction, which in a batch means the three members settled before
+/// it. Settlement therefore runs every signed call first and pays everybody
+/// afterwards.
+///
+/// The shape matters beyond the bug. A crowd is mixed by definition, and a
+/// signed action that could only settle by itself would have to wait out the
+/// timeout instead of joining a batch — losing the shared timestamp that makes
+/// the crowd worth standing in.
+#[test]
+fn a_signed_action_settles_inside_a_batch_of_plain_transfers() {
+    let (mut env, tree, notes, keys) = seeded_pool(8);
+    let memo: Pubkey = MEMO_PROGRAM.parse().unwrap();
+    env.svm.add_program(memo, &memo_bytes()).unwrap();
+
+    // Three ordinary members first, so the vault has already moved by the time
+    // the signed call runs.
+    let mut batch = submit_batch(&mut env, &tree, &notes, &keys, 3);
+    let mut targets: Vec<Option<Pubkey>> = vec![None, None, None];
+    let mut action_accounts: Vec<Vec<AccountMeta>> = vec![Vec::new(), Vec::new(), Vec::new()];
+
+    let signer_beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+    let payload = b"one of four".as_slice();
+    let proof = action_proof_sel(
+        &keys,
+        &tree,
+        &notes,
+        3,
+        &memo,
+        &signer_beneficiary,
+        1,
+        payload,
+        INVOKE_SIGNED,
+    );
+    let nullifier = proof.public_inputs[1];
+    let ix = action_ix_sel(
+        &env,
+        &proof,
+        nullifier,
+        &memo,
+        &signer_beneficiary,
+        &relay.pubkey(),
+        1,
+        payload,
+        INVOKE_SIGNED,
+    );
+    env.send(ix, &relay).expect("submitting the signed action");
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+    batch.push((spend_pda, signer_beneficiary, relay.insecure_clone()));
+    targets.push(Some(memo));
+    action_accounts.push(vec![AccountMeta::new(env.vault, false)]);
+
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let vault_before = env.vault_lamports();
+    let ix = settle_ix_full(&env, &batch, &settler.pubkey(), &targets, &action_accounts);
+    let msg = Message::new(&[ix], Some(&settler.pubkey()));
+    let tx = Transaction::new(&[&settler], msg, env.svm.latest_blockhash());
+    let meta = env
+        .svm
+        .send_transaction(tx)
+        .unwrap_or_else(|e| panic!("mixed batch: {:?}\n{:#?}", e.err, e.meta.logs));
+
+    let vault = env.vault.to_string();
+    assert!(
+        meta.logs
+            .iter()
+            .any(|l| l.contains("Signed by") && l.contains(&vault)),
+        "the pool did not sign inside a mixed batch: {:#?}",
+        meta.logs
+    );
+    println!(
+        "mixed batch of 4 settled, one of them pool-signed, {} CU",
+        meta.compute_units_consumed
+    );
+
+    // Everyone in the batch is paid, whatever their action was.
+    for (_, beneficiary, _) in &batch {
+        assert_eq!(
+            env.svm.get_account(beneficiary).unwrap().lamports,
+            DENOMINATION - RELAY_FEE,
+            "a member of the mixed batch went unpaid"
+        );
+    }
+    assert_eq!(vault_before - env.vault_lamports(), 4 * DENOMINATION);
+}
+
 /// The attack the signing selector invites: point the pool's own signature at
 /// the System Program and tell it to move the escrow somewhere else.
 ///

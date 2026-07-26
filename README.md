@@ -75,7 +75,7 @@ not say. There is a section below of things we deliberately do not claim.
 | `crates/mirror-provenance` | The funding-provenance measurement. |
 | `crates/mirror-cli` | `setup`, `verify-setup`, `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection`, `soak`. |
 
-**197 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**198 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -374,9 +374,17 @@ lifecycle ran there against a real validator — pool creation, deposits, spends
 each carrying a Groth16 proof verified by the deployed program's own syscall, and
 a settlement that closed the vault to its rent-exempt minimum to the lamport.
 
-`docs/PROOF.md` has every signature *and* the lamports, because "closed to the
+That settlement carried four spends and **one of them was not a transfer**: the
+pool invoked SPL Memo as that member's authority, in the same transaction as the
+other three. A signature only proves a transaction landed, so the evidence comes
+from the callee — Memo names its signers, and it named the pool's vault, an
+account with no private key. The soak reads that line back off the cluster and
+fails the run if it is missing, so `docs/PROOF.md` cannot carry the claim
+without the claim being true.
+
+That file has every signature *and* the lamports, because "closed to the
 rent-exempt minimum" is the interesting part of that sentence and a list of
-signatures does not show it: 80,000,028 owed against 80,000,028 paid out, and a
+signatures does not show it: 80,000,068 owed against 80,000,068 paid out, and a
 vault resting on its floor with a remainder of zero. The soak asserts both and
 fails the run otherwise, so that table cannot record a discrepancy and still
 exit successfully.

@@ -153,6 +153,35 @@ impl Chain {
         Ok(Some(base64::engine::general_purpose::STANDARD.decode(b64)?))
     }
 
+    /// The log lines a landed transaction produced.
+    ///
+    /// Used to read what a *callee* said about a CPI, which is the only way to
+    /// check a claim about the inner call from outside: the outer signature
+    /// proves the transaction landed and says nothing about who signed the
+    /// instruction the pool made inside it.
+    pub fn transaction_logs(&self, signature: &str) -> Result<Vec<String>> {
+        let v = self.call(
+            "getTransaction",
+            serde_json::json!([
+                signature,
+                { "commitment": "confirmed", "maxSupportedTransactionVersion": 0 }
+            ]),
+        )?;
+        if v.is_null() {
+            return Err(anyhow!(
+                "getTransaction: {signature} is not visible yet on this endpoint"
+            ));
+        }
+        let logs = v
+            .pointer("/meta/logMessages")
+            .and_then(|l| l.as_array())
+            .ok_or_else(|| anyhow!("getTransaction: {signature} carries no log messages"))?;
+        Ok(logs
+            .iter()
+            .filter_map(|l| l.as_str().map(str::to_owned))
+            .collect())
+    }
+
     pub fn balance(&self, key: &Pubkey) -> Result<u64> {
         let v = self.call(
             "getBalance",

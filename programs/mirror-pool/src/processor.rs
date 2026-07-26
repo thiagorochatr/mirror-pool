@@ -59,6 +59,25 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
     }
 }
 
+/// One validated spend, held until the whole batch has been read.
+///
+/// Settlement cannot execute a batch in a single pass. A call carrying the
+/// pool's vault as a signer is refused by the runtime if this program has
+/// already moved the vault's lamports in the same instruction, and "the same
+/// instruction" spans the whole batch — so those calls have to happen before
+/// every payout, including payouts owed to other members.
+struct Pending<'a> {
+    spend: AccountInfo<'a>,
+    beneficiary: AccountInfo<'a>,
+    relay: AccountInfo<'a>,
+    /// The callee's own account, for the two selectors that make a call.
+    target: Option<AccountInfo<'a>>,
+    action_infos: Vec<AccountInfo<'a>>,
+    selector: u64,
+    relay_fee: u64,
+    payout: u64,
+}
+
 /// The fields of a spend, grouped so the handler takes one argument.
 struct SpendRequest {
     proof_a: [u8; 64],
@@ -527,7 +546,7 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
     let crowd_satisfied = count as u32 >= k_floor;
 
     // Each spend brings its record, its beneficiary and its relay.
-    let mut settled = 0u64;
+    let mut pending: Vec<Pending> = Vec::with_capacity(count as usize);
     for _ in 0..count {
         let spend_account = next_account_info(iter)?;
         let beneficiary = next_account_info(iter)?;
@@ -574,15 +593,12 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
             )
         };
 
-        match selector {
+        let (target, action_infos) = match selector {
             SELECTOR_TRANSFER => {
                 if action_accounts != 0 {
                     return Err(MirrorProgramError::MalformedInstruction.into());
                 }
-                // The vault is owned by this program, so lamports move by direct
-                // mutation rather than a system CPI: no signer seeds and no
-                // nested invoke on the hot path.
-                move_lamports(vault_account, beneficiary, payout)?;
+                (None, Vec::new())
             }
             SELECTOR_INVOKE | SELECTOR_INVOKE_SIGNED => {
                 // The target program's own account comes first, because a CPI
@@ -590,43 +606,96 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
                 // list. Its key is checked against the record, so a settler
                 // supplying a different program is refused before any value
                 // moves rather than discovered by the runtime.
-                let target_info = next_account_info(iter)?;
+                let target_info = next_account_info(iter)?.clone();
 
                 // Then the action's own accounts.
                 let mut action_infos = Vec::with_capacity(action_accounts as usize);
                 for _ in 0..action_accounts {
                     action_infos.push(next_account_info(iter)?.clone());
                 }
+                (Some(target_info), action_infos)
+            }
+            _ => return Err(MirrorProgramError::UnknownSelector.into()),
+        };
+
+        pending.push(Pending {
+            spend: spend_account.clone(),
+            beneficiary: beneficiary.clone(),
+            relay: relay.clone(),
+            target,
+            action_infos,
+            selector,
+            relay_fee,
+            payout,
+        });
+    }
+
+    // Pass one: every call the pool signs, before a single lamport in this
+    // instruction has moved.
+    //
+    // This is the constraint that forces two passes rather than one, and it is
+    // about the *batch* and not about the spend. A CPI carrying the vault is
+    // refused by the runtime if this program has already mutated the vault's
+    // lamports anywhere in the same instruction — including on behalf of a
+    // different member earlier in the batch. Settling one signed action after
+    // three transfers is the case that finds this, and it is the ordinary case:
+    // a crowd is mixed by definition, and a signed action that could only settle
+    // alone would have to wait out the timeout, which is precisely the
+    // synchronised batch it exists to join.
+    for p in &pending {
+        if p.selector == SELECTOR_INVOKE_SIGNED {
+            let target_info = p
+                .target
+                .as_ref()
+                .ok_or(MirrorProgramError::MalformedInstruction)?;
+            invoke_action(
+                program_id,
+                pool_account,
+                vault_account,
+                &p.spend,
+                &p.beneficiary,
+                target_info,
+                p.payout,
+                &p.action_infos,
+                true,
+            )?;
+        }
+    }
+
+    // Pass two: the money, and the calls that need to be funded before they run.
+    for p in &pending {
+        match p.selector {
+            // The vault is owned by this program, so lamports move by direct
+            // mutation rather than a system CPI: no signer seeds and no nested
+            // invoke on the hot path.
+            SELECTOR_TRANSFER | SELECTOR_INVOKE_SIGNED => {
+                move_lamports(vault_account, &p.beneficiary, p.payout)?;
+            }
+            SELECTOR_INVOKE => {
+                let target_info = p
+                    .target
+                    .as_ref()
+                    .ok_or(MirrorProgramError::MalformedInstruction)?;
                 invoke_action(
                     program_id,
                     pool_account,
                     vault_account,
-                    spend_account,
-                    beneficiary,
+                    &p.spend,
+                    &p.beneficiary,
                     target_info,
-                    payout,
-                    &action_infos,
-                    selector == SELECTOR_INVOKE_SIGNED,
+                    p.payout,
+                    &p.action_infos,
+                    false,
                 )?;
             }
             _ => return Err(MirrorProgramError::UnknownSelector.into()),
         }
-
-        // The relay is paid after the action, never before.
-        //
-        // Under `SELECTOR_INVOKE_SIGNED` the vault is one of the callee's
-        // accounts, and any direct lamport mutation this program makes to it
-        // before that call makes the runtime reject the whole instruction as
-        // `UnbalancedInstruction`. Paying the relay here rather than above the
-        // match is what keeps the vault's balance untouched at the moment of
-        // the CPI. The other selectors do not care about the order, so there is
-        // one order rather than two.
-        if relay_fee > 0 {
-            move_lamports(vault_account, relay, relay_fee)?;
+        if p.relay_fee > 0 {
+            move_lamports(vault_account, &p.relay, p.relay_fee)?;
         }
-        settled += 1;
     }
 
+    let settled = pending.len() as u64;
     let mut data = pool_account.try_borrow_mut_data()?;
     let mut pool = Pool::load(&mut data)?;
     for _ in 0..settled {
@@ -713,7 +782,8 @@ fn invoke_action<'a>(
             return Err(MirrorProgramError::MalformedInstruction.into());
         }
         // Fund the action before invoking, so the target sees the value it is
-        // meant to act on.
+        // meant to act on. Under `SELECTOR_INVOKE_SIGNED` the caller pays after
+        // every signed call in the batch has run instead.
         move_lamports(vault_account, beneficiary, payout)?;
     }
 
@@ -754,16 +824,7 @@ fn invoke_action<'a>(
         &ix,
         &infos,
         &[&[VAULT_SEED, pool_account.key.as_ref(), &[vault_bump]]],
-    )?;
-
-    // The payout happens *after* the call on this path, which is the whole
-    // reason the vault could be handed to the callee as a signer. The
-    // beneficiary is paid either way before this instruction returns, so the
-    // ordering changes what the callee observes and nothing about what is owed.
-    if pool_signs {
-        move_lamports(vault_account, beneficiary, payout)?;
-    }
-    Ok(())
+    )
 }
 
 /// Moves lamports between two accounts this program owns or may credit.
