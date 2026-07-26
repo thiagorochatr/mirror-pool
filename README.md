@@ -167,12 +167,13 @@ symptom — proofs that verify nowhere — points at everything except the hash.
 
 ## The measurement
 
-Three commands, two passes, and the split is the point:
+Four commands, two passes, and the split is the point:
 
 ```
 mirror seeds   --program <program-id>  # member-weighted frame, one row per depositor
 mirror collect --seeds seeds.txt    # the only networked step; writes sample.json
 mirror analyze --sample sample.json # pure, offline, deterministic
+mirror compare --sample a.json --against b.json   # is the difference real?
 ```
 
 `data/sample-privacycash-run4.json` is the committed artifact behind the
@@ -215,6 +216,30 @@ weakest of them, and none of them is visible in the output.
 - **The frame is member-weighted.** Each depositor counts once. Sampling
   addresses because they appear in recent blocks is size-biased toward the
   highest-frequency actors.
+
+### Two uncertainties, and the bias that runs against us
+
+A `ρ` is reported with **two** intervals, because they answer different
+questions and neither covers the other:
+
+- the **unresolved bracket** — what if the members we could not resolve had all
+  been one class, or all been distinct? An exact bound.
+- the **sampling interval** — these depositors are a draw from a much larger
+  population, so how much of `ρ` is the draw? A bootstrap over members, 10,000
+  replicates at a published seed, so a reader recomputes our interval and not
+  merely a similar one.
+
+And a bias that no interval fixes: plug-in entropy is biased low when classes
+are many and members few, which is every run here. Since `ρ = 2^−H(C)`, that
+means **every ρ we publish is biased high — the pools plausibly leak less than
+we report.** It is stated because it is the direction that makes our own number
+look worse, and a bias disclosed only when it flatters is not a disclosure.
+
+That bias is also why `compare` exists rather than a subtraction. It falls the
+same way on every population measured the same way, so a *difference* survives
+what neither absolute number does — and when the interval on the difference
+contains zero, the tool says the two are indistinguishable and declines to rank
+them.
 
 ### The folklore formula is inverted
 

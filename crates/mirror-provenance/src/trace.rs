@@ -70,6 +70,21 @@ pub struct CollectionConfig {
     /// refusing.
     pub sig_page_cap: u32,
     pub page_size: u32,
+    /// Transactions to examine, oldest first, while looking for the birth
+    /// *credit*.
+    ///
+    /// The rule is "the oldest credit", and an address's oldest **transaction**
+    /// is frequently not one: an account can appear as a passive participant in
+    /// someone else's transaction — an ATA creation, a multisig setup, a program
+    /// interaction that merely references it — before it ever receives value.
+    /// Reading only that one transaction and concluding "no incoming edge"
+    /// reports an absence of evidence where the truth is that we looked at a
+    /// single transaction out of thousands.
+    ///
+    /// So the walk continues forward from the oldest until a credit appears.
+    /// Exhausting this budget without finding one is a **budget** outcome and is
+    /// recorded as such, never as evidence about the address.
+    pub birth_scan_cap: u32,
 }
 
 impl Default for CollectionConfig {
@@ -82,6 +97,10 @@ impl Default for CollectionConfig {
             min_edge_lamports: 500_000,
             sig_page_cap: 20,
             page_size: 1_000,
+            // Enough to clear the common cases — an ATA creation, a couple of
+            // program interactions — before the account is funded, without
+            // turning one address into a hundred transaction fetches.
+            birth_scan_cap: 24,
         }
     }
 }
@@ -96,6 +115,10 @@ pub enum ChainStop {
     DepthExceeded,
     PageCapHit,
     RpcFailure,
+    /// The oldest transactions were examined up to `birth_scan_cap` and none of
+    /// them credited the address. A budget outcome: the credit may well exist
+    /// just beyond the scan.
+    BirthScanExhausted,
 }
 
 impl ChainStop {
@@ -110,6 +133,7 @@ impl ChainStop {
             ChainStop::BelowThreshold => Unresolved::BelowThreshold,
             ChainStop::PageCapHit => Unresolved::PageCapHit,
             ChainStop::RpcFailure => Unresolved::RpcFailure,
+            ChainStop::BirthScanExhausted => Unresolved::BirthScanExhausted,
         }
     }
 }
@@ -375,8 +399,15 @@ impl<'a> Collector<'a> {
 
             let facts = &self.facts[&current];
             let Some(edge) = facts.birth_edge.clone() else {
+                // Three different reasons there is no edge, and only one of them
+                // is a statement about the address. Ordered from ours to theirs:
+                // we never reached the oldest page; we reached it but stopped
+                // scanning forward before a credit appeared; or we read the
+                // whole early history and there genuinely is no credit.
                 let stop = if matches!(facts.signatures, SigCount::AtLeast(_)) {
                     ChainStop::PageCapHit
+                } else if facts.birth_scan_exhausted {
+                    ChainStop::BirthScanExhausted
                 } else {
                     ChainStop::NoIncomingEdge
                 };
@@ -463,6 +494,9 @@ impl<'a> Collector<'a> {
         let mut seen: u64 = 0;
         let mut oldest: Option<crate::rpc::SignatureInfo> = None;
         let mut last_seen_time: Option<i64> = None;
+        // The oldest page, kept whole. The birth credit is looked for by walking
+        // forward from its end, so the single oldest signature is not enough.
+        let mut oldest_page: Vec<crate::rpc::SignatureInfo> = Vec::new();
 
         for page in 0..self.config.sig_page_cap {
             let batch = self.client.signatures_for_address(
@@ -478,6 +512,7 @@ impl<'a> Collector<'a> {
             before = Some(last.signature.clone());
             last_seen_time = last.block_time.or(last_seen_time);
             oldest = Some(last);
+            oldest_page = batch.clone();
 
             if (batch.len() as u32) < self.config.page_size {
                 // A short page is the end of the history: this is exact.
@@ -511,22 +546,67 @@ impl<'a> Collector<'a> {
         }
         facts.first_seen = oldest.block_time;
 
-        let tx = self.client.transaction(&oldest.signature)?;
-        // The fee payer is the first key, and it is what fee-payer clustering
-        // groups on.
-        if let Some(payer) = tx.account_keys.first() {
-            if !facts.fee_payers.iter().any(|p| p == payer) {
-                facts.fee_payers.push(payer.clone());
-            }
-        }
-        if let Some(edge) = tx.edge_crediting(address) {
-            self.edges_seen += 1;
-            if edge.ambiguous_attribution {
-                self.ambiguous += 1;
-            }
-            facts.birth_edge = Some(edge);
-        }
+        // Walk forward from the oldest transaction until one credits the
+        // address. The oldest transaction is very often not a credit — an
+        // account routinely appears as a passive participant in someone else's
+        // transaction before it is ever funded — and stopping there reports "no
+        // incoming edge" for an address that plainly has one.
+        let scanned = self.scan_for_birth_credit(address, &oldest_page, facts)?;
+        facts.birth_scan_exhausted = facts.birth_edge.is_none() && scanned >= self.birth_budget();
         Ok(())
+    }
+
+    fn birth_budget(&self) -> usize {
+        self.config.birth_scan_cap as usize
+    }
+
+    /// Examines up to `birth_scan_cap` transactions, oldest first, and records
+    /// the first that credits `address`.
+    ///
+    /// Returns how many were examined, so the caller can tell "there is no
+    /// credit here" from "we stopped looking". Those must never be the same
+    /// outcome.
+    fn scan_for_birth_credit(
+        &mut self,
+        address: &str,
+        oldest_page: &[crate::rpc::SignatureInfo],
+        facts: &mut AddressFacts,
+    ) -> Result<usize, RpcError> {
+        let budget = self.birth_budget();
+        let mut examined = 0usize;
+
+        // `oldest_page` is newest-first, so walking it in reverse is oldest-first.
+        for info in oldest_page.iter().rev() {
+            if examined >= budget {
+                break;
+            }
+            if info.err {
+                // A failed transaction moved no value. It costs nothing to skip
+                // and is not worth a fetch.
+                continue;
+            }
+            examined += 1;
+            let tx = self.client.transaction(&info.signature)?;
+
+            // Fee-payer clustering wants the payer of the address's earliest
+            // transactions, so record it for every one examined rather than
+            // only for the one that happens to carry the credit.
+            if let Some(payer) = tx.account_keys.first() {
+                if !facts.fee_payers.iter().any(|p| p == payer) {
+                    facts.fee_payers.push(payer.clone());
+                }
+            }
+
+            if let Some(edge) = tx.edge_crediting(address) {
+                self.edges_seen += 1;
+                if edge.ambiguous_attribution {
+                    self.ambiguous += 1;
+                }
+                facts.birth_edge = Some(edge);
+                return Ok(examined);
+            }
+        }
+        Ok(examined)
     }
 }
 
@@ -695,9 +775,54 @@ mod tests {
             (ChainStop::DepthExceeded, Unresolved::DepthExceeded),
             (ChainStop::PageCapHit, Unresolved::PageCapHit),
             (ChainStop::RpcFailure, Unresolved::RpcFailure),
+            (
+                ChainStop::BirthScanExhausted,
+                Unresolved::BirthScanExhausted,
+            ),
         ] {
             assert_eq!(stop.as_unresolved(), expected, "{stop:?} mapped wrongly");
         }
+    }
+
+    /// Running out of birth-scan budget is **our** limit, so it must never be
+    /// counted as evidence about the address, and it must never be collapsed
+    /// into `NoIncomingEdge`.
+    ///
+    /// The distinction is the entire point: one says "this address has no
+    /// funding credit", which is a claim about the chain, and the other says
+    /// "we stopped reading", which is a claim about us.
+    #[test]
+    fn an_exhausted_birth_scan_is_budget_and_not_evidence() {
+        assert!(!Unresolved::BirthScanExhausted.is_evidence());
+        assert!(!Unresolved::BirthScanExhausted.is_failure());
+
+        let mut seed = wallet("member");
+        seed.birth_scan_exhausted = true;
+        let sample = sample_with(
+            vec![Chain {
+                seed: "member".into(),
+                visited: vec!["member".into()],
+                stop: ChainStop::BirthScanExhausted,
+            }],
+            vec![seed],
+        );
+        let (_, census) =
+            classify_sample(&sample, &AnchorSet::default(), &Thresholds::default(), NOW);
+        assert_eq!(census.birth_scan_exhausted, 1);
+        assert_eq!(
+            census.no_incoming_edge, 0,
+            "a budget outcome leaked into the evidence bucket"
+        );
+        assert!(
+            census.summary().contains("budget-unresolved 1"),
+            "must be reported as budget: {}",
+            census.summary()
+        );
+        assert!(
+            census.summary().contains("evidence-unresolved 0"),
+            "must not be reported as evidence: {}",
+            census.summary()
+        );
     }
 
     #[test]

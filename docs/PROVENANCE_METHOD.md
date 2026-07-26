@@ -283,6 +283,68 @@ Emit three values:
 
 A point estimate without this bracket is not publishable output.
 
+### 2.6a Sampling error, which the bracket does not cover
+
+The bracket answers *what if the unresolved members had been something else*. It
+says nothing about the other uncertainty, which is that the members measured are
+a **draw** from a much larger population. Both are needed and neither substitutes
+for the other:
+
+| | question | shape |
+|---|---|---|
+| bracket | what if the unresolved had landed differently? | exact bound, computed |
+| bootstrap | how much of `ρ` is which depositors we drew? | percentile interval, resampled |
+
+**The estimator.** Resample the resolved members with replacement, `n` draws for
+a sample of `n`, recompute `ρ` on the resampled class tally, repeat `B = 10,000`
+times, and take the 2.5th and 97.5th percentiles. A class that no resampled
+member landed in is **absent** from that replicate, not a class of size zero —
+which is the whole reason the interval is asymmetric under a heavy tail:
+resampling merges singletons, and fewer classes means higher `ρ`.
+
+**Reproducibility.** The generator is a splitmix64 implemented in-tree, seeded
+from a published constant, because `analyze` is a pure offline pass whose output
+a third party must be able to reproduce byte for byte. An external RNG makes that
+promise depend on a dependency's version.
+
+#### The bias this does *not* remove, stated because it runs the wrong way for us
+
+Plug-in entropy — estimating `H(C)` by counting — is the maximum-likelihood
+estimator, and it is **biased downward** when classes are many and members are
+few. That is the regime every run in this project operates in.
+
+Since `ρ = 2^{−H(C)}`, understating `H(C)` means **overstating `ρ`**. So:
+
+> Every `ρ` published here is biased **high**. The true loss factor is plausibly
+> smaller — the pools plausibly leak *less* than we report.
+
+A bootstrap resamples the same estimator, so its interval is centred on the
+biased value: it measures the estimator's spread, not its distance from the
+truth. Correcting this needs Miller–Madow or a coverage-adjusted estimator, and
+neither is implemented here.
+
+It is stated this loudly for two reasons. First, it is the direction that makes
+our own headline look worse rather than better, and a bias disclosed only when it
+flatters is not a disclosure. Second, it is what makes **comparison** valid where
+individual numbers are shaky: the bias falls in the same direction on every
+population measured the same way, so a difference between two of them survives a
+bias that neither absolute number does.
+
+#### Comparing two populations
+
+`ρ` is the headline because it is independent of `k` and therefore comparable
+across pools. Exercising that means bootstrapping the **difference**, resampling
+each population independently within a replicate, and reporting the interval on
+`ρ(A) − ρ(B)`.
+
+**If that interval contains zero, the two populations are not distinguishable at
+those sample sizes, and neither may be called the more concentrated.** Subtracting
+two point estimates and reporting the sign is the error this exists to prevent:
+two samples of the same underlying shape always differ by *something*.
+
+The unit test that matters here is not that a stark difference separates — that
+is easy. It is that two identically shaped populations do **not**.
+
 ### 2.7 Reference vectors for unit tests
 
 Exact values, computed at full double precision. Assert to 1e-9.

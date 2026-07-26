@@ -53,6 +53,14 @@ pub enum Unresolved {
     /// SOL-only scope, and the address holds token accounts with inflow, so the
     /// funding event is structurally invisible. A scope limit, not evidence.
     SplBlindSpot,
+    /// The oldest transactions were read up to the birth-scan cap and none of
+    /// them credited the address. **Budget, not evidence** — the credit is
+    /// plausibly the next transaction along.
+    ///
+    /// Kept separate from `NoIncomingEdge` deliberately. Collapsing the two
+    /// would let "we stopped looking" be reported as "there is nothing there",
+    /// which is the exact substitution this taxonomy exists to prevent.
+    BirthScanExhausted,
 }
 
 impl Unresolved {
@@ -101,6 +109,9 @@ pub struct Census {
     pub page_cap_hit: u64,
     pub rpc_failure: u64,
     pub spl_blind_spot: u64,
+    /// Budget, not evidence: the birth-credit scan ran out before finding one.
+    #[serde(default)]
+    pub birth_scan_exhausted: u64,
 }
 
 /// Above this rate of RPC failures a run refuses to publish a headline.
@@ -121,6 +132,7 @@ impl Census {
                 Unresolved::PageCapHit => self.page_cap_hit += 1,
                 Unresolved::RpcFailure => self.rpc_failure += 1,
                 Unresolved::SplBlindSpot => self.spl_blind_spot += 1,
+                Unresolved::BirthScanExhausted => self.birth_scan_exhausted += 1,
             },
         }
     }
@@ -134,6 +146,7 @@ impl Census {
             + self.page_cap_hit
             + self.rpc_failure
             + self.spl_blind_spot
+            + self.birth_scan_exhausted
     }
 
     /// Members whose outcome says something about the chain: everything except
@@ -166,7 +179,7 @@ impl Census {
             self.attempted(),
             self.resolved,
             self.no_incoming_edge + self.below_threshold,
-            self.depth_exceeded + self.page_cap_hit,
+            self.depth_exceeded + self.page_cap_hit + self.birth_scan_exhausted,
             self.spl_blind_spot,
             self.rpc_failure,
             self.failure_rate() * 100.0

@@ -52,6 +52,13 @@ pub struct AddressFacts {
     pub fee_payers: Vec<String>,
     /// Addresses this one was the sole source of a birth edge for. Fan-out.
     pub funded: Vec<String>,
+    /// The birth-credit scan ran out of budget before finding a credit.
+    ///
+    /// Distinguishes "we stopped looking" from "there is nothing there". Only
+    /// meaningful when `birth_edge` is `None`, and when it is set the address is
+    /// a **budget** outcome rather than evidence about the chain.
+    #[serde(default)]
+    pub birth_scan_exhausted: bool,
 }
 
 impl AddressFacts {
@@ -65,6 +72,7 @@ impl AddressFacts {
             birth_edge: None,
             fee_payers: Vec::new(),
             funded: Vec::new(),
+            birth_scan_exhausted: false,
         }
     }
 
