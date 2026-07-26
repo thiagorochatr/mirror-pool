@@ -183,6 +183,60 @@ is what this document reports — including a refusal, and including a ρ that s
 worse for the argument than Run 3's. If it fails on the RPC gate, that is
 recorded as a failed run and not retried into success.
 
+### Result
+
+Helius, archival probes passed. 1,613 calls at 3.5 requests per second, 456
+seconds wall clock.
+
+```
+attempted 84 | resolved 50 | evidence-unresolved 6 | budget-unresolved 28
+             | scope-unresolved 0 | rpc failures 0 (0.00%)
+```
+
+| quantity | Run 3 | Run 4 |
+|---|---|---|
+| resolved members | 40 | **50** |
+| budget-unresolved | 39 | **28** |
+| rpc failures | 0 | 0 |
+| provenance classes observed | 17 | 22 |
+| **loss factor ρ (point)** | 0.1219 | **0.1032** |
+| **ρ (unresolved bracket)** | 0.0253 … 0.1837 | **0.0316 … 0.1318** |
+| bracket width (ratio) | 7.3× | **4.2×** |
+| effective-k, Shannon | 4.88 | 5.16 |
+| Good–Turing coverage | 0.65 | **0.62** |
+| Chao1 richness | 108 | **193** |
+
+**The informativeness gate clears.** 50 of 84 resolved, against a threshold of
+42. The bracket narrows from a 7.3-fold span to a 4.2-fold one, and both
+readings now sit on the same side of 0.15. This is the first run in this
+document that produces a headline.
+
+**The under-sampling flag still fires, and it got worse.** This is the part
+worth reading twice. Resolving ten more members did not improve coverage — it
+*degraded* it, from 0.65 to 0.62, and pushed the Chao1 richness estimate from
+108 classes up to 193.
+
+That is not a defect and not noise. The additional members did not land in the
+classes already observed; they landed in new ones, mostly alone. Under
+Good–Turing, coverage falls when the share of singletons rises, so a sample that
+keeps discovering fresh singleton classes reports *less* confidence as it grows.
+
+The consequence matters for the conclusion. Under-sampling here is **a property
+of the provenance distribution, not an artifact of our budget.** Run 3 left it
+open whether more resolution would close the tail; Run 4 answers that, and the
+answer is no. Spending more calls would raise the resolved count and lower the
+coverage further. There is no budget at which this frame's class distribution
+becomes well-observed, because the tail is where the mass is.
+
+So the honest statement of what was measured is: **ρ ≈ 0.10 on this pool, inside
+0.032 … 0.132, from a sample whose class distribution is demonstrably
+heavy-tailed and two-thirds unobserved — and the second fact is now a finding
+rather than a caveat.**
+
+**Stopping rule honoured.** No further run against this frame. The Run 3
+artifact stays committed beside the Run 4 one; both are in `data/`, and the
+numbers above are recomputable from either without RPC access.
+
 ## What we do not conclude
 
 Nothing about how private Privacy Cash is. ρ = 0.1219 is a point estimate inside

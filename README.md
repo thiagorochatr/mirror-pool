@@ -31,11 +31,18 @@ So this submission claims exactly two things:
    member.
 2. **The membership side is measured**, from real mainnet data, with the method
    and its limits published beside the number. Measured on a live pool's
-   depositors: `ρ = 0.1219`, inside an unresolved bracket of `0.0253 … 0.1837`,
-   from a clean census with zero infrastructure failures — and the tool declines
-   to call that a result, because 40 of 84 members reached a class and two-thirds
-   of the class distribution was never observed. `docs/MEASUREMENT_LOG.md` has
-   every run, including the two that produced nothing.
+   depositors: **`ρ = 0.1032`**, inside an unresolved bracket of
+   `0.0316 … 0.1318`, from a clean census with zero infrastructure failures —
+   50 of 84 members reached a provenance class. Knowing a member's funding class
+   costs that pool roughly an order of magnitude of its nominal anonymity.
+
+   The sample's class distribution is heavy-tailed and two-thirds unobserved,
+   and that is reported as a finding rather than hidden as a caveat: raising the
+   traversal budget between runs resolved ten more members and made coverage
+   *worse*, because the new members landed in new singleton classes rather than
+   in the observed ones. There is no budget at which this distribution becomes
+   well-observed. `docs/MEASUREMENT_LOG.md` has every run, including the two
+   that produced nothing, and Run 4's budget was committed before it ran.
 
 Anything we cannot support with a measurement whose method is published, we do
 not say. There is a section below of things we deliberately do not claim.
@@ -50,7 +57,7 @@ not say. There is a section below of things we deliberately do not claim.
 | `crates/mirror-provenance` | The funding-provenance measurement. |
 | `crates/mirror-cli` | `setup`, `verify-setup`, `check-endpoint`, `seeds`, `collect`, `analyze`, `soak`. |
 
-**179 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**182 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -110,11 +117,15 @@ mirror collect --seeds seeds.txt    # the only networked step; writes sample.jso
 mirror analyze --sample sample.json # pure, offline, deterministic
 ```
 
-`data/sample-privacycash.json` is the committed artifact. Anyone holding it
-recomputes the result without RPC access and without trusting that our endpoint
-behaved the same way on their machine — including the fact that this collection
-came back above the 1% RPC-failure limit and so yields no headline.
-`docs/MEASUREMENT_LOG.md` records every run.
+`data/sample-privacycash-run4.json` is the committed artifact behind the
+headline, and `data/sample-privacycash.json` is the earlier run it is compared
+against. Both are committed, so anyone holding them recomputes the numbers
+without RPC access and without trusting that our endpoint behaved the same way
+on their machine — including the run that came back above the 1% RPC-failure
+limit and so yielded no headline at all. `docs/MEASUREMENT_LOG.md` records every
+run, and Run 4's budget and predictions were committed to git *before* the
+collection started, so the parameters are a declaration rather than a
+description.
 
 ### Design choices that exist to avoid specific published defects
 
