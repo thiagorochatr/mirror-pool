@@ -76,13 +76,25 @@ impl SplitMix64 {
     }
 }
 
-/// A percentile interval, and the point estimate it surrounds.
+/// The spread of the resampled estimator, and the estimate it was resampled
+/// from.
+///
+/// **This is not a confidence interval around `point`, and it is not guaranteed
+/// to contain it.** It is the 2.5th-to-97.5th percentile range of `ρ̂` computed
+/// over bootstrap replicates. For a statistic that is biased under resampling —
+/// and `ρ` badly is, see [`Interval::resampling_bias`] — the whole range can sit
+/// to one side of the original estimate. Reading it as "ρ is somewhere in here"
+/// is wrong; it says "an estimate computed this way, from a sample like this one,
+/// lands in here".
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interval {
     /// The estimate computed from the sample as drawn.
     pub point: f64,
     pub lo: f64,
     pub hi: f64,
+    /// Mean of the bootstrap replicates. Its distance from `point` is the
+    /// resampling bias.
+    pub mean: f64,
     pub replicates: usize,
 }
 
@@ -97,6 +109,30 @@ impl Interval {
 
     pub fn width(&self) -> f64 {
         self.hi - self.lo
+    }
+
+    /// How far resampling moves the estimator, `mean − point`.
+    ///
+    /// For `ρ` this is systematically **positive** under a heavy tail, and the
+    /// mechanism is worth understanding because it is not noise. Resampling `n`
+    /// members with replacement leaves roughly `1/e` of them unpicked, so classes
+    /// represented by a single member vanish from a replicate about 37% of the
+    /// time. Fewer classes means lower `H(C)` means higher `ρ = 2^{−H(C)}`.
+    ///
+    /// The size of this bias is therefore a **tail diagnostic**: a population
+    /// whose classes are mostly singletons shows a large one, and a population
+    /// with a few crowded classes shows almost none.
+    pub fn resampling_bias(&self) -> f64 {
+        self.mean - self.point
+    }
+
+    /// Whether the original estimate falls inside the resampled range at all.
+    ///
+    /// False is not an error. It means the resampling bias exceeds the spread,
+    /// which is a real and reportable property of a heavy-tailed population —
+    /// not a sign that the interval was computed wrongly.
+    pub fn contains_point(&self) -> bool {
+        self.lo <= self.point && self.point <= self.hi
     }
 }
 
@@ -169,15 +205,17 @@ pub fn loss_factor_interval<L: Ord + Clone>(
     }
     draws.sort_by(|a, b| a.partial_cmp(b).expect("no NaN in a loss factor"));
 
+    let mean = draws.iter().sum::<f64>() / draws.len() as f64;
     Some(Interval {
         point,
         lo: percentile(&draws, 0.025),
         hi: percentile(&draws, 0.975),
+        mean,
         replicates: draws.len(),
     })
 }
 
-/// A 95% percentile interval for `ρ(a) − ρ(b)`.
+/// The resampled spread of `ρ(a) − ρ(b)`.
 ///
 /// Each population is resampled independently within a replicate, which is the
 /// right structure here: the two frames are drawn from different populations and
@@ -215,10 +253,12 @@ pub fn difference_interval<L: Ord + Clone>(
     }
     draws.sort_by(|a, b| a.partial_cmp(b).expect("no NaN in a loss factor"));
 
+    let mean = draws.iter().sum::<f64>() / draws.len() as f64;
     Some(Interval {
         point,
         lo: percentile(&draws, 0.025),
         hi: percentile(&draws, 0.975),
+        mean,
         replicates: draws.len(),
     })
 }
@@ -248,15 +288,60 @@ mod tests {
         assert_eq!(i.hi, 1.0);
     }
 
-    /// The interval must actually contain the estimate it surrounds. Trivial to
-    /// state and the first thing an off-by-one in the percentile index breaks.
+    /// With crowded classes, resampling barely moves the estimator and the
+    /// range does contain it.
     #[test]
-    fn the_interval_contains_the_point_estimate() {
+    fn a_crowded_population_resamples_around_its_estimate() {
         let l = labels(&[("a", 20), ("b", 10), ("c", 5), ("d", 5)]);
         let i = loss_factor_interval(&l, 2_000, DEFAULT_SEED).unwrap();
         assert!(
-            i.lo <= i.point && i.point <= i.hi,
+            i.contains_point(),
             "point {} outside [{}, {}]",
+            i.point,
+            i.lo,
+            i.hi
+        );
+        assert!(
+            i.resampling_bias().abs() < 0.05,
+            "crowded classes should barely shift: bias {}",
+            i.resampling_bias()
+        );
+    }
+
+    /// The case that caught a false assumption of ours, kept as a test so it
+    /// cannot be re-assumed.
+    ///
+    /// An earlier version asserted that the range always contains the point
+    /// estimate. It does not, and the reason is not a bug: under a heavy tail,
+    /// resampling drops singleton classes about 37% of the time, which lowers
+    /// `H(C)` and therefore raises `ρ` in nearly every replicate. The whole
+    /// range then sits *above* the original estimate.
+    ///
+    /// This is why the type is documented as the spread of the resampled
+    /// estimator rather than as a confidence interval, and why the bias is
+    /// reported next to it instead of being hidden inside it.
+    #[test]
+    fn a_heavy_tail_shifts_the_whole_range_above_the_estimate() {
+        // Thirty members, almost all alone: the regime every real run is in.
+        let mut spec: Vec<(String, usize)> = vec![("crowd".to_string(), 6)];
+        for i in 0..24 {
+            spec.push((format!("solo{i}"), 1));
+        }
+        let l: Vec<String> = spec
+            .iter()
+            .flat_map(|(n, c)| std::iter::repeat_n(n.clone(), *c))
+            .collect();
+
+        let i = loss_factor_interval(&l, 4_000, DEFAULT_SEED).unwrap();
+        assert!(
+            i.resampling_bias() > 0.0,
+            "a heavy tail must bias rho upward under resampling, got {}",
+            i.resampling_bias()
+        );
+        assert!(
+            !i.contains_point(),
+            "expected the range to sit off the point under this tail: \
+             point {} in [{}, {}]",
             i.point,
             i.lo,
             i.hi

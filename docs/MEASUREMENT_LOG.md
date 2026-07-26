@@ -378,6 +378,83 @@ The under-sampling flag still fires, and Run 4's finding about the tail survives
 the fix: coverage remains near 0.65 with Chao1 estimating 108 classes against 23
 observed.
 
+### Run 7 — the control, re-collected
+
+Helius, archival probes passed. 1,887 calls, 387 seconds.
+
+```
+attempted 92 | resolved 38 | evidence-unresolved 0 | budget-unresolved 54
+             | scope-unresolved 0 | rpc failures 0 (0.00%)
+```
+
+| | Run 5 (broken) | Run 7 (fixed) |
+|---|---|---|
+| resolved | 16 | **38** |
+| **evidence-unresolved** | 35 | **0** |
+| `NoIncomingEdge` | **36** | **0** |
+| ρ (point) | 0.0743 | 0.0362 |
+| classes observed | 14 | 30 |
+| Good–Turing coverage | 0.25 | 0.37 |
+
+The bug bit the control more than twice as hard, which is what surfaced it:
+36 of 92 members were reported as having no funding at all, and every one was
+wrong. Resolution more than doubled.
+
+**Run 7 still refuses.** 38 of 92 is 41%, under the informativeness gate's half.
+The bracket spans 0.0124 … 0.1289, a tenfold range.
+
+### The comparison, and why it is refused
+
+```
+population       members   rho      resampled 2.5-97.5%   bias
+privacy pool          54   0.0955   0.0848 .. 0.1790     +0.0276
+staking control       38   0.0362   0.0463 .. 0.0708     +0.0203
+
+difference (privacy pool − staking control): +0.0592   95% +0.0259 .. +0.1229
+```
+
+**The interval on the difference excludes zero.** Taken at face value that says
+the privacy pool is the more provenance-concentrated population — which is the
+direction that supports this project's entire argument.
+
+**`compare` refuses to report it**, because the control resolves fewer than half
+its members. The reasoning is not a formality:
+
+> What survives after the unresolved are dropped is each population's *traceable*
+> subset, and traceability is not independent of provenance class. A wallet funded
+> straight from an exchange resolves in one hop; a wallet funded through fresh
+> intermediaries exhausts the budget. So the resolved subsets of two populations
+> can differ in provenance concentration purely because the *unresolved* ones were
+> different, and nothing in the numbers above would reveal it.
+
+This gate did not exist when `compare` was written — it checked the RPC-failure
+gate and not the informativeness one, which was an inconsistency between the two
+commands. It was added on finding that the control fell on the wrong side of it,
+and the honest way to say that is plainly: **we built the check that refuses our
+own favourable result, after seeing that the result was favourable.** The code
+and this paragraph are both in the repository; a reader can weigh that as they
+see fit.
+
+**What would close it** is resolution above half on the control — 46 of 92, from
+38 — which is a bigger traversal budget, not a different metric. 54 of its 92
+members are budget-unresolved, so the headroom exists. It is not attempted here,
+because Run 7's pre-registered stopping rule was one collection per frame, and a
+stopping rule that bends when the result is close is not a stopping rule.
+
+### What the two runs establish, and what they do not
+
+**Established.** The tracer bug was real, symmetric across populations, and it is
+fixed: the evidence-unresolved bucket went to zero in both. The corrected
+headline is ρ = 0.0955. The comparison machinery exists, is tested, and refuses
+correctly in two different ways — it declines to separate Runs 3 and 4, which are
+one pool at two budgets, and it declines to rank two populations when one is
+under-resolved.
+
+**Not established.** That a privacy pool's depositors are more
+provenance-concentrated than ordinary users. The point estimates say so and the
+sample does not support saying it. `ρ`'s comparability across populations remains
+**demonstrated as machinery and unproven as a finding.**
+
 ## What we do not conclude
 
 **Nothing about how private that pool is, and the headline does not become that

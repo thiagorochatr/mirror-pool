@@ -190,7 +190,7 @@ fn vk_digest(vk: &mirror_circuit::SolanaVerifyingKey) -> String {
 /// comparing endpoints rather than populations, and it would do so invisibly —
 /// the difference between two pools and the difference between two collection
 /// runs look identical in the output.
-fn resolved_labels(path: &std::path::Path) -> Result<Vec<String>> {
+fn resolved_labels(path: &std::path::Path) -> Result<(Vec<String>, u64)> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let sample = mirror_provenance::Sample::from_json(&text)?;
@@ -208,10 +208,13 @@ fn resolved_labels(path: &std::path::Path) -> Result<Vec<String>> {
             census.failure_rate() * 100.0
         );
     }
-    Ok(results
+    let labels: Vec<String> = results
         .iter()
         .filter_map(|(_, o)| o.label().map(|s| s.to_string()))
-        .collect())
+        .collect();
+    // Unresolved excluding our own RPC failures, which belong to neither side.
+    let unresolved = census.measurable() - census.resolved;
+    Ok((labels, unresolved))
 }
 
 fn main() -> Result<()> {
@@ -517,14 +520,30 @@ fn main() -> Result<()> {
                     ) {
                         println!();
                         println!(
-                            "rho sampling interval  {:.4} .. {:.4}   (95%, {} bootstrap replicates \
-                             over the members drawn)",
+                            "rho under resampling   {:.4} .. {:.4}   (2.5-97.5%, {} replicates)",
                             i.lo, i.hi, i.replicates
                         );
                         println!(
+                            "  resampling bias      {:+.4}   (mean {:.4} against a point estimate \
+                             of {:.4})",
+                            i.resampling_bias(),
+                            i.mean,
+                            i.point
+                        );
+                        if !i.contains_point() {
+                            println!(
+                                "  The range does not contain the point estimate, and that is a \
+                                 property of this\n  population rather than an error. Resampling \
+                                 leaves about 37% of members unpicked,\n  so single-member classes \
+                                 vanish from most replicates; fewer classes means lower\n  H(C) \
+                                 and therefore higher rho. The size of that gap is a tail \
+                                 diagnostic."
+                            );
+                        }
+                        println!(
                             "  This is the spread of the estimator, not its distance from the \
                              truth. Plug-in\n  entropy is biased low at small n, so rho is biased \
-                             HIGH: the real loss factor is\n  plausibly below this interval, and \
+                             HIGH: the real loss factor is\n  plausibly below all of this, and \
                              equally so for any population measured this way."
                         );
                     }
@@ -583,8 +602,8 @@ fn main() -> Result<()> {
             label,
             against_label,
         } => {
-            let a = resolved_labels(&sample)?;
-            let b = resolved_labels(&against)?;
+            let (a, a_unresolved) = resolved_labels(&sample)?;
+            let (b, b_unresolved) = resolved_labels(&against)?;
 
             let reps = mirror_provenance::bootstrap::DEFAULT_REPLICATES;
             let seed = mirror_provenance::bootstrap::DEFAULT_SEED;
@@ -595,21 +614,20 @@ fn main() -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("{against_label}: no member resolved to a class"))?;
 
             let width = label.len().max(against_label.len()).max(10);
-            println!("{:<width$}  members   rho      95% interval", "population");
             println!(
-                "{label:<width$}  {:>7}   {:.4}   {:.4} .. {:.4}",
-                a.len(),
-                ia.point,
-                ia.lo,
-                ia.hi
+                "{:<width$}  members   rho      resampled 2.5-97.5%   bias",
+                "population"
             );
-            println!(
-                "{against_label:<width$}  {:>7}   {:.4}   {:.4} .. {:.4}",
-                b.len(),
-                ib.point,
-                ib.lo,
-                ib.hi
-            );
+            for (name, labels, i) in [(&label, &a, &ia), (&against_label, &b, &ib)] {
+                println!(
+                    "{name:<width$}  {:>7}   {:.4}   {:.4} .. {:.4}     {:+.4}",
+                    labels.len(),
+                    i.point,
+                    i.lo,
+                    i.hi,
+                    i.resampling_bias()
+                );
+            }
 
             let d = mirror_provenance::difference_interval(&a, &b, reps, seed)
                 .ok_or_else(|| anyhow::anyhow!("nothing to compare"))?;
@@ -619,6 +637,44 @@ fn main() -> Result<()> {
                 d.point, d.lo, d.hi
             );
             println!();
+
+            // The same informativeness gate `analyze` applies to a single
+            // headline, applied to each side. It matters *more* here, not less.
+            //
+            // Comparing two populations of which one is mostly unresolved is
+            // comparing their traceable subsets, and traceability is not
+            // independent of provenance class: a wallet funded by an exchange
+            // resolves in one hop, and one funded through a chain of fresh
+            // intermediaries exhausts the budget. So the unresolved members are
+            // plausibly drawn from different classes than the resolved ones, and
+            // a difference between the two subsets can be manufactured entirely
+            // by that selection.
+            let under = |labels: &[String], unresolved: u64| -> bool {
+                let total = labels.len() as u64 + unresolved;
+                total > 0 && (labels.len() as u64) * 2 < total
+            };
+            let a_under = under(&a, a_unresolved);
+            let b_under = under(&b, b_unresolved);
+            if a_under || b_under {
+                let who = match (a_under, b_under) {
+                    (true, true) => format!("{label} and {against_label} both resolve"),
+                    (true, false) => format!("{label} resolves"),
+                    _ => format!("{against_label} resolves"),
+                };
+                println!(
+                    "REFUSING to rank these populations: {who} fewer than half its members.\n\n\
+                     What is left after the unresolved are dropped is each population's\n\
+                     *traceable* subset, and traceability is not independent of provenance\n\
+                     class — a wallet funded straight from an exchange resolves in one hop,\n\
+                     one funded through fresh intermediaries exhausts the budget. A difference\n\
+                     between two such subsets can be produced entirely by that selection, and\n\
+                     nothing in the numbers above would show it.\n\n\
+                     The figures are printed for completeness, not as a comparison. Closing\n\
+                     this needs resolution above half on both sides, which is a bigger\n\
+                     traversal budget rather than a different metric."
+                );
+                return Ok(());
+            }
 
             if d.excludes_zero() {
                 let (more, less) = if d.point > 0.0 {
