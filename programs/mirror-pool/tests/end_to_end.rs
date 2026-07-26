@@ -1443,3 +1443,82 @@ fn an_unknown_selector_is_refused_before_the_nullifier_burns() {
         "the nullifier burnt for a selector settlement can never execute"
     );
 }
+
+/// Squatting a PDA must not brick anything.
+///
+/// Every address this program creates is derived from public data — a spend PDA
+/// from the nullifier, which is visible in the `submit_spend` instruction
+/// itself. `create_account` fails when the destination already holds lamports,
+/// so a bystander who front-runs the transaction with the rent-exempt minimum
+/// would have made the note permanently unspendable for about 0.00089 SOL. The
+/// relay the proof was handed to is the obvious candidate.
+///
+/// The three-step create is immune: a squatter can send lamports but cannot
+/// allocate or assign without the PDA's seeds, so their deposit only reduces
+/// what the legitimate payer owes.
+#[test]
+fn squatting_a_spend_pda_does_not_brick_the_note() {
+    let (mut env, tree, notes, keys) = seeded_pool(5);
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+
+    let proof = proof_for(&keys, &tree, &notes, 0, &beneficiary);
+    let nullifier = proof.public_inputs[1];
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+
+    // The attacker reads the nullifier and funds the PDA first.
+    let squatter = Keypair::new();
+    env.svm.airdrop(&squatter.pubkey(), 10_000_000_000).unwrap();
+    let squat = Instruction::new_with_bytes(
+        solana_system_interface::program::ID,
+        &solana_system_interface::instruction::transfer(&squatter.pubkey(), &spend_pda, 890_880)
+            .data,
+        vec![
+            AccountMeta::new(squatter.pubkey(), true),
+            AccountMeta::new(spend_pda, false),
+        ],
+    );
+    env.send(squat, &squatter).expect("squatting the pda");
+    assert!(
+        env.svm.get_account(&spend_pda).unwrap().lamports > 0,
+        "precondition: the pda is funded by a stranger"
+    );
+
+    // The spend must still work.
+    let ix = spend_ix(&env, &proof, nullifier, &beneficiary, &relay.pubkey());
+    env.send(ix, &relay)
+        .expect("a squatted pda made the note unspendable");
+
+    let mut data = env.svm.get_account(&spend_pda).unwrap().data;
+    let record = Spend::load(&mut data).unwrap();
+    assert_eq!(record.status(), STATUS_PENDING);
+    assert_eq!(record.beneficiary(), beneficiary.to_bytes());
+}
+
+#[test]
+fn squatting_a_pool_pda_does_not_prevent_the_pool() {
+    let mut env = setup();
+    let squatter = Keypair::new();
+    env.svm.airdrop(&squatter.pubkey(), 10_000_000_000).unwrap();
+
+    // Deny the canonical pool for this denomination, for the price of rent.
+    for target in [env.pool, env.vault] {
+        let squat = Instruction::new_with_bytes(
+            solana_system_interface::program::ID,
+            &solana_system_interface::instruction::transfer(&squatter.pubkey(), &target, 890_880)
+                .data,
+            vec![
+                AccountMeta::new(squatter.pubkey(), true),
+                AccountMeta::new(target, false),
+            ],
+        );
+        env.send(squat, &squatter).expect("squatting");
+    }
+
+    env.init_pool();
+    let mut data = env.pool_state();
+    let pool = Pool::load(&mut data).unwrap();
+    assert_eq!(pool.denomination(), DENOMINATION);
+    assert_eq!(pool.k_floor(), K_FLOOR);
+}

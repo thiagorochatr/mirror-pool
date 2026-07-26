@@ -74,6 +74,52 @@ struct SpendRequest {
     payload: Vec<u8>,
 }
 
+/// Creates a program-owned account at a PDA, tolerating lamports already sent to
+/// it.
+///
+/// `system_instruction::create_account` fails outright when the destination
+/// holds any lamports, and that is a griefing vector rather than a safeguard:
+/// every PDA this program creates is derived from public data. A nullifier is
+/// visible in the `submit_spend` instruction, so anyone who sees the transaction
+/// — most obviously the relay it was handed to — can send the rent-exempt
+/// minimum to that spend PDA first and make the note permanently unspendable for
+/// about 0.00089 SOL. The same trick on a pool or vault address prevents that
+/// denomination's pool from ever being created.
+///
+/// The three-step form is immune: top the account up to rent exemption, then
+/// allocate and assign under the PDA's own seeds. A squatter can send lamports
+/// but cannot allocate or assign without those seeds, so their deposit only
+/// reduces what the legitimate payer owes.
+fn create_pda_account<'a>(
+    payer: &AccountInfo<'a>,
+    account: &AccountInfo<'a>,
+    system: &AccountInfo<'a>,
+    space: usize,
+    owner: &Pubkey,
+    seeds: &[&[u8]],
+) -> ProgramResult {
+    let rent = Rent::get()?;
+    let required = rent.minimum_balance(space);
+    let held = account.lamports();
+
+    if held < required {
+        solana_program::program::invoke(
+            &system_instruction::transfer(payer.key, account.key, required - held),
+            &[payer.clone(), account.clone(), system.clone()],
+        )?;
+    }
+    invoke_signed(
+        &system_instruction::allocate(account.key, space as u64),
+        &[account.clone(), system.clone()],
+        &[seeds],
+    )?;
+    invoke_signed(
+        &system_instruction::assign(account.key, owner),
+        &[account.clone(), system.clone()],
+        &[seeds],
+    )
+}
+
 /// Creates the pool and its vault and seeds the accumulator to an empty tree.
 ///
 /// Permissionless: the first caller for a denomination creates the crowd
@@ -110,36 +156,29 @@ fn init_pool(
         return Err(MirrorProgramError::InvalidPda.into());
     }
 
-    let rent = Rent::get()?;
     let denom_le = denomination.to_le_bytes();
 
     // The pool account carries the accumulator and, above its own rent, the
     // reward pool that entry fees accrue into.
-    invoke_signed(
-        &system_instruction::create_account(
-            payer.key,
-            pool_account.key,
-            rent.minimum_balance(POOL_LEN),
-            POOL_LEN as u64,
-            program_id,
-        ),
-        &[payer.clone(), pool_account.clone(), system.clone()],
-        &[&[POOL_SEED, &denom_le, &[pool_bump]]],
+    create_pda_account(
+        payer,
+        pool_account,
+        system,
+        POOL_LEN,
+        program_id,
+        &[POOL_SEED, &denom_le, &[pool_bump]],
     )?;
 
     // The vault holds escrow only, and carries no data of its own: the
     // accounting invariant is a statement about its lamports, so anything else
     // living there would muddy it.
-    invoke_signed(
-        &system_instruction::create_account(
-            payer.key,
-            vault_account.key,
-            rent.minimum_balance(0),
-            0,
-            program_id,
-        ),
-        &[payer.clone(), vault_account.clone(), system.clone()],
-        &[&[VAULT_SEED, expected_pool.as_ref(), &[vault_bump]]],
+    create_pda_account(
+        payer,
+        vault_account,
+        system,
+        0,
+        program_id,
+        &[VAULT_SEED, expected_pool.as_ref(), &[vault_bump]],
     )?;
 
     let mut data = pool_account.try_borrow_mut_data()?;
@@ -307,7 +346,11 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
     if *spend_account.key != expected_spend {
         return Err(MirrorProgramError::InvalidPda.into());
     }
-    if !spend_account.data_is_empty() || spend_account.lamports() > 0 {
+    // Keyed on allocated data, not on lamports. Anyone can send lamports to a
+    // PDA derived from a public nullifier; only this program can allocate it.
+    // Treating a balance as "already spent" would let a bystander brick a note
+    // for the price of rent exemption.
+    if !spend_account.data_is_empty() {
         return Err(MirrorProgramError::NullifierAlreadySpent.into());
     }
 
@@ -357,24 +400,19 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
         .verify()
         .map_err(|_| MirrorProgramError::ProofVerificationFailed)?;
 
-    let rent = Rent::get()?;
-    invoke_signed(
-        &system_instruction::create_account(
-            relay.key,
-            spend_account.key,
-            rent.minimum_balance(spend_len(req.payload.len())),
-            spend_len(req.payload.len()) as u64,
-            program_id,
-        ),
-        &[relay.clone(), spend_account.clone(), system.clone()],
-        &[&[
+    create_pda_account(
+        relay,
+        spend_account,
+        system,
+        spend_len(req.payload.len()),
+        program_id,
+        &[
             SPEND_SEED,
             pool_account.key.as_ref(),
             &req.nullifier,
             &[spend_bump],
-        ]],
-    )
-    .map_err(|_| MirrorProgramError::NullifierAlreadySpent)?;
+        ],
+    )?;
 
     let now = solana_program::clock::Clock::get()?.unix_timestamp;
     let mut spend_data = spend_account.try_borrow_mut_data()?;
