@@ -332,6 +332,52 @@ already published, and including the comparison failing to separate.
 size-biased frame, one above the RPC-failure limit. Neither's conclusion depends
 on the birth-edge rule, and both remain in this document as they were.
 
+### Run 6 — the privacy pool, re-collected
+
+Helius, archival probes passed. 1,776 calls, 364 seconds.
+
+```
+attempted 83 | resolved 54 | evidence-unresolved 0 | budget-unresolved 29
+             | scope-unresolved 0 | rpc failures 0 (0.00%)
+```
+
+| quantity | Run 4 (broken) | Run 6 (fixed) |
+|---|---|---|
+| resolved | 50 | **54** |
+| **evidence-unresolved** | 6 | **0** |
+| budget-unresolved | 28 | 29 |
+| **ρ (point)** | 0.1032 | **0.0955** |
+| ρ (unresolved bracket) | 0.0316 … 0.1318 | **0.0350 … 0.1136** |
+| bracket width | 4.2× | **3.2×** |
+| ρ (95% sampling interval) | — | 0.0848 … 0.1790 |
+| classes observed | 22 | 23 |
+| Good–Turing coverage | 0.62 | 0.65 |
+
+**The evidence bucket went to zero, and that is the finding.** Chain stop reasons
+before and after:
+
+| stop reason | Run 4 | Run 6 |
+|---|---|---|
+| `PageCapHit` | 69 | 76 |
+| `NoIncomingEdge` | **10** | **0** |
+| `LocalTerminal` | 4 | 5 |
+| `BirthScanExhausted` | — | 1 |
+| `DepthExceeded` | 1 | 1 |
+
+Ten addresses were previously reported as having **no funding credit at all** — a
+claim about the chain, not about us — and every one of them was wrong. One
+address now honestly reports that we stopped reading before finding its credit,
+which is a claim about us and is counted as budget.
+
+**The corrected headline is ρ = 0.0955**, lower than the number published before,
+and the bracket is a third narrower. The correction happened to move our own
+figure in the flattering direction; it was made because the code disagreed with
+its own documentation, and the direction was not known until the run finished.
+
+The under-sampling flag still fires, and Run 4's finding about the tail survives
+the fix: coverage remains near 0.65 with Chao1 estimating 108 classes against 23
+observed.
+
 ## What we do not conclude
 
 **Nothing about how private that pool is, and the headline does not become that

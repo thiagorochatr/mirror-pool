@@ -41,10 +41,12 @@ So this submission claims exactly two things:
    member.
 2. **The membership side is measured**, from real mainnet data, with the method
    and its limits published beside the number. Measured on a live pool's
-   depositors: **`ρ = 0.1032`**, inside an unresolved bracket of
-   `0.0316 … 0.1318`, from a clean census with zero infrastructure failures —
-   50 of 84 members reached a provenance class. Knowing a member's funding class
-   costs that pool roughly an order of magnitude of its nominal anonymity.
+   depositors: **`ρ = 0.0955`**, inside an unresolved bracket of
+   `0.0350 … 0.1136` and a 95% sampling interval of `0.0848 … 0.1790`, from a
+   clean census with **zero** infrastructure failures and **zero** members whose
+   funding we claim not to exist — 54 of 83 reached a provenance class. Knowing a
+   member's funding class costs that pool roughly an order of magnitude of its
+   nominal anonymity.
 
    The sample's class distribution is heavy-tailed and two-thirds unobserved,
    and that is reported as a finding rather than hidden as a caveat: raising the
@@ -176,20 +178,22 @@ mirror analyze --sample sample.json # pure, offline, deterministic
 mirror compare --sample a.json --against b.json   # is the difference real?
 ```
 
-`data/sample-privacycash-run4.json` is the committed artifact behind the
-headline, and `data/sample-privacycash.json` is Run 3, the earlier and smaller
-budget it is compared against. Both are committed, so anyone holding them
-recomputes both numbers without RPC access and without trusting that our
-endpoint behaved the same way on their machine — including the comparison that
-shows coverage *falling* as resolution rose.
+`data/sample-privacycash-run6.json` is the committed artifact behind the
+headline. Every earlier sample stays committed beside it — Run 3, Run 4, and the
+control — so a reader can recompute not only the number but the corrections:
+the budget increase between Runs 3 and 4, and the tracer fix between Runs 4 and
+6. None of it needs RPC access or trust in how our endpoint behaved.
 
 `docs/MEASUREMENT_LOG.md` records every run, including the two that produced no
 headline at all: one whose frame was size-biased and resolved nothing, and one
 that came back above the 1% RPC-failure limit. Those two have no committed
 sample, and saying so is part of the record — what is committed is what the
-published numbers come from. Run 4's budget and its predictions were committed
-to git *before* the collection started, so its parameters are a declaration
-rather than a description.
+published numbers come from.
+
+**Every run since Run 4 had its budget and its prediction committed to git
+before the collection started**, so the parameters are declarations rather than
+descriptions, and the predictions are on the record including the ones that
+turned out wrong.
 
 ### Design choices, and the failure each one exists to avoid
 
