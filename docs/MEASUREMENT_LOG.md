@@ -148,6 +148,41 @@ reaching a class. That is a bigger call budget spent on depth rather than on
 sample size, which is a straightforward thing to buy and not something this
 submission claims to have bought.
 
+## Run 4 — pre-registered before collection, 2026-07-25
+
+This section was written and committed **before the run started**, so the budget
+below is a declaration and not a description. Run 3 missed the informativeness
+gate by two members — 40 resolved against a threshold of 42 — and a gate that
+close is exactly where the temptation to tune until it opens is strongest.
+Declaring the budget in advance and publishing whatever comes out is what makes
+this a fourth measurement rather than a search for a fourth answer.
+
+**Frame.** Unchanged: the same 100 Privacy Cash depositors as Runs 2 and 3, from
+`data/seeds-privacycash.txt`. Not re-drawn, not extended. Changing the frame and
+the budget together would make the two effects impossible to separate.
+
+**What changes, and only this.** Run 3 left 39 members in the budget bucket —
+chains that ran out of depth or pages before reaching a class. That is the one
+bucket a bigger budget can move. So:
+
+| parameter | Run 3 | Run 4 |
+|---|---|---|
+| depth | 8 | 16 |
+| signature page cap | 8 | 24 |
+| endpoint | Alchemy | Helius |
+| request rate | 1.5/s | 5/s |
+
+**Prediction, recorded in advance.** The budget bucket shrinks and resolution
+clears the 42-member gate. The under-sampling flag most likely still fires:
+Good–Turing coverage was 0.65 and Chao1 estimated 108 classes against 17
+observed, and resolving more members raises coverage slowly. A publishable ρ
+carrying an explicit sampling caveat is the expected outcome, not a clean one.
+
+**Stopping rule.** This is the last run against this frame. Whatever it returns
+is what this document reports — including a refusal, and including a ρ that sits
+worse for the argument than Run 3's. If it fails on the RPC gate, that is
+recorded as a failed run and not retried into success.
+
 ## What we do not conclude
 
 Nothing about how private Privacy Cash is. ρ = 0.1219 is a point estimate inside
