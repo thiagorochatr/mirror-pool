@@ -133,11 +133,22 @@ so the member picks, and the selector is inside the action binding — a settler
 cannot obtain the pool's signature for a proof that did not ask for it, and is
 refused by name if it tries.
 
+The constraint is a property of the **batch** and not of the spend, which a live
+cluster established and the tests had missed. The runtime objects to any lamport
+this program moved anywhere in the same instruction, so a signed call settled
+behind three transfers fails even though the same call settled alone succeeds.
+Settlement therefore runs every signed call before any payout in the batch.
+`a_signed_action_settles_inside_a_batch_of_plain_transfers` is the regression
+test, and the shape matters on its own: a signed action that could only settle
+alone would have to wait out `SETTLE_TIMEOUT_SECONDS` instead of joining a crowd,
+surrendering the shared timestamp that makes the crowd worth standing in.
+
 `the_pool_signs_an_action_as_its_own_authority` asserts the capability against
 the real SPL Memo program, which refuses any account handed to it that has not
 signed and names its signers in its logs. The test reads that log for the
 vault's own pubkey, so the claim rests on a third-party program's behaviour
-rather than on ours.
+rather than on ours. `docs/PROOF.md` carries the same evidence from devnet, read
+back off the cluster by the soak rather than asserted by it.
 
 ### The action's account list is chosen by the settler
 
@@ -185,10 +196,12 @@ and it is the reason this limitation is measurable rather than merely admitted.
 ### Not audited
 
 No external review. The end-to-end suite runs against the compiled program on a
-real SVM and every negative case but one carries this program's own error code —
-the truncated-account-list case is caught by the runtime before the program can
-rule on it — which is
-evidence of behaviour and not a substitute for an audit.
+real SVM, and every negative case but two carries this program's own error code.
+The two exceptions are caught by the runtime before this program can rule on
+them, and they are marked as such rather than counted as our checks: a truncated
+account list, and the attempt to turn the pool's signature against its own vault,
+which dies on the System Program's ownership rule. That is evidence of behaviour
+and not a substitute for an audit.
 
 ## Deliberate non-goals
 

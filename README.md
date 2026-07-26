@@ -129,6 +129,16 @@ orderings cannot hold at once, so the member chooses, and the selector is inside
 the action binding — a settler cannot obtain the pool's signature for a proof
 that did not ask for it.
 
+The constraint turned out to be about the **batch**, not the spend, and a live
+cluster is what found it. The runtime objects to any lamport this program moved
+anywhere in the same instruction, so three transfers settled ahead of a signed
+call are enough to break it — a case a single-spend test cannot reach.
+Settlement runs every signed call first and pays everybody afterwards.
+`a_signed_action_settles_inside_a_batch_of_plain_transfers` pins it, because a
+signed action that could only settle alone would have to wait out the timeout
+rather than join a batch, giving up the shared timestamp that is the reason to
+stand in a crowd.
+
 A separate test passes a **non-empty account list** through the CPI, which
 matters because SPL Memo requires every account handed to it to have signed. If
 the program dropped an account, mislabelled a signer flag, or miscounted, Memo
