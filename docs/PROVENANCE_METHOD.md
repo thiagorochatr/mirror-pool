@@ -86,8 +86,8 @@ comparability with the published Ethereum results we benchmark against (§10.3).
 > A partition is admissible only if the adversary can compute the same label on the
 > **member side** and on the **action side**.
 
-This rule is load-bearing and it is the single design decision that separates this
-work from the prior submissions in this bounty.
+This rule is load-bearing, and it is the single design decision the rest of the
+method is built around.
 
 Entropy over a partition decreases monotonically under refinement. Therefore **finer
 labels always yield a lower effective-k**, and a *weaker* tracer that fails to merge
@@ -510,11 +510,13 @@ For scale: a published 11/30 root-hit rate carries a Wilson 95% CI of
 - Effective-k has no closed-form CI. Use a **stratified block bootstrap resampling
   whole clusters** (funder-cluster or slot), `B = 10,000`, BCa intervals. Report the
   design effect.
-- **CI width must be a function of data collected, never of loops run.** A rival's
-  published interval `[+0.308, +0.325]` is exactly `2·1.96·√(p(1−p)/8000)` where 8,000
-  is a `--n` resampling flag default — it can be made arbitrarily tight without
-  collecting one extra byte. Write a test that fails if the reported CI width changes
-  when only the resample count changes.
+- **CI width must be a function of data collected, never of loops run.** The failure
+  looks like this: a published interval of `[+0.308, +0.325]` turns out to be exactly
+  `2·1.96·√(p(1−p)/B)` for `B` the resampling count — so the interval narrows as the
+  loop count rises and can be made arbitrarily tight without collecting one extra
+  byte. It is easy to ship because a tighter interval reads as a better measurement.
+  Write a test that fails if the reported width moves when only the resample count
+  does.
 
 **Entropy bias.** Plug-in `Ĥ` is downward-biased by ≈`(m−1)/(2n ln2)` bits. Emit
 plug-in, Miller–Madow, and Chao–Shen (coverage-adjusted) side by side. Emit Good–Turing
@@ -710,7 +712,8 @@ rule can be ablated in the sensitivity table (§5.5).
 | — | none fired, budget exhausted | `unresolved(reason, depth, flags)` |
 
 **R1 is definitional and cheap** — one `getAccountInfo` — and it is what separates
-"funded by a Raydium vault" from "funded by a person". No prior submission performs it.
+"funded by a Raydium vault" from "funded by a person". Skip it and those two collapse
+into one class, which corrupts the distribution the headline is computed over.
 
 **`busy-unlabelled` is not "an attributable origin". Never call it one.**
 
@@ -1302,9 +1305,11 @@ that are not.
    literally in `accountKeys`. Check explicitly.
 4. **Who pays the fee.** If the member submits the transaction even though the PDA
    executes the action, `accountKeys[0]` *is* the member — total deanonymization. This is
-   the number-one practical failure mode on Solana, and a rival's own sampler harvests
-   depositors by exactly this route. A relayer or pool-paid fees is mandatory, and the
-   design must make member-paid submission **impossible**, not merely discouraged.
+   the number-one practical failure mode on Solana, and it is how a sampler harvests
+   depositors from a pool that looks otherwise sound: the fee payer is in the clear on
+   every transaction, so no proof system anywhere in the design helps. A relayer or
+   pool-paid fees is mandatory, and the design must make member-paid submission
+   **impossible**, not merely discouraged.
 
 **Honest experiment.** Deploy, execute N actions from N distinct members, run the
 unmodified tracer, and report per-channel leakage in bits with `provenance = 0.00` sitting

@@ -395,9 +395,9 @@ multi-party ceremony, not more SOL.
   populations is demonstrated as machinery and unproven as a finding.
 - Not audited.
 
-`docs/MEASUREMENT_LOG.md` records every collection run, including the one that
-produced nothing. A measurement project that keeps only its successful runs is
-selecting rather than reporting.
+`docs/MEASUREMENT_LOG.md` records every collection run, including the three that
+produced no headline and the two the tool itself refused. A measurement project
+that keeps only its successful runs is selecting rather than reporting.
 
 ## Documentation
 

@@ -9,9 +9,10 @@ set on a public ledger can be partitioned by where each member's capital came
 from**, and once you sort a set of `k` members into funding-provenance classes,
 the anonymity that remains is the size of the actor's class, not `k`.
 
-This is the one problem every serious submission across all three repos of this
-bounty concedes and none closes. So it is the problem this contribution takes as
-its subject.
+It is the problem a privacy pool is most often built around rather than through:
+the proof system gets the attention, the funding graph is conceded in a sentence,
+and nobody measures what the concession costs. So it is the problem this
+contribution takes as its subject.
 
 We do not claim to hide provenance. Value moves one way on a ledger, and no
 deposit pool controls where its users' money came from. What we claim is

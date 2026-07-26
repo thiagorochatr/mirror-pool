@@ -153,8 +153,10 @@ impl Classifier<'_> {
     /// Whether `facts` terminates a trace, and under which rule.
     pub fn classify(&self, facts: &AddressFacts) -> Option<Outcome> {
         // R1 — a program or PDA. Definitional and cheap, and the only thing that
-        // separates "funded by a protocol vault" from "funded by a person". No
-        // prior submission in this bounty performs it.
+        // separates "funded by a protocol vault" from "funded by a person".
+        // Without it, one exchange hot wallet and one AMM vault land in the same
+        // class, and the class distribution the headline is computed over is wrong
+        // in a direction nothing downstream can detect.
         if let Some(owner) = &facts.owner {
             if owner != SYSTEM_PROGRAM || facts.executable {
                 return Some(Outcome::Terminal {
