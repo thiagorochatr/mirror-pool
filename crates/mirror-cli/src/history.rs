@@ -36,6 +36,13 @@ pub struct History {
     /// Note commitments in insertion order. Index `i` is leaf `i`.
     pub commitments: Vec<[u8; 32]>,
     pub spends: Vec<SubmittedSpend>,
+    /// Every key that has signed a deposit into this pool.
+    ///
+    /// Collected so the tool can catch the one mistake that undoes everything:
+    /// relaying a spend with a key that also deposited. Depositors are public by
+    /// necessity — a deposit is signed — so reading them costs nothing beyond
+    /// the scan already being done.
+    pub depositors: Vec<Pubkey>,
 }
 
 impl History {
@@ -73,6 +80,7 @@ pub fn scan(chain: &Chain, program_id: &Pubkey, pool: &Pubkey, verbose: bool) ->
 
     let mut commitments = Vec::new();
     let mut spends = Vec::new();
+    let mut depositors: Vec<Pubkey> = Vec::new();
 
     for (n, signature) in signatures.iter().enumerate() {
         if verbose && n > 0 && n % 25 == 0 {
@@ -108,7 +116,14 @@ pub fn scan(chain: &Chain, program_id: &Pubkey, pool: &Pubkey, verbose: bool) ->
                 continue;
             };
             match decoded {
-                MirrorIx::Deposit { commitment } => commitments.push(commitment),
+                MirrorIx::Deposit { commitment } => {
+                    commitments.push(commitment);
+                    if let Some(who) = ix.accounts.first().and_then(|i| keys.get(*i as usize)) {
+                        if !depositors.contains(who) {
+                            depositors.push(*who);
+                        }
+                    }
+                }
                 MirrorIx::SubmitSpend { nullifier, .. } => {
                     let (spend, _) = spend_address(program_id, pool, &nullifier);
                     spends.push(SubmittedSpend { nullifier, spend });
@@ -121,6 +136,7 @@ pub fn scan(chain: &Chain, program_id: &Pubkey, pool: &Pubkey, verbose: bool) ->
     Ok(History {
         commitments,
         spends,
+        depositors,
     })
 }
 
@@ -146,6 +162,7 @@ mod tests {
         let history = History {
             commitments: commitments(9),
             spends: Vec::new(),
+            depositors: Vec::new(),
         };
         let mut frontier = Frontier::new().unwrap();
         for c in &history.commitments {
@@ -159,12 +176,14 @@ mod tests {
         let forward = History {
             commitments: commitments(5),
             spends: Vec::new(),
+            depositors: Vec::new(),
         };
         let mut backward = forward.commitments.clone();
         backward.reverse();
         let reversed = History {
             commitments: backward,
             spends: Vec::new(),
+            depositors: Vec::new(),
         };
         assert_ne!(
             forward.tree().unwrap().root().unwrap(),
@@ -179,6 +198,7 @@ mod tests {
         let history = History {
             commitments: commitments(6),
             spends: Vec::new(),
+            depositors: Vec::new(),
         };
         for (i, c) in history.commitments.clone().iter().enumerate() {
             assert_eq!(history.index_of(c), Some(i as u64));
@@ -193,6 +213,7 @@ mod tests {
         let history = History {
             commitments: vec![[0xff; 32]],
             spends: Vec::new(),
+            depositors: Vec::new(),
         };
         let err = history.tree().unwrap_err().to_string();
         assert!(err.contains("canonical"), "{err}");

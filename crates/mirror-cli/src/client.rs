@@ -335,6 +335,27 @@ pub fn spend(
         history.commitments.len()
     );
 
+    // The mistake that undoes the whole protocol, caught before it lands.
+    //
+    // The relay signs, so its key is public on the spend transaction. If that
+    // same key signed a deposit into this pool, an observer joins the two by
+    // reading two public transactions and the anonymity set collapses to one for
+    // this action — the proof stays sound and protects nothing. It is an easy
+    // mistake to make, because the obvious key to hand `--relay` is the one
+    // already funded, which is the one that deposited.
+    if history.depositors.contains(&relay.pubkey()) {
+        return Err(anyhow!(
+            "the relay {} has also deposited into this pool.\n\n\
+             The relay signs this spend, so its key is public on it. A key that \
+             appears on both a deposit and a spend links them, and this action's \
+             anonymity set collapses to one — the proof would be sound and \
+             pointless.\n\n\
+             Use a key with no history with this pool, funded from somewhere that \
+             does not lead back to your deposit.",
+            relay.pubkey()
+        ));
+    }
+
     let binding = mirror_core::action_binding(
         action.selector(),
         &action.target(),

@@ -81,7 +81,7 @@ not say. There is a section below of things we deliberately do not claim.
 | `crates/mirror-provenance` | The funding-provenance measurement. |
 | `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle` for members; `setup`, `verify-setup`, `soak` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
 
-**198 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**209 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -120,6 +120,34 @@ that no operator, including us, sits between a member and their own money.
 The relay signs and the member never does, so no member key appears on chain
 after the deposit. Below the crowd floor, `settle` says what it is waiting for
 and why rather than returning an error code.
+
+### How large a crowd fits in one settlement
+
+Ten. Measured, not estimated:
+
+```
+settled 10 spends in one transaction: 1228 bytes (4 to spare), 19545 CU of 200000
+11 spends: rejected by the wire at 1327 bytes, 95 over the 1232-byte limit —
+while the SVM settled the same batch in 24158 CU, so compute is not the constraint
+```
+
+The **packet size** binds and compute is not close: a full ten-spend settlement
+uses under 10% of the default instruction budget. Each spend brings three
+accounts nobody else shares — its record, its beneficiary, its relay — so the
+transaction grows by about 99 bytes a member while the compute grows by about
+460 CU.
+
+`ten_spends_fit_in_one_settlement_and_the_packet_is_what_stops_the_eleventh`
+pins both numbers and demonstrates the limit from both sides: it measures the
+eleventh batch at 1327 bytes *and* replays the identical batch into a second
+pool, where the SVM settles it without complaint. If compute ever became the
+binding constraint, that test fails rather than quietly reporting the wrong
+reason.
+
+That ten is a worst case, and the test says so: a batch whose members shared a
+relay would name fewer distinct keys and fit more. It is also a ceiling per
+transaction, not per epoch — settlement is permissionless and a busy pool
+settles in several batches, at the cost of several timestamps rather than one.
 
 ## Synchronised actions are the point
 

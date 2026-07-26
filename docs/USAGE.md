@@ -120,6 +120,14 @@ own wallet, and `accountKeys[0]` is then the member — which publishes the link
 the pool exists to break. Use a key that is not your wallet and has no history
 with it.
 
+The tool refuses outright if the relay you name has also deposited into this
+pool, because that is the same mistake wearing a different key: the deposit and
+the spend would both carry it, an observer joins them by reading two public
+transactions, and the proof stays sound while protecting nothing.
+
+Funding the relay matters too, and no tool can check it for you. A relay topped
+up from the wallet that deposited leads back to it in one hop.
+
 ```
 $ mirror spend --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa \
                --note m1.json --to BQ6piLqJD4CWn4V3VyDBh3RpU1FtsPh63P9y4wtwBxJg \
@@ -203,6 +211,24 @@ transaction, at one timestamp.
 and reported, because the record binds *how many* accounts the call takes and
 never *which*, so no tool can infer the account list its callee expects.
 
+## How many members settle together
+
+Ten spends fit in one settlement transaction. The limit is the 1232-byte packet,
+not compute: ten uses 1228 bytes and 19,545 of the 200,000 compute units a single
+instruction gets by default.
+
+Each spend brings three accounts nobody else shares — its record, its beneficiary
+and its relay — so the transaction grows about 99 bytes per member. A batch whose
+members shared a relay names fewer distinct keys and fits more.
+
+This is a ceiling per *transaction*, not per epoch. Settlement is permissionless,
+so a pool with thirty pending spends settles in three batches; the cost is three
+timestamps rather than one, which is a real cost to the anonymity and the reason
+the number is worth knowing.
+
+`ten_spends_fit_in_one_settlement_and_the_packet_is_what_stops_the_eleventh`
+pins it.
+
 ## Escaping without a relay
 
 There is no `self-spend` command because none is needed. Relay for yourself with
@@ -220,3 +246,4 @@ that nothing in the protocol can hold your escrow.
 | `this note file is inconsistent` | The file was edited or corrupted. Spending it would burn a nullifier against a leaf that is not in the tree, so it is refused first. |
 | `the rebuilt root does not match the pool's` | The endpoint's history is incomplete — usually pruning. `mirror check-endpoint` tests for exactly that. |
 | `this pool holds N notes and its floor is M` | The pool refuses to act below its floor. Wait for more members, or use a pool with a floor you can meet. |
+| `the relay … has also deposited into this pool` | The worst mistake available, refused rather than warned about. The relay signs the spend, so a key that also signed a deposit links the two and this action's anonymity set collapses to one. Use a key with no history with the pool. |
