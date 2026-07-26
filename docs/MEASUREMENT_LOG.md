@@ -237,6 +237,55 @@ rather than a caveat.**
 artifact stays committed beside the Run 4 one; both are in `data/`, and the
 numbers above are recomputable from either without RPC access.
 
+## Run 5 — pre-registered before collection, 2026-07-26
+
+Committed before the collection started, like Run 4.
+
+**Why a second population, and why this one.** Run 4 produced ρ = 0.1032 for a
+privacy pool's depositors. On its own that number has no scale: a reader cannot
+tell whether 0.10 is concentrated or ordinary, because there is nothing to
+compare it against. ρ was chosen as the headline precisely because it is
+independent of `k` and therefore comparable across populations — and so far that
+property has been asserted and never exercised.
+
+The comparison that gives the number a scale is not a second privacy pool. It is
+a population that **is not seeking privacy at all**, measured by the identical
+pipeline. If ordinary users show the same provenance concentration, then 0.10
+describes Solana rather than the pool. If the privacy pool is more concentrated,
+that is a finding about who privacy tools attract. Either answer is worth more
+than a second point on the same curve.
+
+**Frame.** Depositors of Marinade liquid staking,
+`MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD`, enumerated by `mirror seeds` from
+the program's own transactions, member-weighted and strided across signature
+pages exactly as the Privacy Cash frame was. Target 100 depositors.
+
+This is a **control, not a privacy pool**, and it is labelled as one everywhere.
+Staking SOL is an ordinary, publicly-attributable act; nobody does it for
+deniability.
+
+**What a feasibility probe already established, and what it did not.** A probe of
+178 transactions returned 5 distinct depositors — a yield near 3%, against about
+12% for the privacy pool, because most Marinade program traffic is unstaking and
+bot activity rather than deposits. So the frame is constructible but costs
+roughly four times as many fetches per member. That is a fact about the budget.
+The probe was not run through `analyze` and nothing about the outcome is known
+at the time of writing.
+
+**Prediction, recorded in advance.** Genuinely uncertain, which is the reason to
+write it down. The expectation is that the control is **less** concentrated —
+lower ρ — because a privacy pool is plausibly reached through a narrower set of
+funding routes. A control that came back at or above 0.10 would say the
+concentration is a property of Solana's funding graph rather than of the pool,
+and that would be the more interesting result of the two.
+
+The under-sampling flag is expected to fire again. Nothing about the tail found
+in Run 4 suggests a different population would have a lighter one.
+
+**Stopping rule.** One run at this frame size. Whatever it returns is reported,
+including a result that undercuts the argument for measuring privacy pools at
+all, and including a refusal.
+
 ## What we do not conclude
 
 **Nothing about how private that pool is, and the headline does not become that
