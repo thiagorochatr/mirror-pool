@@ -58,7 +58,7 @@ than a slice.
 
 Measured in LiteSVM against a real SBF build, with a scratch circuit per input
 count that is not part of this repository. The figure this repository does
-reproduce is the whole `submit_spend` instruction at three inputs — 101,123 CU,
+reproduce is the whole `submit_spend` instruction at three inputs — 101,127 CU,
 printed by `cargo test -p mirror-pool-program --test end_to_end -- --nocapture`.
 
 | Public inputs | `verify()` |

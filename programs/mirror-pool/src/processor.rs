@@ -371,7 +371,7 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
         SELECTOR_TRANSFER if req.action_accounts != 0 => {
             return Err(MirrorProgramError::MalformedInstruction.into());
         }
-        SELECTOR_TRANSFER | SELECTOR_INVOKE => {}
+        SELECTOR_TRANSFER | SELECTOR_INVOKE | SELECTOR_INVOKE_SIGNED => {}
         _ => return Err(MirrorProgramError::UnknownSelector.into()),
     }
     let binding = mirror_core::action_binding(
@@ -451,6 +451,27 @@ pub const SELECTOR_TRANSFER: u64 = 0;
 /// a vote happened and be unable to say which member asked for it. A pool that
 /// only moves lamports answers the wrong question.
 pub const SELECTOR_INVOKE: u64 = 1;
+
+/// Invoke `target_program` with the pool's vault as a **signer** of the call.
+///
+/// Selector one funds the beneficiary and then invokes, which is what an action
+/// wants when the target must see the value before it acts. The cost is that the
+/// vault cannot be one of the callee's accounts: this program has already moved
+/// its lamports by direct mutation, and the runtime rejects the whole
+/// instruction as `UnbalancedInstruction` when that account then crosses a CPI
+/// boundary.
+///
+/// This selector pays *after* the invoke instead, which leaves the vault's
+/// balance untouched at the moment of the call and lets it be handed to the
+/// callee as a signer. That is what a delegated authority needs — a stake
+/// account's authority, a governance vote's authority — and it is the difference
+/// between a pool that can move lamports on your behalf and one that can *act*
+/// on your behalf.
+///
+/// The two orderings cannot be combined, so the member picks. The selector is
+/// inside the action binding, so the choice is the member's and a settler cannot
+/// change it.
+pub const SELECTOR_INVOKE_SIGNED: u64 = 2;
 
 /// How long a spend may wait before it can settle alone.
 ///
@@ -553,11 +574,6 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
             )
         };
 
-        // The relay is paid the same way regardless of what the action is.
-        if relay_fee > 0 {
-            move_lamports(vault_account, relay, relay_fee)?;
-        }
-
         match selector {
             SELECTOR_TRANSFER => {
                 if action_accounts != 0 {
@@ -568,7 +584,7 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
                 // nested invoke on the hot path.
                 move_lamports(vault_account, beneficiary, payout)?;
             }
-            SELECTOR_INVOKE => {
+            SELECTOR_INVOKE | SELECTOR_INVOKE_SIGNED => {
                 // The target program's own account comes first, because a CPI
                 // requires the callee to be present in the caller's account
                 // list. Its key is checked against the record, so a settler
@@ -590,9 +606,23 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
                     target_info,
                     payout,
                     &action_infos,
+                    selector == SELECTOR_INVOKE_SIGNED,
                 )?;
             }
             _ => return Err(MirrorProgramError::UnknownSelector.into()),
+        }
+
+        // The relay is paid after the action, never before.
+        //
+        // Under `SELECTOR_INVOKE_SIGNED` the vault is one of the callee's
+        // accounts, and any direct lamport mutation this program makes to it
+        // before that call makes the runtime reject the whole instruction as
+        // `UnbalancedInstruction`. Paying the relay here rather than above the
+        // match is what keeps the vault's balance untouched at the moment of
+        // the CPI. The other selectors do not care about the order, so there is
+        // one order rather than two.
+        if relay_fee > 0 {
+            move_lamports(vault_account, relay, relay_fee)?;
         }
         settled += 1;
     }
@@ -616,12 +646,17 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
     Ok(())
 }
 
-/// Invokes the member's chosen program on their behalf, signed by the vault.
+/// Invokes the member's chosen program on their behalf.
 ///
-/// The vault PDA is the signer, so from the chain's point of view the action was
-/// taken by the pool. Every member's action carries the same signer, which is
-/// what makes an action unattributable: the on-chain trace of a stake made
-/// through this pool is identical whoever asked for it.
+/// The call is made by this program and the value comes out of the pool's vault,
+/// so from the chain's point of view the action was taken by the pool. Every
+/// member's action looks the same from outside, which is what makes it
+/// unattributable: the on-chain trace of a stake made through this pool is
+/// identical whoever asked for it.
+///
+/// Under `SELECTOR_INVOKE_SIGNED` the vault is additionally a *signer* of the
+/// call, so the pool can act as a delegated authority rather than only as a
+/// source of funds.
 ///
 /// The payload and the target were both fixed at submit time and bound into the
 /// proof, so a settler chooses neither, and the declared account count is bound
@@ -630,9 +665,9 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
 /// for any caller. For a target whose destination is an account rather than
 /// instruction data, that is a real limit, and the threat model says so.
 ///
-/// The vault is appended by this program as the final account and marked signer.
-/// A settler that tries to place it in the action's own list is refused, because
-/// the same account appearing twice has its lamport change applied twice.
+/// Whether the vault may be one of the callee's own accounts depends on
+/// `pool_signs`, and the reason is lamport ordering rather than taste — see
+/// `SELECTOR_INVOKE_SIGNED`.
 #[allow(clippy::too_many_arguments)]
 fn invoke_action<'a>(
     program_id: &Pubkey,
@@ -643,6 +678,7 @@ fn invoke_action<'a>(
     target_info: &AccountInfo<'a>,
     payout: u64,
     action_infos: &[AccountInfo<'a>],
+    pool_signs: bool,
 ) -> ProgramResult {
     let (target, payload) = {
         let mut data = spend_account.try_borrow_mut_data()?;
@@ -666,32 +702,31 @@ fn invoke_action<'a>(
         return Err(MirrorProgramError::InvalidPda.into());
     }
 
-    // Fund the action before invoking, so the target sees the value it is meant
-    // to act on. The vault signs, so the funds visibly come from the pool.
-    move_lamports(vault_account, beneficiary, payout)?;
-
-    // The vault authorises the call through its seeds but is deliberately not
-    // one of the callee's accounts.
-    //
-    // This program has already moved the payout out of the vault by direct
-    // mutation. Handing that same account to a callee makes the runtime
-    // reconcile those lamports across the CPI boundary, and it rejects the whole
-    // instruction as unbalanced — with the vault marked writable or not. So the
-    // vault reaches `invoke_signed` in the account infos, which is what lets its
-    // seeds sign, and never appears in the instruction's account list.
-    //
-    // The consequence is a real limit, and THREAT_MODEL.md states it: an action
-    // whose target needs the pool itself as one of its accounts is not
-    // expressible here. Value reaches the action through the beneficiary.
-    if action_infos.iter().any(|a| a.key == vault_account.key) {
-        return Err(MirrorProgramError::MalformedInstruction.into());
+    // Under `SELECTOR_INVOKE` the vault must not be one of the callee's
+    // accounts, and this is a runtime constraint rather than a policy: the
+    // payout below moves the vault's lamports by direct mutation, and an account
+    // mutated that way then handed across a CPI boundary makes the runtime
+    // reject the whole instruction as `UnbalancedInstruction`. Refusing it here
+    // turns that into a named error instead of an opaque runtime failure.
+    if !pool_signs {
+        if action_infos.iter().any(|a| a.key == vault_account.key) {
+            return Err(MirrorProgramError::MalformedInstruction.into());
+        }
+        // Fund the action before invoking, so the target sees the value it is
+        // meant to act on.
+        move_lamports(vault_account, beneficiary, payout)?;
     }
 
+    // The vault's signature is granted by `invoke_signed` below, but only for
+    // accounts that appear in the instruction's own list — an account passed in
+    // the infos and absent from the metas is ignored by the callee, signer seeds
+    // or not. So under `SELECTOR_INVOKE_SIGNED` the flag has to be set here, on
+    // the meta, for the callee to see the pool as a signer at all.
     let metas: Vec<solana_program::instruction::AccountMeta> = action_infos
         .iter()
         .map(|a| solana_program::instruction::AccountMeta {
             pubkey: *a.key,
-            is_signer: a.is_signer,
+            is_signer: a.is_signer || (pool_signs && a.key == vault_account.key),
             is_writable: a.is_writable,
         })
         .collect();
@@ -708,7 +743,9 @@ fn invoke_action<'a>(
     // list twice, and the runtime then reconciles its lamports against itself
     // and fails the whole instruction as unbalanced.
     let mut infos = action_infos.to_vec();
-    infos.push(vault_account.clone());
+    if !infos.iter().any(|a| a.key == vault_account.key) {
+        infos.push(vault_account.clone());
+    }
     if !infos.iter().any(|a| a.key == target_info.key) {
         infos.push(target_info.clone());
     }
@@ -717,7 +754,16 @@ fn invoke_action<'a>(
         &ix,
         &infos,
         &[&[VAULT_SEED, pool_account.key.as_ref(), &[vault_bump]]],
-    )
+    )?;
+
+    // The payout happens *after* the call on this path, which is the whole
+    // reason the vault could be handed to the callee as a signer. The
+    // beneficiary is paid either way before this instruction returns, so the
+    // ordering changes what the callee observes and nothing about what is owed.
+    if pool_signs {
+        move_lamports(vault_account, beneficiary, payout)?;
+    }
+    Ok(())
 }
 
 /// Moves lamports between two accounts this program owns or may credit.

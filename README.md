@@ -10,9 +10,12 @@ it, signed by the pool, batched with everyone else's at one timestamp. An
 observer sees that a stake, a swap or a vote happened and cannot say which member
 asked for it.
 
-Moving lamports is the degenerate case, selector zero. The interesting case is
-selector one, and the end-to-end suite runs it against a real deployed program:
-four members, four memos, one slot, one signer — [see below](#synchronised-actions-are-the-point).
+Moving lamports is the degenerate case, selector zero. The interesting cases are
+the other two, and the end-to-end suite runs both against a real deployed
+program: four members performing one indistinguishable action in a single slot,
+and the pool **signing a call as the member's authority** — which is what a stake
+delegation or a governance vote needs and what a transfer cannot do.
+[See below](#synchronised-actions-are-the-point).
 
 Rust end to end. MIT. No Anchor, no Circom, no JavaScript anywhere in the
 proving path.
@@ -66,13 +69,13 @@ not say. There is a section below of things we deliberately do not claim.
 
 | | |
 |---|---|
-| `programs/mirror-pool` | The on-chain program. `submit_spend`, proof and all, measured at **101,123 CU** on a real SVM. |
+| `programs/mirror-pool` | The on-chain program. `submit_spend`, proof and all, measured at **101,127 CU** on a real SVM. |
 | `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain. |
 | `crates/mirror-circuit` | R1CS gadget, membership circuit, prover, key export. |
 | `crates/mirror-provenance` | The funding-provenance measurement. |
 | `crates/mirror-cli` | `setup`, `verify-setup`, `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection`, `soak`. |
 
-**193 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**197 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -83,13 +86,14 @@ The brief asks for an anonymity set for *behaviour*, not for funds. That
 distinction is load-bearing here, so it is tested rather than asserted:
 
 ```
-settled 4 real CPI actions in one transaction, 39,644 CU
+settled 4 real CPI actions in one transaction, 39,820 CU
 ```
 
 `a_crowd_of_members_perform_a_real_protocol_action_together` seeds a pool,
 loads the **real SPL Memo program** into the SVM, and has four members each
 prove membership and request the identical memo. Settlement invokes Memo four
-times in a single transaction, every invocation signed by the pool's vault PDA.
+times in a single transaction, every invocation made by the pool and funded from
+its vault.
 
 What an observer holds afterwards is four identical memos, one timestamp, one
 signer, and no field anywhere in the transaction that distinguishes which member
@@ -97,15 +101,33 @@ asked for which. The actions are indistinguishable **by content** because the
 payloads match, and indistinguishable **by timing** because settlement gives them
 one clock.
 
-Two properties make this a behavioural tool rather than a mixer with a CPI bolted
-on:
+Three properties make this a behavioural tool rather than a mixer with a CPI
+bolted on:
 
 - **The target is arbitrary.** Selector one invokes any program with any payload.
-  Staking, voting and swapping are the same code path as the memo; Memo is used
-  in the test because it is small, real, and validates its own account list.
+  Memo is used in the test because it is small, real, and validates its own
+  account list.
+- **The pool can sign as your authority.** Selector two hands the pool's vault to
+  the callee as a *signer*, which is what a stake delegation or a governance vote
+  needs and what a transfer does not: somebody must sign as the authority, and
+  for a member who must never appear on chain, that somebody can only be the
+  pool. `the_pool_signs_an_action_as_its_own_authority` proves it at **30,827 CU**
+  against real SPL Memo — a program that refuses any account handed to it that
+  has not signed, and that names its signers in its logs. The test reads that log
+  for the vault's own key, so the claim rests on someone else's program.
 - **Moving lamports is the degenerate case.** Selector zero is a plain transfer,
   kept only because expressing "pay this account" should not require a target
   program.
+
+The two invoke selectors exist because of an ordering constraint that was
+measured rather than assumed. Selector one funds the beneficiary *before* the
+call, so the target sees the value; the runtime then refuses to let the vault
+cross the CPI boundary, because this program has already moved its lamports by
+direct mutation. Selector two pays *after*, leaving the balance untouched at the
+moment of the call, which is exactly what lets the vault be a signer. Both
+orderings cannot hold at once, so the member chooses, and the selector is inside
+the action binding — a settler cannot obtain the pool's signature for a proof
+that did not ask for it.
 
 A separate test passes a **non-empty account list** through the CPI, which
 matters because SPL Memo requires every account handed to it to have signed. If

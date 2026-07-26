@@ -32,9 +32,10 @@ rather than transmitted.
 
 **Actions carry one caller.** Every action is invoked by the pool program on a
 member's behalf and funded out of the pool's vault, so the on-chain trace of a
-stake made through the pool is identical whoever asked for it. The vault
-authorises the CPI through its seeds but is never one of the callee's accounts —
-see below.
+stake made through the pool is identical whoever asked for it. Under
+`SELECTOR_INVOKE_SIGNED` the vault also signs the call, so the pool can be the
+*authority* for an action and not only its funder — with a consequence stated
+below.
 
 **Payouts share a timestamp.** Settlement batches, so arrival time does not
 separate members within a batch.
@@ -93,18 +94,50 @@ that steals escrow. This is a named trust assumption, not a property.
 `solana program set-upgrade-authority --final` removes it and correspondingly
 removes the ability to fix anything.
 
-### The pool cannot be one of its own action's accounts
+### The pool's signature is available to every member
 
-The vault authorises an action through its seeds, but it is never one of the
-callee's accounts. It cannot be: settlement moves the payout out of the vault by
-direct mutation before invoking, and handing that same account to a callee makes
-the runtime reconcile those lamports across the CPI boundary and reject the whole
-instruction as unbalanced — whether the account is marked writable or not.
+`SELECTOR_INVOKE_SIGNED` hands the vault to the callee as a signer, so the pool
+can act as a delegated authority — a stake authority, a governance voter —
+rather than only as a source of funds. That is the capability the behavioural
+case needs, and it comes with a property worth stating plainly:
 
-So an action whose target needs the pool itself as an account is not expressible
-in this version. Value reaches an action through the beneficiary instead. A
-settler that tries to place the vault in the action's account list is refused
-rather than left to fail later.
+> **Any member can make the pool sign anything, at any target program.**
+
+That is safe here only because the vault owns nothing but its own lamports, and
+those can be debited by this program alone. The signature therefore grants
+authority over nothing. It stops being safe the moment the pool is made an
+authority over shared state: make the vault the withdraw authority of a stake
+account, and any member can withdraw it. Anyone integrating this pool as an
+authority is inheriting that, and no on-chain check here can prevent it, because
+the payload is opaque by design.
+
+The obvious attack is tested rather than argued.
+`the_pools_signature_cannot_be_turned_against_its_own_vault` points the pool's
+own signature at the System Program with a well-formed transfer draining the
+vault to an address the member picked. Every ingredient is legitimate — genuine
+proof, owned note, offered selector — and this program never inspects the
+payload, so nothing here refuses it. The runtime does:
+`ExternalAccountLamportSpend`, *instruction spent from the balance of an account
+it does not own*. The attack reaches the System Program, which is the proof that
+the signature really was granted, and dies on the ownership rule. That rule is
+what the safety rests on, which is worth knowing precisely, because it stops
+holding the moment the vault acquires a second owner.
+
+The ordering constraint behind the two selectors is real and was measured rather
+than reasoned about. `SELECTOR_INVOKE` funds the beneficiary *before* invoking,
+so the target sees the value; the runtime then rejects the vault crossing the CPI
+boundary with `UnbalancedInstruction`, because this program mutated its lamports
+directly beforehand. `SELECTOR_INVOKE_SIGNED` pays *after*, which leaves the
+balance untouched at the moment of the call. Both orderings cannot hold at once,
+so the member picks, and the selector is inside the action binding — a settler
+cannot obtain the pool's signature for a proof that did not ask for it, and is
+refused by name if it tries.
+
+`the_pool_signs_an_action_as_its_own_authority` asserts the capability against
+the real SPL Memo program, which refuses any account handed to it that has not
+signed and names its signers in its logs. The test reads that log for the
+vault's own pubkey, so the claim rests on a third-party program's behaviour
+rather than on ours.
 
 ### The action's account list is chosen by the settler
 

@@ -57,7 +57,21 @@ pub struct Spend<'a> {
 
 impl<'a> Spend<'a> {
     pub fn load(data: &'a mut [u8]) -> Result<Self, MirrorProgramError> {
-        if data.len() < SPEND_BASE_LEN || data[offset::VERSION] != SPEND_VERSION {
+        // The upper bound is what stops this from being a type confusion.
+        //
+        // `POOL_VERSION` and `SPEND_VERSION` are both 1 and both live at offset
+        // zero, so the version byte distinguishes *layout revisions* and not
+        // account *kinds*: a pool account passed where a spend record is
+        // expected clears the version check. Settlement's other checks —
+        // `record.pool()` against the pool key — would then have to be read out
+        // of Merkle frontier bytes and are what actually refuse it, which is a
+        // coincidence to depend on rather than a rule. No spend record is ever
+        // larger than this, and every other account this program owns is, so
+        // one comparison makes the confusion unrepresentable.
+        if data.len() < SPEND_BASE_LEN
+            || data.len() > spend_len(MAX_PAYLOAD)
+            || data[offset::VERSION] != SPEND_VERSION
+        {
             return Err(MirrorProgramError::InvalidSpendAccount);
         }
         let spend = Spend { data };
@@ -340,5 +354,49 @@ mod tests {
         assert_eq!(s.pool(), [0xEF; 32]);
         assert_eq!(s.target_program(), [0x12; 32]);
         assert_eq!(s.action_accounts(), 7);
+    }
+
+    /// A pool account must never load as a spend record.
+    ///
+    /// Both carry version 1 at offset zero, so the version byte cannot tell them
+    /// apart. This pins the size bound that does. The value is not
+    /// `POOL_LEN` by import but by construction: any account bigger than the
+    /// largest possible record is refused, whatever it happens to be.
+    #[test]
+    fn an_account_too_large_to_be_a_record_is_refused() {
+        let mut pool_sized = vec![0u8; 4792];
+        pool_sized[offset::VERSION] = SPEND_VERSION;
+        // Declare exactly the payload length that makes the arithmetic close,
+        // which is what a colliding account would have to do.
+        let declared = (4792 - SPEND_BASE_LEN) as u16;
+        pool_sized[offset::PAYLOAD_LEN..offset::PAYLOAD_LEN + 2]
+            .copy_from_slice(&declared.to_le_bytes());
+        assert!(
+            Spend::load(&mut pool_sized).is_err(),
+            "an account far larger than any record loaded as one"
+        );
+    }
+
+    #[test]
+    fn the_largest_legal_record_still_loads() {
+        let mut data = vec![0u8; spend_len(MAX_PAYLOAD)];
+        {
+            let mut spend = Spend::load_uninitialised(&mut data).unwrap();
+            spend
+                .initialise(
+                    1,
+                    0,
+                    0,
+                    0,
+                    &[0; 32],
+                    &[0; 32],
+                    &[0; 32],
+                    &[0; 32],
+                    0,
+                    &[7u8; MAX_PAYLOAD],
+                )
+                .unwrap();
+        }
+        assert_eq!(Spend::load(&mut data).unwrap().payload().len(), MAX_PAYLOAD);
     }
 }

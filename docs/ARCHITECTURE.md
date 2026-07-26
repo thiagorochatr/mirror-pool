@@ -14,7 +14,8 @@ mirror-core        field, Poseidon, Merkle accumulator, notes   (linked on-chain
 mirror-circuit     R1CS gadget, membership circuit, prover      (host only)
 mirror-pool        the on-chain program
 mirror-provenance  funding-provenance measurement               (host only)
-mirror-cli         setup, verify-setup, endpoint check, seeds, collect, analyze, soak
+mirror-cli         setup, verify-setup, check-endpoint, seeds, collect,
+                   analyze, compare, selection, soak
 ```
 
 `mirror-core` is shared by the program and the host deliberately: a commitment,
@@ -91,7 +92,7 @@ with root `R`, my nullifier is `H1(k)`, and this proof is bound to `action`.*
 Three public inputs, and that is a cost decision. On-chain verification measures
 as `74,179 + 5,661 × N` compute units, so each input costs about 5.7k CU. See
 `GROTH16_INTEGRATION.md`; the figure this repository reproduces directly is the
-whole `submit_spend` instruction at 101,123 CU.
+whole `submit_spend` instruction at 101,127 CU.
 
 | public input | why it cannot be a witness |
 |---|---|
@@ -153,9 +154,32 @@ The relay signs, never the member. A member paying their own fee would sign with
 their own wallet and destroy their own anonymity, so no member key appears on
 chain on this path.
 
-Two limits follow, and `docs/THREAT_MODEL.md` states them: the binding fixes
-*how many* accounts an action takes but not *which* ones, and the vault can never
-be one of the callee's own accounts.
+One limit follows and `docs/THREAT_MODEL.md` states it: the binding fixes *how
+many* accounts an action takes but not *which* ones.
+
+### Funding or signing, and why the member picks
+
+| selector | | |
+|---|---|---|
+| 0 | transfer | pay the beneficiary, no CPI |
+| 1 | invoke | fund the beneficiary, **then** call |
+| 2 | invoke signed | call with the vault as **signer**, then pay |
+
+Selector two is what lets the pool act as a delegated authority rather than only
+as a funder — the thing a stake delegation or a governance vote needs and a
+transfer does not.
+
+The split is forced by the runtime rather than chosen. This program moves the
+vault's lamports by direct mutation; an account mutated that way and then handed
+across a CPI boundary makes the runtime reject the whole instruction as
+`UnbalancedInstruction`. So paying first and signing are mutually exclusive, and
+which one an action needs is a property of the action. The selector is inside
+the action binding, so the choice belongs to the member and settlement cannot
+revise it.
+
+That constraint was measured, not reasoned about: the earlier design refused the
+vault outright and documented the refusal as a property of the runtime. It is a
+property of the *ordering*.
 
 **`settle_epoch`** — executes a batch in one transaction so every payout shares a
 timestamp and an ordering.

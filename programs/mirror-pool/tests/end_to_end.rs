@@ -885,6 +885,7 @@ fn a_member_can_always_exit_without_any_relay() {
 // ---------------------------------------------------------------------------
 
 const INVOKE: u64 = mirror_pool_program::processor::SELECTOR_INVOKE;
+const INVOKE_SIGNED: u64 = mirror_pool_program::processor::SELECTOR_INVOKE_SIGNED;
 
 /// A spend that asks the pool to invoke `target` with `payload`.
 fn action_ix(
@@ -919,6 +920,31 @@ fn action_ix_n(
     action_accounts: u8,
     payload: &[u8],
 ) -> Instruction {
+    action_ix_sel(
+        env,
+        proof,
+        nullifier,
+        target,
+        beneficiary,
+        relay,
+        action_accounts,
+        payload,
+        INVOKE,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn action_ix_sel(
+    env: &Env,
+    proof: &mirror_circuit::SolanaProof,
+    nullifier: [u8; 32],
+    target: &Pubkey,
+    beneficiary: &Pubkey,
+    relay: &Pubkey,
+    action_accounts: u8,
+    payload: &[u8],
+    selector: u64,
+) -> Instruction {
     let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
     Instruction::new_with_bytes(
         env.program_id,
@@ -928,7 +954,7 @@ fn action_ix_n(
             proof_c: proof.proof_c,
             root: proof.public_inputs[0],
             nullifier,
-            selector: INVOKE,
+            selector,
             target_program: target.to_bytes(),
             beneficiary: beneficiary.to_bytes(),
             relay_fee: RELAY_FEE,
@@ -968,10 +994,35 @@ fn action_proof_n(
     action_accounts: u8,
     payload: &[u8],
 ) -> mirror_circuit::SolanaProof {
+    action_proof_sel(
+        keys,
+        tree,
+        notes,
+        index,
+        target,
+        beneficiary,
+        action_accounts,
+        payload,
+        INVOKE,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn action_proof_sel(
+    keys: &Keys,
+    tree: &MerkleTree,
+    notes: &[Note],
+    index: usize,
+    target: &Pubkey,
+    beneficiary: &Pubkey,
+    action_accounts: u8,
+    payload: &[u8],
+    selector: u64,
+) -> mirror_circuit::SolanaProof {
     use ark_std::rand::SeedableRng;
     let merkle_proof = tree.proof(index as u64).unwrap();
     let binding = mirror_core::action_binding(
-        INVOKE,
+        selector,
         &target.to_bytes(),
         &beneficiary.to_bytes(),
         RELAY_FEE,
@@ -989,8 +1040,9 @@ fn action_proof_n(
 }
 
 /// The thesis, end to end: a crowd of members each perform the *same shape* of
-/// protocol action, the pool invokes the target program for every one of them in
-/// a single transaction, and every invocation carries the pool as its signer.
+/// protocol action, and the pool invokes the target program for every one of
+/// them in a single transaction — one timestamp, one signer on the transaction,
+/// nothing distinguishing which member asked for which.
 ///
 /// An observer sees four memos land at one timestamp, signed by one pool, and
 /// has nothing in the transaction that distinguishes which member asked for
@@ -1068,8 +1120,6 @@ fn an_action_runs_with_a_non_empty_account_list() {
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
     let payload = b"signed by the pool".as_slice();
 
-    // One action account: the vault itself, which Memo will require to have
-    // signed.
     // One action account, declared in the proof and therefore bound.
     let proof = action_proof_n(&keys, &tree, &notes, 0, &memo, &beneficiary, 1, payload);
     let nullifier = proof.public_inputs[1];
@@ -1166,9 +1216,15 @@ fn a_settler_cannot_change_how_many_accounts_an_action_gets() {
     );
 }
 
-/// The vault can never be one of the callee's accounts, and a settler that tries
-/// is refused rather than left to fail deeper in the runtime. THREAT_MODEL.md
-/// states this; without a test it was the one claim there resting on reading.
+/// The pool's signature is the member's decision and a settler cannot help
+/// themselves to it.
+///
+/// Under plain `INVOKE` the payout leaves the vault *before* the call, so the
+/// vault cannot cross the CPI boundary — the runtime would reject the whole
+/// instruction as unbalanced. The program refuses it by name instead, which
+/// turns an opaque runtime failure into a stated rule. A member who wants the
+/// pool to sign proves `INVOKE_SIGNED`, and the selector is inside the action
+/// binding, so this is not something settlement can decide.
 #[test]
 fn a_settler_cannot_place_the_vault_in_an_action_account_list() {
     let (mut env, tree, notes, keys) = seeded_pool(6);
@@ -1216,6 +1272,195 @@ fn a_settler_cannot_place_the_vault_in_an_action_account_list() {
     assert!(
         err.contains("Custom(1)"),
         "expected MalformedInstruction: {err}"
+    );
+}
+
+/// The pool acting as a delegated **authority**, not merely as a source of funds.
+///
+/// This is the capability a stake delegation or a governance vote needs and a
+/// plain transfer does not: somebody has to sign as the authority, and for a
+/// member who must never appear on chain that somebody can only be the pool.
+///
+/// SPL Memo is the witness, and it is a good one because it is a real third-party
+/// program that refuses any account handed to it that has not signed, and because
+/// it *names* its signers in its logs. So a memo whose only account is the pool's
+/// vault cannot pass by accident: either Memo rejects the instruction, or it
+/// prints the vault's own pubkey. The assertion below reads that log.
+///
+/// Note what the settler supplies: the vault marked **not** a signer, because a
+/// PDA has no key and cannot sign a transaction. The signature comes from
+/// `invoke_signed` inside the program, from seeds only this program holds.
+#[test]
+fn the_pool_signs_an_action_as_its_own_authority() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let memo: Pubkey = MEMO_PROGRAM.parse().unwrap();
+    env.svm.add_program(memo, &memo_bytes()).unwrap();
+
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+    let payload = b"the pool signed this".as_slice();
+
+    let proof = action_proof_sel(
+        &keys,
+        &tree,
+        &notes,
+        0,
+        &memo,
+        &beneficiary,
+        1,
+        payload,
+        INVOKE_SIGNED,
+    );
+    let nullifier = proof.public_inputs[1];
+    let ix = action_ix_sel(
+        &env,
+        &proof,
+        nullifier,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        1,
+        payload,
+        INVOKE_SIGNED,
+    );
+    env.send(ix, &relay).expect("submitting the signed action");
+
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+
+    let vault_before = env.vault_lamports();
+    let batch = vec![(spend_pda, beneficiary, relay.insecure_clone())];
+    let ix = settle_ix_full(
+        &env,
+        &batch,
+        &settler.pubkey(),
+        &[Some(memo)],
+        &[vec![AccountMeta::new(env.vault, false)]],
+    );
+    let msg = Message::new(&[ix], Some(&settler.pubkey()));
+    let tx = Transaction::new(&[&settler], msg, env.svm.latest_blockhash());
+    let meta = env
+        .svm
+        .send_transaction(tx)
+        .unwrap_or_else(|e| panic!("settling a signed action: {:?}\n{:#?}", e.err, e.meta.logs));
+
+    let vault = env.vault.to_string();
+    assert!(
+        meta.logs
+            .iter()
+            .any(|l| l.contains("Signed by") && l.contains(&vault)),
+        "SPL Memo did not report the pool's vault as a signer, so the pool did \
+         not actually sign: {:#?}",
+        meta.logs
+    );
+    println!(
+        "the pool signed a real CPI as authority, {} CU",
+        meta.compute_units_consumed
+    );
+
+    // The member is still paid in full, and the payout still leaves the vault —
+    // the reordering changes when the callee sees the value, not who is owed it.
+    assert_eq!(
+        env.svm.get_account(&beneficiary).unwrap().lamports,
+        DENOMINATION - RELAY_FEE
+    );
+    assert_eq!(vault_before - env.vault_lamports(), DENOMINATION);
+
+    let mut data = env.svm.get_account(&spend_pda).unwrap().data;
+    assert_eq!(Spend::load(&mut data).unwrap().status(), STATUS_SETTLED);
+}
+
+/// The attack the signing selector invites: point the pool's own signature at
+/// the System Program and tell it to move the escrow somewhere else.
+///
+/// Every ingredient is legitimate. The proof is genuine, the member owns the
+/// note, the selector is one the protocol offers, and the payload is a
+/// well-formed `SystemInstruction::Transfer` draining the vault to an address
+/// the member chose. Nothing in this program inspects the payload — it cannot,
+/// the payload is opaque by design — so what refuses this is the ownership rule
+/// underneath: the System Program may only debit accounts it owns, and the vault
+/// is owned by the pool.
+///
+/// That is the reason the pool's signature is safe to hand out. It is worth a
+/// test rather than a sentence, because the sentence is the kind that stays true
+/// only until somebody gives the vault a second owner or a data layout.
+#[test]
+fn the_pools_signature_cannot_be_turned_against_its_own_vault() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let system = solana_system_interface::program::ID;
+
+    let attacker = Pubkey::new_unique();
+    let beneficiary = Pubkey::new_unique();
+    let relay = Keypair::new();
+    env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+
+    // SystemInstruction::Transfer { lamports }: discriminant 2 as u32, then the
+    // amount. Drain everything the vault is holding for the other members.
+    let mut payload = 2u32.to_le_bytes().to_vec();
+    payload.extend_from_slice(&(DENOMINATION * 5).to_le_bytes());
+
+    let proof = action_proof_sel(
+        &keys,
+        &tree,
+        &notes,
+        1,
+        &system,
+        &beneficiary,
+        2,
+        &payload,
+        INVOKE_SIGNED,
+    );
+    let nullifier = proof.public_inputs[1];
+    let ix = action_ix_sel(
+        &env,
+        &proof,
+        nullifier,
+        &system,
+        &beneficiary,
+        &relay.pubkey(),
+        2,
+        &payload,
+        INVOKE_SIGNED,
+    );
+    env.send(ix, &relay).expect("submitting the drain attempt");
+
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+
+    let vault_before = env.vault_lamports();
+    let batch = vec![(spend_pda, beneficiary, relay.insecure_clone())];
+    let ix = settle_ix_full(
+        &env,
+        &batch,
+        &settler.pubkey(),
+        &[Some(system)],
+        &[vec![
+            AccountMeta::new(env.vault, false),
+            AccountMeta::new(attacker, false),
+        ]],
+    );
+    let err = env
+        .send(ix, &settler)
+        .expect_err("the pool signed away its own escrow");
+    println!("vault drain via the pool's own signature rejected: {err}");
+
+    // The whole transaction reverted, so nothing moved and the note is unspent.
+    assert_eq!(env.vault_lamports(), vault_before);
+    assert_eq!(env.svm.get_account(&attacker).map(|a| a.lamports), None);
+    let mut data = env.svm.get_account(&spend_pda).unwrap().data;
+    assert_eq!(
+        Spend::load(&mut data).unwrap().status(),
+        mirror_pool_program::spend::STATUS_PENDING,
+        "the spend was consumed by an attack that failed"
     );
 }
 

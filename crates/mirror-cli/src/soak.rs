@@ -12,7 +12,7 @@ use mirror_core::{Field, MerkleTree, Note};
 use mirror_pool_program::{
     instruction::Instruction as MirrorIx,
     pda::{pool_address, spend_address, vault_address},
-    processor::SELECTOR_TRANSFER,
+    processor::{SELECTOR_INVOKE_SIGNED, SELECTOR_TRANSFER},
 };
 use solana_keypair::Keypair;
 use solana_program::{
@@ -30,6 +30,28 @@ const DENOMINATION: u64 = 20_000_007; // 0.02 SOL
 const ENTRY_FEE: u64 = 0;
 const K_FLOOR: u32 = 4;
 const RELAY_FEE: u64 = 200_000;
+
+/// The SPL Memo program, at the same address on every cluster.
+///
+/// Used as the live-cluster CPI target for the same reason the end-to-end suite
+/// uses it: it is somebody else's program, it is small, and it **refuses any
+/// account handed to it that has not signed**. A memo whose only account is the
+/// pool's vault therefore cannot succeed unless the pool really signed, which
+/// makes the transaction itself the evidence rather than a claim about it.
+const MEMO_PROGRAM: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
+
+/// What the member asks the pool to say on their behalf.
+const MEMO_PAYLOAD: &[u8] = b"mirror-pool: signed by the pool, for a member";
+
+/// One member's pending spend, as settlement needs to see it.
+pub struct Settlement {
+    pub spend: Pubkey,
+    pub beneficiary: Pubkey,
+    pub relay: Pubkey,
+    /// The CPI target, when this member's action is a call rather than a
+    /// transfer.
+    pub target: Option<Pubkey>,
+}
 
 /// One recorded step of the run.
 pub struct Step {
@@ -309,6 +331,77 @@ impl Soak {
         Ok((spend_pda, nullifier))
     }
 
+    /// Submits a spend whose action is a **CPI the pool signs**, not a transfer.
+    ///
+    /// The action declares one account, and settlement will fill that slot with
+    /// the vault. The count is inside the action binding, so a settler cannot
+    /// add or drop a slot; the selector is inside it too, so the pool's signature
+    /// is something the member proved they wanted and not something settlement
+    /// can help itself to.
+    #[allow(clippy::too_many_arguments)]
+    pub fn submit_signed_action(
+        &mut self,
+        keys: &Keys,
+        tree: &MerkleTree,
+        notes: &[Note],
+        index: usize,
+        beneficiary: &Pubkey,
+        relay: &Keypair,
+        target: &Pubkey,
+    ) -> Result<(Pubkey, [u8; 32])> {
+        use ark_std::rand::SeedableRng;
+        let merkle_proof = tree.proof(index as u64).map_err(|e| anyhow!("{e}"))?;
+        let binding = mirror_core::action_binding(
+            SELECTOR_INVOKE_SIGNED,
+            &target.to_bytes(),
+            &beneficiary.to_bytes(),
+            RELAY_FEE,
+            1,
+            MEMO_PAYLOAD,
+        );
+        let witness = Witness {
+            note: notes[index],
+            merkle_proof: &merkle_proof,
+            root: tree.root().map_err(|e| anyhow!("{e}"))?,
+            action_binding: binding,
+        };
+        let mut rng = ark_std::rand::rngs::StdRng::from_seed([index as u8 + 1; 32]);
+        let proof = prove(keys, &witness, &mut rng).map_err(|e| anyhow!("{e}"))?;
+        let nullifier = proof.public_inputs[1];
+        let (spend_pda, _) = spend_address(&self.program_id, &self.pool, &nullifier);
+
+        let ix = Instruction::new_with_bytes(
+            self.program_id,
+            &MirrorIx::SubmitSpend {
+                proof_a: proof.proof_a,
+                proof_b: proof.proof_b,
+                proof_c: proof.proof_c,
+                root: proof.public_inputs[0],
+                nullifier,
+                selector: SELECTOR_INVOKE_SIGNED,
+                target_program: target.to_bytes(),
+                beneficiary: beneficiary.to_bytes(),
+                relay_fee: RELAY_FEE,
+                action_accounts: 1,
+                payload: MEMO_PAYLOAD.to_vec(),
+            }
+            .pack(),
+            vec![
+                AccountMeta::new(relay.pubkey(), true),
+                AccountMeta::new(self.pool, false),
+                AccountMeta::new(spend_pda, false),
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+            ],
+        );
+        let sig = self.send(ix, &[relay])?;
+        self.record(
+            "submit_spend",
+            sig,
+            format!("note {index}, relay-signed, action: pool-signed CPI to SPL Memo"),
+        );
+        Ok((spend_pda, nullifier))
+    }
+
     /// Submits a spend expected to fail, recording the program's error code.
     #[allow(clippy::too_many_arguments)]
     pub fn expect_rejection(
@@ -327,16 +420,27 @@ impl Soak {
         }
     }
 
-    pub fn settle(&mut self, batch: &[(Pubkey, Pubkey, Pubkey)]) -> Result<()> {
+    /// Settles a batch. An entry carrying a target program is a CPI action, and
+    /// the vault follows it as that action's one account.
+    pub fn settle(&mut self, batch: &[Settlement]) -> Result<()> {
         let mut metas = vec![
             AccountMeta::new(self.payer.pubkey(), true),
             AccountMeta::new(self.pool, false),
             AccountMeta::new(self.vault, false),
         ];
-        for (spend, beneficiary, relay) in batch {
-            metas.push(AccountMeta::new(*spend, false));
-            metas.push(AccountMeta::new(*beneficiary, false));
-            metas.push(AccountMeta::new(*relay, false));
+        let mut actions = 0usize;
+        for entry in batch {
+            metas.push(AccountMeta::new(entry.spend, false));
+            metas.push(AccountMeta::new(entry.beneficiary, false));
+            metas.push(AccountMeta::new(entry.relay, false));
+            if let Some(target) = entry.target {
+                actions += 1;
+                metas.push(AccountMeta::new_readonly(target, false));
+                // The action's single account. It reaches the callee as a
+                // *signer* — the program sets that flag itself, from seeds no
+                // settler holds, which is why this meta says otherwise.
+                metas.push(AccountMeta::new(self.vault, false));
+            }
         }
         let ix = Instruction::new_with_bytes(
             self.program_id,
@@ -348,7 +452,15 @@ impl Soak {
         );
         let payer = self.payer.insecure_clone();
         let sig = self.send(ix, &[&payer])?;
-        self.record("settle_epoch", sig, format!("{} spends", batch.len()));
+        let note = if actions == 0 {
+            format!("{} spends", batch.len())
+        } else {
+            format!(
+                "{} spends in one transaction, {actions} of them a CPI the pool signed",
+                batch.len()
+            )
+        };
+        self.record("settle_epoch", sig, note);
         Ok(())
     }
 
@@ -476,20 +588,40 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     let first_fresh = notes.len() - K_FLOOR as usize;
 
     // One relay and one beneficiary per member: no member key appears anywhere.
+    //
+    // The last member asks for something different from the rest — a CPI the
+    // pool signs — and it settles in the *same* transaction as the transfers.
+    // That is the design's own claim about itself: an observer sees one
+    // timestamp, one signer and a batch of actions, with nothing separating the
+    // member who staked from the members who merely moved value.
+    let memo: Pubkey = MEMO_PROGRAM.parse().map_err(|e| anyhow!("memo id: {e}"))?;
+    let last = first_fresh + K_FLOOR as usize - 1;
     let mut batch = Vec::new();
     for i in first_fresh..first_fresh + K_FLOOR as usize {
         let beneficiary = Keypair::new().pubkey();
         let relay = payer.insecure_clone();
-        let (spend, _) = soak.submit_spend(
-            &keys,
-            &tree,
-            &notes,
-            i,
-            &beneficiary,
-            &relay,
-            "submit_spend",
-        )?;
-        batch.push((spend, beneficiary, relay.pubkey()));
+        let (spend, target) = if i == last {
+            let (spend, _) =
+                soak.submit_signed_action(&keys, &tree, &notes, i, &beneficiary, &relay, &memo)?;
+            (spend, Some(memo))
+        } else {
+            let (spend, _) = soak.submit_spend(
+                &keys,
+                &tree,
+                &notes,
+                i,
+                &beneficiary,
+                &relay,
+                "submit_spend",
+            )?;
+            (spend, None)
+        };
+        batch.push(Settlement {
+            spend,
+            beneficiary,
+            relay: relay.pubkey(),
+            target,
+        });
     }
 
     let vault_before = soak.balance(&soak.vault())?;
