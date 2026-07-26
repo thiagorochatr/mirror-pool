@@ -253,6 +253,38 @@ what neither absolute number does — and when the interval on the difference
 contains zero, the tool says the two are indistinguishable and declines to rank
 them.
 
+### The comparison we ran, and refused
+
+`ρ` is the headline because it is comparable across populations, so we measured
+one that is **not seeking privacy at all** — Marinade staking depositors,
+identical pipeline, identical parameters — to give the number a scale.
+
+```
+population       members   rho      resampled 2.5-97.5%   bias
+privacy pool          54   0.0955   0.0848 .. 0.1790     +0.0276
+staking control       38   0.0362   0.0463 .. 0.0708     +0.0203
+
+difference: +0.0592   95% +0.0259 .. +0.1229
+```
+
+The interval on the difference excludes zero, and it points the way this
+project's argument wants: the privacy pool reads as the more concentrated
+population. **The tool refuses to report it**, because the control resolves 38
+of 92 members and what survives is its *traceable* subset — and traceability is
+not independent of provenance class. A wallet funded straight from an exchange
+resolves in one hop; one funded through fresh intermediaries exhausts the
+budget. That selection alone can manufacture the difference.
+
+The gate that refuses this did not exist when `compare` was written, and was
+added after seeing the control fall on the wrong side of it. So: **we built the
+check that refuses our own favourable result, after learning the result was
+favourable.** Both the code and that sentence are in the repository.
+
+What it would take is resolution above half on the control — a bigger traversal
+budget, not a different metric. It is not attempted, because Run 7's stopping
+rule was one collection per frame, and a stopping rule that bends when the
+result is close is not one.
+
 ### The folklore formula is inverted
 
 `2^H(C)` — entropy over the class-size distribution — is widely quoted as the
@@ -312,6 +344,10 @@ multi-party ceremony, not more SOL.
   verify the key, and nobody can regenerate it either.
 - The on-chain `k_floor` bounds **program-visible membership** only. That is all
   a program can check.
+- **Not that privacy pools attract more concentrated funding than ordinary
+  users.** We measured a control to find out, the point estimates say they do,
+  and the sample does not support saying it. `ρ`'s comparability across
+  populations is demonstrated as machinery and unproven as a finding.
 - Not audited.
 
 `docs/MEASUREMENT_LOG.md` records every collection run, including the one that
