@@ -652,9 +652,7 @@ fn invoke_action<'a>(
     };
     let vault_bump = {
         let pool_data = pool_account.try_borrow_data()?;
-        *pool_data
-            .get(2)
-            .ok_or(MirrorProgramError::InvalidPoolAccount)?
+        Pool::vault_bump_of(&pool_data)?
     };
 
     // The pool never invokes itself. Doing so would let a member craft a payload

@@ -118,6 +118,22 @@ impl<'a> Pool<'a> {
     pub fn vault_bump(&self) -> u8 {
         self.data[offset::VAULT_BUMP]
     }
+
+    /// The vault bump, read from an account still under an immutable borrow.
+    ///
+    /// [`Pool::load`] needs `&mut [u8]` because one wrapper serves every
+    /// accessor, but settlement wants the bump while it holds the pool
+    /// immutably. Reading the byte through its named offset — behind the same
+    /// length and version checks `load` applies — keeps the layout owned by
+    /// this module. Reaching into the account with a literal index would put a
+    /// second, silent copy of the layout in the processor, and it would not
+    /// notice a pool account of the wrong version at all.
+    pub fn vault_bump_of(data: &[u8]) -> Result<u8, MirrorProgramError> {
+        if data.len() != POOL_LEN || data[offset::VERSION] != POOL_VERSION {
+            return Err(MirrorProgramError::InvalidPoolAccount);
+        }
+        Ok(data[offset::VAULT_BUMP])
+    }
     pub fn denomination(&self) -> u64 {
         read_u64!(self, offset::DENOMINATION)
     }
@@ -328,6 +344,32 @@ mod tests {
         assert_eq!(pool.deposit_count(), 0);
         assert_eq!(pool.spend_count(), 0);
         assert_eq!(pool.next_index(), 0);
+    }
+
+    /// The immutable reader must agree with the borrowing accessor, and must
+    /// refuse what `load` refuses. Settlement signs the vault with whatever
+    /// this returns, so a reader that answered from a wrong-sized or
+    /// wrong-version account would produce a bump for a PDA nobody controls.
+    #[test]
+    fn the_immutable_vault_bump_reader_agrees_and_validates() {
+        let mut data = initialised(1_000);
+        assert_eq!(
+            Pool::vault_bump_of(&data).unwrap(),
+            Pool::load(&mut data).unwrap().vault_bump()
+        );
+
+        let short = vec![0u8; POOL_LEN - 1];
+        assert!(matches!(
+            Pool::vault_bump_of(&short),
+            Err(MirrorProgramError::InvalidPoolAccount)
+        ));
+
+        let mut wrong_version = initialised(1_000);
+        wrong_version[offset::VERSION] = POOL_VERSION.wrapping_add(1);
+        assert!(matches!(
+            Pool::vault_bump_of(&wrong_version),
+            Err(MirrorProgramError::InvalidPoolAccount)
+        ));
     }
 
     #[test]

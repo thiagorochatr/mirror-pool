@@ -31,8 +31,12 @@ pub enum MirrorError {
     Poseidon,
     #[error("the accumulator is full")]
     TreeFull,
-    #[error("merkle path length does not match the tree depth")]
-    BadPathLength,
+    // There is no `BadPathLength`. A `MerkleProof` carries
+    // `siblings: [Field; TREE_DEPTH]`, a fixed-size array, so a path of the
+    // wrong length is not constructible and the check has nothing to reject.
+    // The property is enforced by the type rather than by a runtime branch, and
+    // carrying an error variant for it would advertise a check that does not
+    // exist.
     #[error("leaf index is outside the tree")]
     LeafIndexOutOfRange,
 }

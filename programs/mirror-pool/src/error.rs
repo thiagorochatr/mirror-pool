@@ -30,8 +30,15 @@ pub enum MirrorProgramError {
     PoseidonFailed = 9,
     /// The accumulator is full.
     TreeFull = 10,
-    /// The deposit did not carry exactly the pool's denomination plus fee.
-    WrongDepositAmount = 11,
+    //
+    // 11 is retired. It was `WrongDepositAmount`, and it was unreachable: a
+    // deposit's size is read from the pool account, never from the instruction,
+    // so there is no caller-supplied amount left to disagree with. Deleting the
+    // variant rather than leaving it unconstructed keeps the enum an accurate
+    // list of what this program can actually reject. The discriminant is left
+    // unused rather than reassigned, so every code below stays stable for
+    // anything already reading them.
+    //
     /// Arithmetic overflowed or underflowed.
     ArithmeticOverflow = 12,
     /// The vault does not hold enough to cover every unspent note.
@@ -79,7 +86,7 @@ impl From<mirror_core::MirrorError> for MirrorProgramError {
             E::NonCanonicalField | E::BadFieldLength => MirrorProgramError::NonCanonicalField,
             E::Poseidon => MirrorProgramError::PoseidonFailed,
             E::TreeFull => MirrorProgramError::TreeFull,
-            E::BadPathLength | E::LeafIndexOutOfRange => MirrorProgramError::MalformedInstruction,
+            E::LeafIndexOutOfRange => MirrorProgramError::MalformedInstruction,
         }
     }
 }
