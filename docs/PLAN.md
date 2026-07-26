@@ -152,12 +152,13 @@ without a crowd gate is not an incentive, it is a refund with extra steps.
 
 A separate crate collects real mainnet funding data and reports effective
 anonymity at several label resolutions, with the raw sample committed so results
-reproduce without RPC access. The methodology is `docs/PROVENANCE_METHOD.md`; it
-targets
-the specific weaknesses found in the two published attempts: selection bias that
-inflates the untraceable bucket, a sample spanning four seconds of chain time
-presented as a population, and a class key defined at raw-address resolution so
-that two members funded from the same exchange land in different classes.
+reproduce without RPC access. The methodology is `docs/PROVENANCE_METHOD.md`, and
+it is built around three failure modes that make a provenance number read better
+than it is: selection that drops whatever is expensive to trace, which inflates
+the untraceable bucket in the flattering direction; a sample spanning seconds of
+chain time presented as a population; and a class key at raw-address resolution,
+which splits two members funded by the same exchange into different classes and
+so reports a larger anonymity set than exists.
 
 ## Schedule
 
