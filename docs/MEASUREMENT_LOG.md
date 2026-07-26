@@ -239,7 +239,27 @@ numbers above are recomputable from either without RPC access.
 
 ## What we do not conclude
 
-Nothing about how private Privacy Cash is. ρ = 0.1219 is a point estimate inside
-a bracket that spans an order of magnitude, from a sample whose class
-distribution is two-thirds unobserved. The number is published because the method
-is published, not because it settles anything.
+**Nothing about how private that pool is, and the headline does not become that
+claim by clearing a gate.** ρ = 0.1032 is a point estimate inside a bracket
+spanning 0.032 to 0.132, drawn from one frame of one pool at one moment, and its
+class distribution is demonstrably heavy-tailed and two-thirds unobserved. It is
+published because the method is published, not because it settles anything.
+
+Three things it specifically does not support:
+
+- **A comparison between pools.** ρ is designed to be comparable across pools —
+  that is why it is the headline — but only one pool has been measured. The
+  property is asserted here and not yet exercised.
+- **An extrapolation to larger `k`.** Effective-k measured at small `k`
+  understates the steady-state loss, and the heavy tail found in Run 4 is a
+  reason to expect that gap to widen rather than close.
+- **A statement about any individual member.** The metric is a property of a
+  distribution. Nothing here identifies anyone, and the worst-case class of size
+  one is a feature of heavy-tailed provenance in general, not a finding about a
+  person.
+
+What the four runs do support is narrower and, we think, more useful: that this
+channel is measurable from live Solana data with a published method, that the
+measurement is expensive and the tail does not close, and that a pipeline built
+to refuse is one that refuses — three times, correctly, before it produced a
+number.
