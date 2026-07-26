@@ -264,9 +264,10 @@ mod tests {
 
     #[test]
     fn a_volume_hub_is_not_an_attributable_origin() {
-        // Encoded as a test because the distinction is the whole critique of a
-        // competing measurement: there, "reaches an attributable origin" means
-        // "the address hit the RPC page cap".
+        // Encoded as a test because this is where a provenance tracer most
+        // easily launders a budget limit into a finding: if a volume hub counts
+        // as an origin, "reaches an attributable origin" degenerates into "the
+        // address hit the RPC page cap".
         let hub = Outcome::Terminal {
             rule: TerminalRule::VolumeHub,
             label: "busy-unlabelled:SomeAddress".to_string(),

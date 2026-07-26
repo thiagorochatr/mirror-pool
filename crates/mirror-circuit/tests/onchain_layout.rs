@@ -127,8 +127,8 @@ fn a_non_negated_proof_a_is_rejected() {
 #[test]
 fn the_setup_is_reproducible_from_its_seed() {
     // Anyone can re-derive the deployed verifying key from the committed seed.
-    // A competing submission gitignores its proving key and publishes its
-    // entropy string, so its setup is both insecure and unreproducible.
+    // Publishing the entropy while withholding the key is the failure this
+    // guards against: insecure and unreproducible at the same time.
     let a = generate_reproducible(SEED).unwrap().solana_vk();
     let b = generate_reproducible(SEED).unwrap().solana_vk();
     assert_eq!(a, b);

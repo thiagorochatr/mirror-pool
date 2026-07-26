@@ -76,9 +76,12 @@ digest it should print is
 
     b0165d5eac6fe8273b6564c78e8ba548c97e6050ae785e9142de63c81aa905b7
 
-Checking the whole key matters: a verifier that compared only `delta`, as one
-competing ceremony does, would certify a key belonging to an entirely different
-circuit. Reproducibility is worth having and it is not security.
+Checking the whole key matters, and it is a place where a ceremony verifier is
+easy to get subtly wrong: comparing only `delta` — the element a contribution
+actually changes — leaves `alpha`, `beta`, `gamma` and the `IC` vector
+unchecked, so the verifier would happily certify a key belonging to an entirely
+different circuit. This one compares every element. Reproducibility is worth
+having and it is not security.
 
 Production needs a multi-party ceremony. The scaffolding for one is not in this
 submission and we do not claim it is.

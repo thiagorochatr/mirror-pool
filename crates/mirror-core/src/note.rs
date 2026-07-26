@@ -6,10 +6,11 @@
 //! which the program records permanently.
 //!
 //! The denomination is a pool constant rather than a field inside the note, so
-//! the escrowed lamports and the hidden commitment cannot disagree. A competing
-//! submission escrows an amount that is never bound to its commitment, which
-//! lets a depositor of one lamport withdraw the whole pool with an entirely
-//! valid proof. Here that state is not representable.
+//! the escrowed lamports and the hidden commitment cannot disagree. Carrying the
+//! amount inside the note is the obvious alternative and it is a trap: unless
+//! the amount is bound into the commitment *and* checked against the escrow, a
+//! depositor of one lamport withdraws the whole pool holding an entirely valid
+//! proof. Here that state is not representable rather than merely rejected.
 
 use crate::{commitment, nullifier, Field, MirrorError};
 

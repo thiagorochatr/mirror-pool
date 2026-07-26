@@ -18,9 +18,10 @@ use mirror_core::{Field, TREE_DEPTH, ZERO_LADDER};
 /// chain; by the time a relay lands the transaction, later deposits may have
 /// advanced it. The ring is how long a proof stays valid.
 ///
-/// 128 is deliberate. A competing implementation uses 32 *and* appends two
-/// leaves per spend, so a proof there ages out after about sixteen operations
-/// and fails under any real load.
+/// 128 is deliberate, and the sizing interacts with how many leaves an
+/// operation appends. A 32-entry ring against a design that appends two leaves
+/// per spend gives a proof a useful life of about sixteen operations, which
+/// holds in a test and collapses under any real load.
 pub const ROOT_HISTORY: usize = 128;
 
 /// Byte offsets. Kept together so the layout can be audited as a unit.
@@ -283,9 +284,10 @@ impl<'a> Pool<'a> {
     /// The accounting invariant of the whole protocol. Because the denomination
     /// is a pool constant rather than a hidden field, the amount owed is a
     /// function of two counters and cannot be influenced by anything a prover
-    /// supplies. The two competing implementations are drainable precisely
-    /// because they lack this: one escrows an amount never bound to its
-    /// commitment, the other pays out once per epoch forever against one deposit.
+    /// supplies. Without an invariant of this shape a shielded pool is drainable
+    /// in one of two standard ways: an escrowed amount never bound to its
+    /// commitment, or an epoch-scoped nullifier that lets one deposit pay out
+    /// once per epoch forever.
     pub fn required_vault_lamports(&self) -> Result<u64, MirrorProgramError> {
         self.outstanding_notes()?
             .checked_mul(self.denomination())
@@ -492,9 +494,9 @@ mod tests {
         assert_eq!(pool.required_vault_lamports().unwrap(), 3_000_000);
     }
 
-    /// The shape of the drain that breaks both competing implementations: more
-    /// payouts than deposits. Here it is not a matter of catching it late in the
-    /// spend path — the counter itself refuses.
+    /// The shape both standard drains converge on: more payouts than deposits.
+    /// Here it is not a matter of catching it late in the spend path — the
+    /// counter itself refuses.
     #[test]
     fn spending_more_notes_than_were_deposited_is_refused() {
         let mut data = initialised(1_000);

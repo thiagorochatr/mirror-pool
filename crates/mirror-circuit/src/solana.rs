@@ -88,9 +88,11 @@ impl SolanaVerifyingKey {
 
     /// A stable digest over the whole key, in a fixed order.
     ///
-    /// This is what a setup transcript must bind. A competing submission's
-    /// ceremony verifier checks only `delta`, so it will happily certify a
-    /// transcript whose verifying key belongs to an entirely different circuit.
+    /// This is what a setup transcript must bind, and it must be the *whole*
+    /// key. Checking only `delta` is the tempting shortcut — it is the element a
+    /// contribution actually changes — but it leaves `alpha`, `beta`, `gamma`
+    /// and every `IC` point unconstrained, so such a verifier would happily
+    /// certify a transcript whose key belongs to an entirely different circuit.
     pub fn digest_preimage(&self) -> Vec<u8> {
         let mut buf = Vec::with_capacity(64 + 128 * 3 + self.ic.len() * 64 + 8);
         buf.extend_from_slice(&self.alpha_g1);

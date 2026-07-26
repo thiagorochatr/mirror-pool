@@ -18,9 +18,9 @@
 //! population.
 //!
 //! **Nothing is excluded for being hard to trace.** Busy depositors stay in.
-//! Dropping them would inflate the resolved fraction by construction, which is
-//! the bias that makes a competing measurement's untraceable bucket look like a
-//! finding about the pool.
+//! Dropping them inflates the resolved fraction by construction, and whatever
+//! the remaining sample then reports is a property of the exclusion rule rather
+//! than a finding about the pool.
 
 use crate::edge::TransactionView;
 

@@ -124,7 +124,9 @@ advertised `k` overstates the adversary's residual uncertainty by a factor of
 **The one monotonicity we may claim:** adding channels only refines the partition, so
 our number is an **upper bound on privacy against any strictly stronger adversary at
 the same label resolution**. It is *not* a bound in the label-resolution direction.
-State both halves; the second half is what the competing submission got backwards.
+State both halves. Stating only the first is the common error, and it inverts the
+claim: it lets a number measured at coarse labels be read as a guarantee against
+an adversary holding finer ones.
 
 ---
 
@@ -337,13 +339,17 @@ number for our own system has not been validated. See §9.0.
 population is enumerable, **census it**; there is then zero sampling error and §3.4 does
 not apply.
 
-> **Defect avoided.** The competing submission samples 30 depositors from a pool's most
-> recent 300 signatures and then sets *advertised k = 30 = the sample size*. That is a
-> category error: advertised k is the pool's member count, not the sample size.
-> Measured **[M 2026-07-25]**: the pool in question emits ~1,000 signatures per 1.2 days,
-> so a 300-signature scan covers **the most recent ≈10 hours** of pool activity. A
-> 90-day census of the same pool is ≈75 pages of `getSignaturesForAddress`, ≈75,000
-> signatures — verified reachable by `before`-cursor paging **[M 2026-07-25]**.
+> **Failure mode.** Sampling *n* depositors from a pool's most recent signatures and
+> then setting *advertised k = n* is a category error that is easy to commit and hard
+> to see afterwards: advertised k is the pool's member count, and the sample size is a
+> property of the budget. Reporting the second as the first makes the anonymity claim
+> a restatement of how long the collector ran.
+>
+> The scale involved, measured **[M 2026-07-25]**: an active pool emits ~1,000
+> signatures per 1.2 days, so a 300-signature scan covers **the most recent ≈10 hours**
+> of pool activity. A 90-day census of the same pool is ≈75 pages of
+> `getSignaturesForAddress`, ≈75,000 signatures — verified reachable by `before`-cursor
+> paging **[M 2026-07-25]**. The census is affordable; the shortcut is not necessary.
 
 **P2 — population prior.** All addresses receiving a value credit ≥ threshold in window
 `W`. This estimates the class prior *any* pool inherits, and yields `ρ` and the
@@ -361,10 +367,12 @@ extractor needs — at **2.73 MB/block vs 6.41 MB for `"full"`**, 1,056 transact
 PRNG (§3.5), `getBlock` each, extract all value edges. 1,000 sampled blocks ≈ 1M
 transactions ≈ 2.7 GB, ~1,000 calls. This is a genuine probability sample of chain time.
 
-> **Defect avoided.** The other competing submission's entire n=1,181 sample spans **9
-> consecutive slots (~3.2 s of chain time)**, containing 822 distinct destinations, and
-> is presented with binomial Wilson intervals as if it were an i.i.d. population sample.
-> Sampling slots uniformly costs the same and fixes it.
+> **Failure mode.** A sample drawn from *consecutive* slots is not a sample of chain
+> time. An n=1,181 sample spanning 9 consecutive slots covers ~3.2 seconds of chain
+> time; the large n makes it look powerful, and binomial Wilson intervals computed over
+> it look rigorous, but the observations are neither independent nor representative of
+> anything but that instant. Sampling slots uniformly across the window costs the same
+> number of calls and fixes it, so there is no efficiency argument for the shortcut.
 
 ### 3.3 Time stratification
 
@@ -424,10 +432,12 @@ Record `S`, `blockhash(S)`, and the derivation rule in the manifest.
 
 ### 3.6 Never filter the frame on the outcome
 
-> **Defect avoided.** The competing sampler discards every candidate depositor with
-> ≥1,000 signatures — exactly the wallets with deep, traceable histories — and then
-> reports 63 % of the remainder as untraceable. The exclusion criterion is correlated
-> with the outcome.
+> **Failure mode.** Discarding every candidate depositor with ≥1,000 signatures looks
+> like a reasonable cost control — those are the expensive ones to walk — but it drops
+> exactly the wallets with deep, traceable histories. Whatever remains is then
+> disproportionately untraceable, and a headline like "63 % untraceable" is measuring
+> the exclusion rule. **An exclusion criterion correlated with the outcome is not a
+> filter, it is the finding.**
 
 **Rule: nothing is excluded from the frame.** High-activity members are stratified and
 reported, never dropped. If a member turns out to be a relayer or a program, that is a
@@ -511,11 +521,13 @@ clean ("who created this wallet"), and one RPC call for most addresses.
 at 1,000 **[V]**. So for an address with fewer than 1,000 lifetime signatures, the
 **last element of the first page** is the birth transaction.
 
-> **Defect avoided.** The competing tracer scans the **six most recent** transactions of
-> each address. Funding is by definition among an address's *oldest* transactions. For
-> any address with more than six transactions it is reading the wrong end of the
-> history, which alone manufactures "unresolved" for active wallets. This is not
-> disclosed anywhere in that submission's documentation.
+> **Failure mode.** Scanning an address's most recent transactions to find its funder.
+> `getSignaturesForAddress` returns newest-first, so taking the first handful is the
+> path of least resistance — and funding is by definition among an address's *oldest*
+> transactions. For any address with more history than the scan window, this reads the
+> wrong end of the record, and it fails **silently**: the output is "unresolved", which
+> is indistinguishable from a genuinely unresolvable wallet. The bias falls hardest on
+> active wallets, which are the ones a provenance study most needs to resolve.
 
 **Independent corroboration of the rule.** Dune Spellbook contains
 `addresses_events_solana.first_funded_by`, described in its own `schema.yml` as *"Table
@@ -566,12 +578,17 @@ rule can be ablated in the sensitivity table (§5.5).
 
 **`busy-unlabelled` is not "an attributable origin". Never call it one.**
 
-> **Defect avoided.** In the competing tracer, `HUB_THRESHOLD == SIG_LIMIT == 1000`, so
-> "reaches an attributable origin" literally means "**the address hit the RPC page
-> cap**". That admits every DEX program, AMM vault, MEV bot and staking pool, and
-> excludes a genuine CEX withdrawal address with 800 transactions. Our R4 decouples the
-> hub test from the page cap by measuring the count with bounded paging, and requires
-> corroboration from R1/R2/R3/R5 before any class is called an entity.
+> **Failure mode.** Setting `HUB_THRESHOLD == SIG_LIMIT` — one constant for "how many
+> signatures make this a hub" and "how many signatures will we fetch" — is a natural
+> collapse, because both answer the same-sounding question. It makes "reaches an
+> attributable origin" mean literally "**the address hit the RPC page cap**", which
+> admits every DEX program, AMM vault, MEV bot and staking pool as an origin, while
+> excluding a genuine CEX withdrawal address with 800 transactions. The two constants
+> answer different questions and must be allowed to disagree.
+>
+> R4 here decouples the hub test from the page cap by measuring the count with bounded
+> paging, and requires corroboration from R1/R2/R3/R5 before any class is called an
+> entity.
 
 ### 4.6 Pagination handled honestly
 
@@ -611,8 +628,11 @@ actual population rather than assuming.
 
 ## 5. Label tiers and multi-resolution reporting
 
-This section is the answer to the structural weakness in the competing metric. Specify
-it fully; it is our differentiator.
+A single-resolution number is the structural weakness of most provenance metrics:
+report one figure and it is unclear whether it describes an adversary who sees raw
+addresses or one who sees named entities, and those differ by orders of magnitude.
+Reporting the full ladder is what makes the claim falsifiable, so this section is
+specified in full.
 
 ### 5.1 Four resolutions, strictly nested
 
@@ -677,8 +697,9 @@ effect of each assumption is reported separately."*
   signer. Exchanges pay withdrawal fees from a small set of fee-payer accounts
   regardless of which hot wallet sources the value. Clustering on fee payer **collapses
   an exchange's hot wallets into one entity for free, with no third-party label list.**
-  This is the Solana-specific unlock and it is precisely the merge the competing metric
-  fails to make.
+  This is the Solana-specific unlock, and it is the merge most easily missed: without
+  it an exchange appears as a dozen unrelated classes, which inflates the measured
+  class count and flatters the pool.
 - **Co-signer clustering.** A transaction with signers `{A, B}` means one party controls
   both.
 - **Sweep clustering.** If addresses `A_1 … A_n` each send their full balance to `H`,
@@ -780,15 +801,23 @@ the first four rows.
 
 **Principle: an infrastructure limit must never read as an absence of evidence.**
 
-> **Defect avoided.** In the competing tracer, `sig_count()` is `.unwrap_or(0)` and
-> `signatures()` is `.unwrap_or_default()`. A rate-limited call therefore makes an
-> address look like it has *zero* signatures — so it is not detected as a hub and is
-> admitted to the sample — and makes a traced address yield no funders, so the BFS
-> terminates and the member is classified **unresolved**. Measured 429 behaviour (§8.1)
-> shows that submission's 130 ms inter-call pacing is far above what the endpoint
-> tolerates, so its large unresolved bucket is exactly what systematic rate limiting
-> would manufacture. It does count failures and prints a warning, but the metric function
-> never consults the count before reporting, and the published headline does not state it.
+> **Failure mode.** `.unwrap_or(0)` on a signature count and `.unwrap_or_default()` on a
+> signature list. Both are the idiomatic way to keep a traversal running past an error,
+> and together they are silently catastrophic: a rate-limited call makes an address look
+> like it has *zero* signatures, so it escapes hub detection and is admitted to the
+> sample; and it makes a traced address yield no funders, so the walk terminates and the
+> member is recorded **unresolved**.
+>
+> The result is that **an infrastructure failure is laundered into a data point**, and
+> in the direction that inflates the unresolved bucket. Given the 429 behaviour measured
+> in §8.1, aggressive inter-call pacing against a metered endpoint produces exactly the
+> large unresolved bucket that systematic rate limiting would manufacture — which is
+> indistinguishable, in the output, from a genuinely hard-to-trace population.
+>
+> Counting the failures and printing a warning is not sufficient. If the metric function
+> never consults the count before reporting, the headline is still unconditioned on
+> whether the run worked. Here the count gates the headline (§6) rather than annotating
+> it.
 
 ### 6.1 Startup preconditions (hard)
 
@@ -1019,7 +1048,9 @@ honestly demonstrate it.
 
 ### 9.0 The anti-pattern, stated so it cannot be repeated
 
-A competing submission's effective-k harness contains, inside the metric:
+The tautological metric is the defining failure of this genre, and it is worth writing
+out because it does not look like cheating while you are writing it. The shape is a
+harness that branches on the scenario label *inside* the metric:
 
 ```rust
 if scenario == Scenario::MirrorPool {
@@ -1027,11 +1058,17 @@ if scenario == Scenario::MirrorPool {
 }
 ```
 
-Everything downstream is an identity: the posterior is `vec![1.0; k]` and
-`2^{H(Uniform(k))} = k`. The published table reports the favourable column as exactly
-16.00 / 32.00 / 64.00 against a ragged baseline, and a unit test pins the tautology to
-1e-6 as a regression guard. The data structure *contains* `k` distinct funding roots for
-that scenario; the code branches on the scenario label and discards the field.
+Everything downstream is then an identity: the posterior is `vec![1.0; k]` and
+`2^{H(Uniform(k))} = k`. The favourable column comes out as exactly 16.00 / 32.00 /
+64.00 against a ragged baseline, and a unit test pinning that to 1e-6 reads as a
+regression guard while actually pinning the tautology in place. The damning detail is
+that the data structure typically *contains* the k distinct funding roots — the code
+branches on the label and discards the field it should have read.
+
+It is worth being precise about why this happens, because "they were dishonest" is the
+least useful explanation. A harness is built scenario by scenario; the favourable
+scenario is stubbed first to get the plumbing running; the stub returns the answer the
+author expects; and nothing downstream ever fails, because a tautology cannot fail.
 
 **Three tells a reviewer can check in thirty seconds**, and which we must never produce:
 
@@ -1258,8 +1295,9 @@ not of members**; Möser et al. (PoPETs 2018, Monero) ring size 11 → effective
 
 **Do not cite arXiv:2510.09433** (Cristodaro, Kraner & Tessone, Tornado Cash cross-chain
 clustering). It was **withdrawn** at v3 on 2025-11-18: *"This paper has been withdrawn by
-the author due to mistakes in the references"* **[V]**. Its numbers circulate widely in
-search results and a competing submission relies on it.
+the author due to mistakes in the references"* **[V]**. Its numbers still circulate
+widely in search results and are easy to pick up second-hand, which is exactly why the
+withdrawal is recorded here rather than the paper simply being left uncited.
 
 **Terminology.** "Provenance class" is not standard. Define it once against the
 established vocabulary: *"we partition the anonymity set into* **provenance classes**,

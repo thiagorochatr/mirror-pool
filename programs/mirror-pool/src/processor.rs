@@ -124,9 +124,10 @@ fn create_pda_account<'a>(
 ///
 /// Permissionless: the first caller for a denomination creates the crowd
 /// everyone else joins. There is no privileged authority, so there is no key
-/// whose loss freezes the pool — a competing implementation bakes its authority
-/// into the pool's PDA seeds with no rotation instruction, which makes its
-/// advertised rotating relay undeployable and its escrow permanently hostage.
+/// whose loss freezes the pool. Baking an authority into the pool's PDA seeds is
+/// the tempting alternative and it is a one-way door: seeds cannot change, so
+/// without a rotation instruction that authority is permanent, a rotating relay
+/// becomes undeployable, and the escrow is hostage to a single key forever.
 fn init_pool(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -190,11 +191,11 @@ fn init_pool(
 /// Escrows exactly one denomination and appends a note commitment.
 ///
 /// The escrowed amount is read from the pool, never from the instruction, so a
-/// deposit cannot claim a size the pool did not set. This is the half of the
-/// accounting invariant that a competing implementation is missing: there, the
-/// escrowed lamports are a caller-supplied parameter that is never bound to the
-/// hidden commitment, so a depositor of one lamport can later withdraw the whole
-/// pool with an entirely valid proof.
+/// deposit cannot claim a size the pool did not set. This is the ingress half of
+/// the accounting invariant, and it is the half most easily left out: take the
+/// escrowed lamports as a caller-supplied parameter without binding them to the
+/// hidden commitment, and a depositor of one lamport can later withdraw the
+/// whole pool with an entirely valid proof.
 ///
 /// Duplicate commitments are not rejected. Doing so would cost a marker account
 /// per deposit, and the only party a duplicate harms is whoever submitted it:

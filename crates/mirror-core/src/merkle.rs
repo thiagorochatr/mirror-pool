@@ -8,10 +8,10 @@
 //!   paths that go into a proof.
 //!
 //! They must agree, and the tests here assert that they do over real insertion
-//! sequences. That assertion is the point: a competing submission in this bounty
-//! has no test connecting its on-chain accumulator to a proof at all, and
-//! injects a fixture root instead, with a comment conceding that a real deposit
-//! sequence cannot reproduce it.
+//! sequences. That assertion is the point of this module. It is easy to test
+//! each half separately and never connect them — proving against an injected
+//! fixture root rather than one the on-chain accumulator actually produced — and
+//! a suite built that way stays green while the two implementations drift.
 
 use crate::{hash_node, Field, MirrorError};
 
@@ -371,9 +371,10 @@ mod tests {
         }
     }
 
-    /// The assertion a competing submission is missing entirely: the on-chain
-    /// accumulator and a host-generated proof must agree after a real sequence
-    /// of deposits, not after a fixture is injected.
+    /// The assertion that connects the two halves: the on-chain accumulator and
+    /// a host-generated proof must agree after a real sequence of deposits, not
+    /// after a fixture root is injected. Without this test the two can drift
+    /// apart indefinitely with every other test still passing.
     #[test]
     fn the_frontier_root_accepts_a_host_generated_proof() {
         let mut frontier = Frontier::new().unwrap();

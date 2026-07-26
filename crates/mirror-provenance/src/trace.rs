@@ -12,10 +12,11 @@
 //! an address with fewer than one page of lifetime signatures the birth
 //! transaction is the **last element of the first page**.
 //!
-//! A competing tracer scans the six most **recent** transactions of each
-//! address. For anything with more than six transactions that is the wrong end
-//! of the history, and it manufactures "unresolved" for exactly the active
-//! wallets a funding trace most wants to follow.
+//! Taking the first few entries of that page instead — the most **recent**
+//! transactions — is the wrong end of the history for any address with more
+//! than a page-fragment of activity. It also fails silently, reporting
+//! "unresolved" where the truth is "we looked in the wrong place", and it does
+//! so for exactly the active wallets a funding trace most wants to follow.
 //!
 //! ## Where pass one stops
 //!
@@ -191,9 +192,9 @@ pub struct Manifest {
     /// one. A token account is not a person and cannot be a member of an
     /// anonymity set, so including it would measure something other than the
     /// pool. Excluding addresses because they looked *hard to trace* would be a
-    /// different thing entirely and is exactly the bias that inflates a
-    /// competing measurement's untraceable bucket — so the count is published
-    /// rather than quietly applied.
+    /// different thing entirely: that criterion correlates with the outcome, so
+    /// it manufactures whichever headline the exclusion implies. The count is
+    /// published rather than quietly applied, so the distinction is checkable.
     pub excluded_non_wallet: Vec<String>,
     /// Share of observed credits whose source was one of several debited
     /// accounts, so the funder is a set rather than a single address.

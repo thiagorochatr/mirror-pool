@@ -37,8 +37,8 @@ pub enum MirrorProgramError {
     /// The vault does not hold enough to cover every unspent note.
     ///
     /// This is the accounting invariant. It is checked rather than assumed
-    /// because the two competing implementations are both drainable at exactly
-    /// this point.
+    /// because both standard drains in this design space surface exactly here,
+    /// and an invariant that is only assumed is not an invariant.
     InsolventVault = 13,
     /// The spend account has the wrong length or an unrecognised version.
     InvalidSpendAccount = 14,

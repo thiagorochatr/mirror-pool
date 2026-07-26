@@ -32,11 +32,12 @@ nullifier   = H1(k)                   revealed on spend, spent once ever
 **The denomination is a pool constant, not a field in the note.** One pool serves
 one denomination, so the escrowed lamports and the hidden commitment cannot
 disagree. This is not a stylistic choice — it makes a class of drain
-unrepresentable rather than merely untested. Two competing submissions in this
-bounty are drainable at exactly this point: one escrows an amount that is never
-bound to its commitment, so a depositor of one lamport can withdraw the whole
-pool with an entirely valid proof; the other issues an epoch-scoped nullifier
-against a value payout, so one deposit pays out once per epoch forever.
+unrepresentable rather than merely untested, and the class is worth stating
+because a shielded pool built the obvious way falls into it. Carry the amount as
+a note field and fail to bind it to the commitment, and a depositor of one
+lamport withdraws the entire pool holding a valid proof. Scope the nullifier to
+an epoch — the natural move once epochs are how batches form — and a single
+deposit pays out once per epoch, forever.
 
 Nullifiers here are spend-once, never epoch-scoped.
 
@@ -205,12 +206,13 @@ Design choices that exist to avoid specific published defects:
 
 - Edges come from **balance deltas**, not instruction parsing, which is blind to
   every program that moves lamports by direct account mutation.
-- The **birth edge** is the oldest credit. A competing tracer scans the six most
-  *recent* transactions, which is the wrong end of the history for anything with
-  more than six.
-- The **hub threshold is decoupled from the paging cap**. In a competing tracer
-  the two are the same number, so "reaches an attributable origin" there means
-  "hit the RPC page cap".
+- The **birth edge** is the oldest credit, so the walk reaches the *start* of a
+  wallet's history. Scanning the most recent transactions instead is the wrong
+  end of the record for any wallet with more than a handful of them.
+- The **hub threshold is decoupled from the paging cap**. Making them the same
+  number is an easy collapse, since both answer "how many signatures do we look
+  at" — and it turns "reaches an attributable origin" into a synonym for "hit
+  the RPC page cap".
 - **RPC failures are never evidence.** They are counted separately and excluded
   from the distribution, and above a 1% failure rate the run refuses to print a
   headline rather than printing a warning above one.
@@ -218,8 +220,10 @@ Design choices that exist to avoid specific published defects:
   rather than an error for pruned history, so a collection against one would look
   healthy and report every old funding event as absent.
 - Seeds that are not wallets are excluded on a **definitional** criterion and the
-  count is published. Excluding addresses for looking hard to trace would be a
-  different thing and is the bias that inflates a competing measurement.
+  count is published. Excluding addresses for *looking hard to trace* is a
+  different thing entirely — it drops exactly the members that would have
+  widened the class distribution, and inflates the result in the flattering
+  direction.
 
 The headline is the loss factor `ρ = 2^−H(C)` rather than effective-k, because it
 is independent of `k` and therefore comparable across pools. Effective-k measured

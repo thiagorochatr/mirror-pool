@@ -23,10 +23,12 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Thresholds {
     /// Lifetime signatures at or above which an address is a volume hub.
     ///
-    /// Deliberately far below the paging cap. The competing tracer sets its hub
-    /// threshold *equal* to the RPC page limit, so "is a hub" there means "hit
-    /// the page cap" — which admits every DEX program and bot while excluding a
-    /// genuine exchange withdrawal address with 800 transactions.
+    /// Deliberately far below the paging cap, and the two must never be the
+    /// same constant. They sound like the same question — "how many signatures
+    /// do we care about" — but setting the hub threshold equal to the RPC page
+    /// limit makes "is a hub" mean "hit the page cap", which admits every DEX
+    /// program and bot while excluding a genuine exchange withdrawal address
+    /// with 800 transactions.
     pub hub_signatures: u64,
     /// Minimum account age for the hub rule, in seconds. A young address with
     /// many transactions is a bot or an airdrop, not an origin.
@@ -386,8 +388,9 @@ mod tests {
         assert_eq!(out.label().unwrap(), "busy-unlabelled:Busy1");
     }
 
-    /// The distinction the competing measurement collapses: a busy address is
-    /// not an attributable origin, and its label must never read like one.
+    /// The distinction that is easiest to collapse and most costly to lose: a
+    /// busy address is not an attributable origin, and its label must never
+    /// read like one.
     #[test]
     fn a_volume_hub_is_labelled_as_unnamed() {
         let env = Env::new();

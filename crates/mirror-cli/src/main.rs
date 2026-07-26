@@ -16,9 +16,10 @@ mod soak;
 /// waste is public, so proofs are forgeable. That trade is stated rather than
 /// hidden, and the production path is a multi-party ceremony.
 ///
-/// A competing submission publishes its entropy string *and* gitignores the
-/// proving key, so its setup is insecure and unreproducible at the same time —
-/// no third party can produce a valid proof for its deployed program at all.
+/// Reproducible-and-insecure is a coherent position for an unaudited tool. The
+/// incoherent one is publishing the entropy *and* withholding the proving key,
+/// which is insecure and unreproducible at once: the toxic waste is public, and
+/// no third party can regenerate the key to produce a valid proof at all.
 pub const DEV_SETUP_SEED: &str = "mirror-pool-reproducible-dev-setup-v1";
 
 #[derive(Parser)]
@@ -141,8 +142,8 @@ enum Command {
     ///
     /// This is the check a third party runs. It binds the *whole* key — alpha,
     /// beta, gamma, delta and every IC point — not just delta, so a transcript
-    /// carrying a key belonging to a different circuit cannot pass. A competing
-    /// submission's ceremony verifier checks delta alone and would certify one.
+    /// carrying a key belonging to a different circuit cannot pass. Verifying
+    /// delta alone is the common shortcut and it would certify exactly that.
     VerifySetup {
         #[arg(long, default_value = DEV_SETUP_SEED)]
         seed: String,

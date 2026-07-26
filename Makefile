@@ -8,9 +8,10 @@
 # target directory removes the collision.
 #
 # The program deliberately stays a member of the root workspace so that
-# `cargo test --workspace` covers it. Excluding it would hide its tests from CI,
-# which is how a competing submission ended up never running a single one of its
-# on-chain tests.
+# `cargo test --workspace` covers it. Excluding it from the workspace is the
+# usual way to dodge the target-directory collision above, and it silently
+# removes every on-chain test from CI: the suite still passes, because it no
+# longer runs.
 #
 # The path must be absolute. cargo resolves a relative CARGO_TARGET_DIR against
 # the manifest directory, so `target/sbf` with `--manifest-path programs/...`

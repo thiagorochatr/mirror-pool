@@ -54,12 +54,14 @@ pub fn generate<R: RngCore + ark_std::rand::CryptoRng>(rng: &mut R) -> Result<Ke
 /// setup transcript records a digest of the resulting key rather than trusting
 /// the seed alone.
 ///
-/// The competing approaches both fail differently. One publishes its entropy
-/// string in the repository *and* gitignores the proving key, so the setup is
-/// simultaneously insecure and unreproducible — no third party can generate any
-/// valid proof for the deployed program. The other runs a real ceremony whose
-/// transcript verifier checks only `delta`, so it would certify a verifying key
-/// belonging to a different circuit.
+/// There are two ways to get this wrong, and they are opposites. Publishing the
+/// entropy string *and* withholding the proving key is the worst of both: the
+/// setup is insecure, because the toxic waste is public, and unreproducible,
+/// because no third party can regenerate the key to check it — so nobody can
+/// produce a valid proof for the deployed program at all. Running a real
+/// ceremony but verifying only `delta` in the transcript is the other: the
+/// process looks rigorous while certifying a key that may belong to a different
+/// circuit entirely.
 pub fn generate_reproducible(seed: &[u8]) -> Result<Keys, SetupError> {
     let mut expanded = [0u8; 32];
     for (i, slot) in expanded.iter_mut().enumerate() {

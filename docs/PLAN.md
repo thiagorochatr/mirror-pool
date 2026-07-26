@@ -68,12 +68,13 @@ commitment and can never disagree with the escrowed amount.
 **Accounting invariant**, asserted in tests:
 `vault.lamports >= D × (deposits − spends) + rent_exempt_minimum`.
 
-This is deliberate. Two competing submissions are drainable precisely here: one
-escrows an amount that is never bound to the hidden commitment, so a depositor of
-one lamport can withdraw the pool with a valid proof; the other issues an
-epoch-scoped nullifier against a value payout, so a single deposit pays out once
-per epoch forever. A fixed denomination with spend-once nullifiers makes both
-failures unrepresentable rather than merely untested.
+This is deliberate, and it targets two drains that a shielded pool reaches by
+building in the obvious direction. Carry the amount as a note field without
+binding it to the hidden commitment, and a depositor of one lamport withdraws
+the pool holding a valid proof. Scope the nullifier to an epoch — natural once
+epochs are how batches form — and a single deposit pays out once per epoch,
+forever. A fixed denomination with spend-once nullifiers makes both
+unrepresentable rather than merely untested.
 
 ### Circuit — 3 public inputs
 
@@ -87,8 +88,9 @@ with root `R`, my nullifier is `Poseidon(k)`, and this proof is bound to
 | `nullifier` | the program records it to prevent replay |
 | `action_binding` | the program recomputes it, so a relay cannot redirect or re-price |
 
-Measured cost is `74,179 + 5,661 × N` CU, so three inputs land near 91k CU —
-comparable to the strongest competing implementation while binding strictly more.
+Measured cost is `74,179 + 5,661 × N` CU, so three inputs land near 91k CU. That
+is the going rate for on-chain Groth16 on Solana, and the third input buys the
+relay binding rather than being spent on a value that could have been folded in.
 Any further value we need to commit to gets folded into `action_binding` rather
 than added as a fourth input. See `GROTH16_INTEGRATION.md` for the verified
 conversion path and its pitfalls.
@@ -111,21 +113,24 @@ So the protocol splits it:
 - **Phase 2, at epoch close.** The pool executes every ticket's action in one
   settlement, sharing a single timestamp and ordering.
 
-This also fixes a structural leak in a competing design, where every participant
-must sign the settlement transaction — which publishes the entire membership set
-by pubkey in a single transaction. Here no member key ever appears on chain.
+The two phases also close a structural leak that a single-phase design walks
+into: if settlement is one transaction that every participant must sign, then
+that transaction publishes the entire membership set by pubkey, and the
+anonymity set is disclosed by the very step meant to protect it. Here no member
+key ever appears on chain.
 
 ### Relays, and never holding users hostage
 
 A member who pays their own fee signs with their own wallet and destroys their
 own anonymity, so spends are relay-signed and the relay is paid out of `D`.
 
-Two rules follow, both of which a competing submission violates:
+Two rules follow, and both are easy to lose by accident:
 
 - **Relaying is permissionless.** Any key may relay. There is no single immutable
-  authority whose loss freezes the pool. (In the competing design the pool
-  authority is baked into the PDA seeds with no rotation instruction, so the
-  advertised "gasless rotating relay" cannot be deployed at all.)
+  authority whose loss freezes the pool. Baking a relay authority into the PDA
+  seeds is the tempting shortcut, and it is a trap: seeds cannot be changed, so
+  without a rotation instruction the authority is permanent and its loss is
+  terminal.
 - **There is always an exit.** A member may always self-spend, paying their own
   fee and accepting the privacy loss, so funds are never hostage to a relay's
   liveness.
@@ -135,8 +140,8 @@ Two rules follow, both of which a competing submission violates:
 Entry fees accumulate in a reward pool paid pro-rata to *dwell* — how long a note
 stayed unspent — which is the behaviour that makes everyone else's set larger.
 Payouts are capped per epoch and gated on the `k` floor, so a lone participant
-cannot recycle their own fee back to themselves, which is a live flaw in one
-competitor's implementation and asserted by its own test.
+cannot recycle their own fee back to themselves — a reward scheme that pays out
+without a crowd gate is not an incentive, it is a refund with extra steps.
 
 ### Provenance measurement
 
@@ -169,23 +174,22 @@ pool, epoch, frontier accumulator with root history, nullifier PDAs, tickets.
 
 *Done when* the suite runs against the built `.so` and covers the accounting
 invariant, replay rejection, `k`-floor rejection, action-binding mismatch,
-malformed input on every handler, and a drain attempt of the shape that breaks
-the competing implementations. CI green on fmt, clippy, tests and `build-sbf`.
+malformed input on every handler, and a drain attempt of each shape described
+above. CI green on fmt, clippy, tests and `build-sbf`.
 
 ### Day 3 — measurement, CLI, setup ceremony
 `mirror-provenance` against real mainnet data with the sample committed. The CLI
 end to end: keygen, deposit, prove, spend, claim, and an `audit` command that
 recomputes effective-`k` from committed data. Setup with a transcript that binds
 the **full** verifying key and a circuit digest, and a `verify-setup` any third
-party can run — closing the gap where a competitor's ceremony verifier checks
-only `delta` and would green-light a verifying key belonging to a different
-circuit.
+party can run — checking every element, because a verifier that compares only
+`delta` would green-light a verifying key belonging to a different circuit.
 
 ### Day 4 — deploy, evidence, submission
 Devnet soak producing signatures for every flow plus on-chain negative cases with
-their error codes. Mainnet deployment — no competitor has their own pool on
-mainnet. Documentation: README, ARCHITECTURE, THREAT_MODEL with honest limits,
-PROOF, EFFECTIVE_K. Open the PR with time for CI to finish, and submit on Earn.
+their error codes, then mainnet deployment. Documentation: README, ARCHITECTURE,
+THREAT_MODEL with honest limits, PROOF, EFFECTIVE_K. Open the PR with time for
+CI to finish, and submit on Earn.
 
 ### Cut lines, in the order things get dropped
 
@@ -193,7 +197,7 @@ Multi-party ceremony support degrades to a reproducible single-contributor setup
 with the multi-party path documented. Dwell rewards degrade to a flat entry fee.
 The provenance sample shrinks before its method weakens. **The accounting
 invariant, the negative tests, the honest limitations section and a green CI are
-never cut** — they are what separates this from the submissions it means to beat.
+never cut** — they are the difference between a privacy tool and a demo of one.
 
 ### What actually got cut, and why
 
@@ -224,9 +228,9 @@ a decision rather than an overrun:
 ### Stretch, only if the above is complete
 
 A composability contribution to `account-cooker`, funding an agent fleet through
-mirror-pool so that every agent wallet shares one provenance class. That repo's
-strongest submission admits the observable common-funder graph is what defeats
-it, and names a shielded funding path as an explicit non-goal. It is a second
+mirror-pool so that every agent wallet shares one provenance class. An agent
+fleet is defeated by its common-funder graph long before its behaviour looks
+wrong, and a shielded funding path is the piece that attacks it. It is a second
 prize with a separate champion, and the work is small once the pool exists.
 
 ## Risks
@@ -242,6 +246,6 @@ we actually have rather than to the number we would like to report.
 **Mainnet deployment cost.** A program of this size is a few SOL to deploy.
 Devnet evidence is the fallback and is on the critical path regardless.
 
-**Competitors keep iterating.** Two of the three updated their branches within
-the last day. We do not race their line count; we ship the thing all of them
-declare open, and we make every number checkable.
+**The field moves while we build.** The response is not to race anyone's line
+count. It is to ship the thing this space declares open and unsolved, and to
+make every number in it checkable by someone who does not trust us.

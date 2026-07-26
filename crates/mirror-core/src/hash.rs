@@ -30,8 +30,9 @@
 //! not practically exploitable, but arity separation removes the question
 //! entirely at no cost.
 //!
-//! A competing implementation in this bounty hashes its Merkle nodes, its
-//! nullifiers and its action bindings with one untagged arity-2 function.
+//! Hashing Merkle nodes, nullifiers and action bindings with one untagged
+//! arity-2 function is the shortcut this avoids: it works, right up until a
+//! value from one domain is accepted where another was meant.
 
 use crate::{Field, MirrorError};
 use solana_poseidon::{hashv, Endianness, Parameters};
@@ -75,9 +76,10 @@ pub fn commitment(k: Field, r: Field, denom_tag: Field) -> Result<Field, MirrorE
 
 /// Nullifier: `H1(k)`.
 ///
-/// Deliberately not scoped to an epoch. An epoch-scoped nullifier guarding a
-/// value-bearing payout lets a single deposit pay out once per epoch forever,
-/// which is a live drain in a competing submission. Ours is spent once, ever.
+/// Deliberately not scoped to an epoch. Scoping a nullifier to the epoch is the
+/// natural move once epochs are how batches form — and against a value-bearing
+/// payout it is a drain, because a single deposit then pays out once per epoch,
+/// forever. This one is spent once, ever.
 pub fn nullifier(k: Field) -> Result<Field, MirrorError> {
     poseidon1(k)
 }

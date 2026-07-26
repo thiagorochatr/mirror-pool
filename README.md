@@ -1,9 +1,18 @@
 # mirror-pool
 
-A behavioral anonymity set for Solana. Members deposit a fixed denomination;
-later, a member proves in zero knowledge that they own some note in the set and
-directs the pool to act. The pool executes. An observer sees that an action
-happened and cannot say which member asked for it.
+A behavioural anonymity set for Solana — privacy for **what you do**, not for
+what you hold.
+
+Members join a pool by depositing a fixed denomination. Later, a member proves in
+zero knowledge that they own some note in the set and directs the pool to perform
+an *action*: an arbitrary instruction on an arbitrary program. The pool performs
+it, signed by the pool, batched with everyone else's at one timestamp. An
+observer sees that a stake, a swap or a vote happened and cannot say which member
+asked for it.
+
+Moving lamports is the degenerate case, selector zero. The interesting case is
+selector one, and the end-to-end suite runs it against a real deployed program:
+four members, four memos, one slot, one signer — [see below](#synchronised-actions-are-the-point).
 
 Rust end to end. MIT. No Anchor, no Circom, no JavaScript anywhere in the
 proving path.
@@ -14,15 +23,16 @@ make verify          # fmt, clippy -D warnings, tests, build-sbf
 
 ## The problem this takes as its subject
 
-Every serious submission to this bounty — across all three repositories —
-identifies the same open channel and none of them closes it:
+There is one channel that no deposit-based anonymity set on a public ledger
+closes, and it is not something a better circuit can fix:
 
 > An anonymity set on a public ledger can be partitioned by **where each member's
 > capital came from**. Learning a member's funding class leaves only that class to
 > guess within, so what survives is the size of the class, not `k`.
 
-No deposit pool controls where its users' money came from, so this cannot be
-fixed by a better circuit. What it can be is *measured*, and measured honestly.
+No pool controls where its users' money came from. What that channel can be is
+*measured*, and measured honestly — which as far as we can tell nobody has done
+against live Solana data with a published method.
 
 So this submission claims exactly two things:
 
@@ -62,6 +72,48 @@ produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
 
+## Synchronised actions are the point
+
+The brief asks for an anonymity set for *behaviour*, not for funds. That
+distinction is load-bearing here, so it is tested rather than asserted:
+
+```
+settled 4 real CPI actions in one transaction, 39,636 CU
+```
+
+`a_crowd_of_members_perform_a_real_protocol_action_together` seeds a pool,
+loads the **real SPL Memo program** into the SVM, and has four members each
+prove membership and request the identical memo. Settlement invokes Memo four
+times in a single transaction, every invocation signed by the pool's vault PDA.
+
+What an observer holds afterwards is four identical memos, one timestamp, one
+signer, and no field anywhere in the transaction that distinguishes which member
+asked for which. The actions are indistinguishable **by content** because the
+payloads match, and indistinguishable **by timing** because settlement gives them
+one clock.
+
+Two properties make this a behavioural tool rather than a mixer with a CPI bolted
+on:
+
+- **The target is arbitrary.** Selector one invokes any program with any payload.
+  Staking, voting and swapping are the same code path as the memo; Memo is used
+  in the test because it is small, real, and validates its own account list.
+- **Moving lamports is the degenerate case.** Selector zero is a plain transfer,
+  kept only because expressing "pay this account" should not require a target
+  program.
+
+A separate test passes a **non-empty account list** through the CPI, which
+matters because SPL Memo requires every account handed to it to have signed. If
+the program dropped an account, mislabelled a signer flag, or miscounted, Memo
+rejects — so the account plumbing is load-bearing in that test rather than
+decorative.
+
+The honest limit: the action binding commits to *how many* accounts an action
+takes, not *which*. Settlement is permissionless, so a settler chooses them. For
+a target whose destination lives in an account rather than in instruction data,
+that is a real gap, and `docs/THREAT_MODEL.md` states it rather than working
+around it.
+
 ## Properties, and how each is checked
 
 **A note's value cannot disagree with its commitment.** The denomination is a
@@ -73,11 +125,16 @@ from the arithmetic that moved them.
 **A nullifier is spent once, ever** — never epoch-scoped.
 
 Those two together make a class of drain *unrepresentable* rather than merely
-untested. Two competing submissions are drainable at exactly this point: one
-escrows an amount never bound to its hidden commitment, so a depositor of one
-lamport can withdraw the whole pool with a valid proof; the other issues an
-epoch-scoped nullifier against a value payout, so one deposit pays out once per
-epoch forever.
+untested, and the class is worth naming because a shielded pool built the
+obvious way lands in it. Carry the amount as a field in the note and forget to
+bind it to the commitment, and a depositor of one lamport withdraws the whole
+pool holding a perfectly valid proof. Scope the nullifier to an epoch — natural
+if epochs are how you batch — and one deposit pays out once per epoch, forever.
+
+Neither is reachable here. The denomination is not in the note, so there is no
+amount to bind; and the nullifier set is global, so an epoch boundary cannot
+reopen a spend. Both are pinned by tests that assert the rejection rather than
+assuming it.
 
 **A relay cannot redirect or re-price an action.** The action binding is never
 transmitted — it is recomputed on-chain from the selector, the target program,
@@ -104,8 +161,9 @@ pinned to circomlib's published `poseidon([1,2])` vector rather than to each
 other, so the two agreeing on a wrong answer would need circomlib's own vector to
 be wrong. The syscall is then checked against the host on-chain: the end-to-end
 suite asserts the root the deployed program builds equals the root the host
-built. Several published Solana projects ship a gadget whose native and
-in-circuit hashes differ; that only surfaces at proving time.
+built. A gadget whose native and in-circuit hashes disagree is the classic
+expensive failure here, because nothing catches it until proving time and the
+symptom — proofs that verify nowhere — points at everything except the hash.
 
 ## The measurement
 
@@ -127,16 +185,22 @@ run, and Run 4's budget and predictions were committed to git *before* the
 collection started, so the parameters are a declaration rather than a
 description.
 
-### Design choices that exist to avoid specific published defects
+### Design choices, and the failure each one exists to avoid
+
+Every item here is a decision that a reasonable implementation gets wrong by
+default. They are listed because a provenance number is only as good as the
+weakest of them, and none of them is visible in the output.
 
 - **Edges come from balance deltas**, not instruction parsing, which is blind to
   every program that moves lamports by direct account mutation.
-- **The birth edge is the oldest credit.** A competing tracer scans the six most
-  *recent* transactions — the wrong end of the history for anything with more
-  than six, which manufactures "unresolved" for active wallets.
-- **The hub threshold is decoupled from the paging cap.** In a competing tracer
-  the two are one number, so "reaches an attributable origin" there means "hit
-  the RPC page cap" — admitting every DEX program and bot.
+- **The birth edge is the oldest credit**, so the walk goes to the *start* of a
+  wallet's history. Reading the most recent transactions instead is the wrong end
+  of the record for any wallet with more than a handful, and manufactures
+  "unresolved" for precisely the active wallets worth resolving.
+- **The hub threshold is decoupled from the paging cap.** Collapse them into one
+  number — easy to do, since both are "how many signatures do we look at" — and
+  "reaches an attributable origin" quietly becomes a synonym for "hit the RPC page
+  cap", which admits every DEX program and trading bot as an origin.
 - **RPC failures are never evidence.** Counted separately, excluded from the
   distribution, and above a 1% failure rate the run refuses to print a headline
   rather than printing a warning above one.
@@ -193,10 +257,11 @@ multi-party ceremony, not more SOL.
   public, so proofs are forgeable. `mirror verify-setup` re-derives the key from
   the public seed and compares it element by element against the one compiled
   into the program — expected digest
-  `b0165d5eac6fe8273b6564c78e8ba548c97e6050ae785e9142de63c81aa905b7`. A competing submission
-  publishes its entropy string *and* gitignores its proving key, so its setup is
-  insecure and unreproducible at once — no third party can produce a valid proof
-  for its deployed program at all.
+  `b0165d5eac6fe8273b6564c78e8ba548c97e6050ae785e9142de63c81aa905b7`. Reproducible
+  and insecure is a coherent position for an unaudited submission; the incoherent
+  one is a setup that is *both* insecure and unreproducible, which is what
+  publishing the entropy while withholding the proving key produces — nobody can
+  verify the key, and nobody can regenerate it either.
 - The on-chain `k_floor` bounds **program-visible membership** only. That is all
   a program can check.
 - Not audited.
