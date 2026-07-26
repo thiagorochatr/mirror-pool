@@ -176,14 +176,19 @@ mirror analyze --sample sample.json # pure, offline, deterministic
 ```
 
 `data/sample-privacycash-run4.json` is the committed artifact behind the
-headline, and `data/sample-privacycash.json` is the earlier run it is compared
-against. Both are committed, so anyone holding them recomputes the numbers
-without RPC access and without trusting that our endpoint behaved the same way
-on their machine — including the run that came back above the 1% RPC-failure
-limit and so yielded no headline at all. `docs/MEASUREMENT_LOG.md` records every
-run, and Run 4's budget and predictions were committed to git *before* the
-collection started, so the parameters are a declaration rather than a
-description.
+headline, and `data/sample-privacycash.json` is Run 3, the earlier and smaller
+budget it is compared against. Both are committed, so anyone holding them
+recomputes both numbers without RPC access and without trusting that our
+endpoint behaved the same way on their machine — including the comparison that
+shows coverage *falling* as resolution rose.
+
+`docs/MEASUREMENT_LOG.md` records every run, including the two that produced no
+headline at all: one whose frame was size-biased and resolved nothing, and one
+that came back above the 1% RPC-failure limit. Those two have no committed
+sample, and saying so is part of the record — what is committed is what the
+published numbers come from. Run 4's budget and its predictions were committed
+to git *before* the collection started, so its parameters are a declaration
+rather than a description.
 
 ### Design choices, and the failure each one exists to avoid
 
@@ -235,7 +240,7 @@ a settlement that closed the vault to its rent-exempt minimum to the lamport.
 
 `docs/PROOF.md` has every signature *and* the lamports, because "closed to the
 rent-exempt minimum" is the interesting part of that sentence and a list of
-signatures does not show it: 80,000,012 owed against 80,000,012 paid out, and a
+signatures does not show it: 80,000,028 owed against 80,000,028 paid out, and a
 vault resting on its floor with a remainder of zero. The soak asserts both and
 fails the run otherwise, so that table cannot record a discrepancy and still
 exit successfully.

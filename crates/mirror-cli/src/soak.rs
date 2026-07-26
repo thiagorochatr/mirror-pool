@@ -26,7 +26,7 @@ use solana_transaction::Transaction;
 // pool. Changing it starts a clean one, which is how the evidence run gets to
 // record its own `init_pool` rather than reusing a pool an earlier run created
 // and leaving the creation step undocumented.
-const DENOMINATION: u64 = 20_000_003; // 0.02 SOL
+const DENOMINATION: u64 = 20_000_007; // 0.02 SOL
 const ENTRY_FEE: u64 = 0;
 const K_FLOOR: u32 = 4;
 const RELAY_FEE: u64 = 200_000;
@@ -80,7 +80,8 @@ pub struct Soak {
     pool: Pubkey,
     vault: Pubkey,
     pub steps: Vec<Step>,
-    pub negatives: Vec<(String, String)>,
+    /// Case name, the program's own error code, and what the rejection proves.
+    pub negatives: Vec<(String, String, String)>,
     pub accounting: Option<Accounting>,
 }
 
@@ -116,7 +117,7 @@ impl Soak {
         });
     }
 
-    fn record_negative(&mut self, name: &str, err: String) {
+    fn record_negative(&mut self, name: &str, proves: &str, err: String) {
         // Only the program's own error code matters here; the rest is noise.
         // Take only the hex code. The RPC embeds the error inside a JSON blob,
         // so splitting on whitespace drags the rest of the payload along and the
@@ -132,7 +133,8 @@ impl Soak {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "(no custom code)".to_string());
         println!("  {name:<28} rejected with {code}");
-        self.negatives.push((name.to_string(), code));
+        self.negatives
+            .push((name.to_string(), code, proves.to_string()));
     }
 
     fn account_meta_pool(&self) -> Vec<AccountMeta> {
@@ -312,13 +314,14 @@ impl Soak {
     pub fn expect_rejection(
         &mut self,
         name: &str,
+        proves: &str,
         ix: Instruction,
         signers: &[&Keypair],
     ) -> Result<()> {
         match self.send(ix, signers) {
             Ok(sig) => Err(anyhow!("{name} was accepted: {sig}")),
             Err(e) => {
-                self.record_negative(name, e.to_string());
+                self.record_negative(name, proves, e.to_string());
                 Ok(())
             }
         }
@@ -415,6 +418,39 @@ fn read_keypair(path: &str) -> Result<Keypair> {
     Keypair::try_from(&bytes[..]).map_err(|e| anyhow!("reading {expanded}: {e}"))
 }
 
+/// Proves membership of one note, bound to one beneficiary and one relay fee.
+///
+/// Kept separate so a negative case can prove an honest statement and then send
+/// a *different* one. That is the whole shape of the redirect attack: the proof
+/// is genuine, and what the relay changes is the instruction around it.
+fn proof_for_note(
+    keys: &Keys,
+    tree: &MerkleTree,
+    notes: &[Note],
+    index: usize,
+    beneficiary: &Pubkey,
+    relay_fee: u64,
+) -> Result<mirror_circuit::SolanaProof> {
+    use ark_std::rand::SeedableRng;
+    let merkle_proof = tree.proof(index as u64).map_err(|e| anyhow!("{e}"))?;
+    let binding = mirror_core::action_binding(
+        SELECTOR_TRANSFER,
+        &[0u8; 32],
+        &beneficiary.to_bytes(),
+        relay_fee,
+        0,
+        &[],
+    );
+    let witness = Witness {
+        note: notes[index],
+        merkle_proof: &merkle_proof,
+        root: tree.root().map_err(|e| anyhow!("{e}"))?,
+        action_binding: binding,
+    };
+    let mut rng = ark_std::rand::rngs::StdRng::from_seed([index as u8 + 1; 32]);
+    prove(keys, &witness, &mut rng).map_err(|e| anyhow!("{e}"))
+}
+
 /// The full lifecycle, on a live cluster, with every signature recorded.
 pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Result<()> {
     let program_id: Pubkey = program
@@ -490,27 +526,19 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     soak.accounting = Some(accounting);
 
     println!("\nnegative path:");
-    // A replayed proof: the nullifier record already exists.
+
+    // One more note, deposited only now. Two of the three negatives below need
+    // a *live* note: a rejection against an already-spent one proves the replay
+    // guard fired first and says nothing about the check under test. It is
+    // deposited after settlement so the accounting above still describes a
+    // vault that emptied to its floor rather than one holding a spare.
+    let (tree, notes) = soak.deposit(1, ledger)?;
+    let spare = notes.len() - 1;
+
+    // A replayed proof: honest in every respect, against a note already spent.
     {
-        use ark_std::rand::SeedableRng;
         let beneficiary = Keypair::new().pubkey();
-        let merkle_proof = tree.proof(first_fresh as u64).map_err(|e| anyhow!("{e}"))?;
-        let binding = mirror_core::action_binding(
-            SELECTOR_TRANSFER,
-            &[0u8; 32],
-            &beneficiary.to_bytes(),
-            RELAY_FEE,
-            0,
-            &[],
-        );
-        let witness = Witness {
-            note: notes[first_fresh],
-            merkle_proof: &merkle_proof,
-            root: tree.root().map_err(|e| anyhow!("{e}"))?,
-            action_binding: binding,
-        };
-        let mut rng = ark_std::rand::rngs::StdRng::from_seed([first_fresh as u8 + 1; 32]);
-        let proof = prove(&keys, &witness, &mut rng).map_err(|e| anyhow!("{e}"))?;
+        let proof = proof_for_note(&keys, &tree, &notes, first_fresh, &beneficiary, RELAY_FEE)?;
         let ix = soak.spend_ix_for(
             proof.public_inputs[1],
             &proof,
@@ -518,7 +546,56 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
             &payer.pubkey(),
             RELAY_FEE,
         );
-        soak.expect_rejection("replayed nullifier", ix, &[&payer])?;
+        soak.expect_rejection(
+            "replayed nullifier",
+            "a nullifier is spent once, ever -- not once per epoch",
+            ix,
+            &[&payer],
+        )?;
+    }
+
+    // A relay redirecting a payout. The proof is genuine and the note is live;
+    // the relay simply names a different beneficiary in the instruction. The
+    // binding is recomputed on-chain from what the instruction says, so it no
+    // longer matches the one inside the proof and the pairing fails.
+    {
+        let member_chose = Keypair::new().pubkey();
+        let relay_prefers = Keypair::new().pubkey();
+        let proof = proof_for_note(&keys, &tree, &notes, spare, &member_chose, RELAY_FEE)?;
+        let ix = soak.spend_ix_for(
+            proof.public_inputs[1],
+            &proof,
+            &relay_prefers,
+            &payer.pubkey(),
+            RELAY_FEE,
+        );
+        soak.expect_rejection(
+            "redirected beneficiary",
+            "a relay cannot send a member's payout somewhere the member did not choose",
+            ix,
+            &[&payer],
+        )?;
+    }
+
+    // The other half of the same claim: a relay re-pricing its own fee. Same
+    // live note, same genuine proof, and the only change is the fee the
+    // instruction declares.
+    {
+        let beneficiary = Keypair::new().pubkey();
+        let proof = proof_for_note(&keys, &tree, &notes, spare, &beneficiary, RELAY_FEE)?;
+        let ix = soak.spend_ix_for(
+            proof.public_inputs[1],
+            &proof,
+            &beneficiary,
+            &payer.pubkey(),
+            RELAY_FEE * 10,
+        );
+        soak.expect_rejection(
+            "inflated relay fee",
+            "a relay cannot re-price the work after the member authorised it",
+            ix,
+            &[&payer],
+        )?;
     }
 
     write_proof(&soak, url, out)?;
@@ -601,10 +678,17 @@ fn write_proof(soak: &Soak, url: &str, out: &std::path::Path) -> Result<()> {
         "A negative case is only evidence if the program's own error code is what \
          rejected it. A bare runtime failure proves nothing about this program.\n\n",
     );
-    md.push_str("| case | error code |\n|---|---|\n");
-    for (name, code) in &soak.negatives {
-        md.push_str(&format!("| {name} | `{code}` |\n"));
+    md.push_str("| case | error code | what the rejection establishes |\n|---|---|---|\n");
+    for (name, code, proves) in &soak.negatives {
+        md.push_str(&format!("| {name} | `{code}` | {proves} |\n"));
     }
+    md.push_str(
+        "\nThe last two attack a note that is still live, deposited after settlement \
+         precisely so that they would have to. Against an already-spent note the \
+         replay guard fires first and the rejection would say nothing about the \
+         check under test — which is how a negative case comes to pass for the \
+         wrong reason.\n",
+    );
 
     md.push_str("\n## Scope\n\n");
     md.push_str(

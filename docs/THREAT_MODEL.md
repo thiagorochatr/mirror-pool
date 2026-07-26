@@ -159,8 +159,25 @@ evidence of behaviour and not a substitute for an audit.
 
 ## Deliberate non-goals
 
-**Hiding funds.** The brief asks for behavioural deniability, not a mixer, and a
-value-mixing layer is not here.
+**Hiding funds** — with a precision this deserves, because the protocol plainly
+touches value and a flat "not a mixer" would be too convenient.
+
+What is here: a fixed-denomination escrow whose purpose is to make members
+interchangeable and to fund the actions they authorise. Selector one invokes an
+arbitrary program, which is the point of the design; selector zero is a plain
+transfer, kept because expressing "pay this account" should not require a target
+program. That selector does mean a member can deposit a denomination and have it
+paid to an address of their choosing, unlinked to the deposit. Calling that
+anything other than what it is would be dishonest.
+
+What is *not* here, and is what the word "mixer" usually means: confidential
+amounts, a value-shielding layer, or any attempt to obscure how much moved.
+Denominations are pool constants and public. Nothing hides quantity.
+
+And what the design is *for* is the behavioural case. The measurement, the
+crowd rule, the shared settlement timestamp and the CPI dispatch all exist to
+make a stake or a vote unattributable. A submission that wanted a value mixer
+would not need any of them.
 
 **Defeating an adversary with off-chain data.** Someone who knows a member
 deposited — because they watched them do it, or because the member told them —
