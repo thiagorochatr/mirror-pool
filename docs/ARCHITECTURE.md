@@ -236,6 +236,35 @@ is independent of `k` and therefore comparable across pools. Effective-k measure
 at small `k` systematically understates the steady-state loss and cannot be
 extrapolated upward.
 
+### Three uncertainties, kept apart
+
+They answer different questions, and collapsing any two of them into one number
+is how a provenance figure comes to mean less than it appears to.
+
+| | question | mechanism |
+|---|---|---|
+| unresolved bracket | what if the unresolved had landed differently? | exact bound over both extremes |
+| sampling spread | how much of `ρ` is *which* members we drew? | bootstrap over members, seeded and published |
+| selection | are the resolved members a fair draw of the classes? | one frame at two budgets, cheap vs expensive to trace |
+
+The third is the one usually left as an assumption. `mirror selection` tests it,
+and **separation is the bad outcome**: it would mean the unresolved are not
+missing at random, that the resolved subset is biased toward whatever is cheap to
+trace, and that no extra budget repairs it. Measured on both populations here, it
+does not separate.
+
+`mirror compare` then bootstraps the *difference* between two populations rather
+than subtracting point estimates, and refuses to rank them when the interval
+contains zero or when either side resolves under half its members. It has refused
+on both grounds — on the first for one pool measured at two budgets, which ought
+not to separate, and on the second for the cross-population comparison this
+project most wanted.
+
+One bias is not fixed and runs against us: plug-in entropy is biased low at small
+`n`, so `ρ` is biased **high** and the pools plausibly leak less than reported.
+It falls the same way on every population measured the same way, which is what
+keeps a difference meaningful where an absolute number is shaky.
+
 `2^H(C)` — entropy over the class-size distribution — is widely quoted as the
 effective anonymity set and is **inverted**: it is maximised when every member
 stands alone, which is total deanonymisation. It is the leakage. The anonymity is
