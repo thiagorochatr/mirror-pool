@@ -79,8 +79,8 @@ credited to it, and pool creation refuses a nonzero entry fee, so there is no
 second category of lamports anywhere that could be mistaken for backing for an
 unspent note.
 
-`docs/PROOF.md` carries the devnet numbers: four notes settled, 80,000,068
-lamports owed and 80,000,068 paid, and a vault that came to rest on its
+`docs/PROOF.md` carries the devnet numbers: five notes settled, 100,000,095
+lamports owed and 100,000,095 paid, and a vault that came to rest on its
 rent-exempt floor with a remainder of zero. The soak asserts that rather than
 printing it, so a run that disagreed would fail instead of publishing.
 
@@ -180,6 +180,17 @@ revise it.
 That constraint was measured, not reasoned about: the earlier design refused the
 vault outright and documented the refusal as a property of the runtime. It is a
 property of the *ordering*.
+
+It is also a property of the **batch**, which only a live cluster showed. The
+runtime objects to any lamport this program moved anywhere in the same
+instruction, so a signed call settled behind other members' payouts fails where
+the same call alone succeeds. Settlement runs every signed call first and pays
+afterwards — which it must, because a signed action that could only settle alone
+would have to wait out the timeout instead of joining a crowd.
+
+`docs/PROOF.md` carries the case the selector exists for: a real stake
+delegation on devnet, `DelegateStake` signed by the vault as staker authority,
+settled in the same transaction as three plain transfers and a memo.
 
 **`settle_epoch`** — executes a batch in one transaction so every payout shares a
 timestamp and an ordering.

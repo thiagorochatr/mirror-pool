@@ -114,7 +114,9 @@ bolted on:
   pool. `the_pool_signs_an_action_as_its_own_authority` proves it at **30,827 CU**
   against real SPL Memo — a program that refuses any account handed to it that
   has not signed, and that names its signers in its logs. The test reads that log
-  for the vault's own key, so the claim rests on someone else's program.
+  for the vault's own key, so the claim rests on someone else's program. Devnet
+  carries the case this exists for: a **real stake delegation**, with the pool as
+  the staker authority — [see Deployment](#deployment).
 - **Moving lamports is the degenerate case.** Selector zero is a plain transfer,
   kept only because expressing "pay this account" should not require a target
   program.
@@ -384,17 +386,37 @@ lifecycle ran there against a real validator — pool creation, deposits, spends
 each carrying a Groth16 proof verified by the deployed program's own syscall, and
 a settlement that closed the vault to its rent-exempt minimum to the lamport.
 
-That settlement carried four spends and **one of them was not a transfer**: the
-pool invoked SPL Memo as that member's authority, in the same transaction as the
-other three. A signature only proves a transaction landed, so the evidence comes
-from the callee — Memo names its signers, and it named the pool's vault, an
-account with no private key. The soak reads that line back off the cluster and
-fails the run if it is missing, so `docs/PROOF.md` cannot carry the claim
-without the claim being true.
+That settlement carried five spends, and **two of them were not transfers**. One
+was a memo the pool signed. The other was a **real stake delegation**:
+
+```
+Delegated Stake:        1.09771712 SOL, activating
+Delegated Vote Account: 2f9C9AU8nFRKUub8NHToNiZzcwmYiNeipVuP8akKgRVv
+Stake Authority:        CWxsJdxBLm3LC6dEnBco68a6T4QNEF31N3qQRy95wN3Q   ← the pool's vault
+Withdraw Authority:     H9DRVAD42eiQqmXeYrX5AWwoYRr4wie4MzvJDC6Wkxmn   ← the operator
+```
+
+`DelegateStake` requires the staker authority to sign, and no member can be that
+authority without appearing on chain and undoing the point. So the pool was, and
+the pool signed. That is the whole design in one transaction: an observer sees
+that a delegation happened, to which validator, for how much, and **cannot say
+which of the five members asked for it**.
+
+The withdraw authority is deliberately *not* the pool, and that is the threat
+model applied rather than restated: the pool's signature is available to every
+member, so an authority the vault holds is one every member holds. Delegation
+survives that — the worst a member can do is re-delegate somebody's stake.
+Withdrawal does not.
+
+Evidence never rests on our own word. Memo names its signers and named the
+vault; the stake account is read back after settlement and only reaches the
+`Stake` variant by being delegated. The soak checks both against the cluster and
+fails the run if either is absent, so `docs/PROOF.md` cannot carry these claims
+without them being true.
 
 That file has every signature *and* the lamports, because "closed to the
 rent-exempt minimum" is the interesting part of that sentence and a list of
-signatures does not show it: 80,000,068 owed against 80,000,068 paid out, and a
+signatures does not show it: 100,000,095 owed against 100,000,095 paid out, and a
 vault resting on its floor with a remainder of zero. The soak asserts both and
 fails the run otherwise, so that table cannot record a discrepancy and still
 exit successfully.

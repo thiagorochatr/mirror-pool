@@ -150,6 +150,13 @@ vault's own pubkey, so the claim rests on a third-party program's behaviour
 rather than on ours. `docs/PROOF.md` carries the same evidence from devnet, read
 back off the cluster by the soak rather than asserted by it.
 
+The devnet run also applies this section rather than restating it. It delegates
+a real stake account with the vault as **staker** authority and the operator as
+**withdraw** authority, because delegation survives being available to every
+member — the worst any of them can do is re-delegate to another validator — and
+withdrawal does not. An integrator who gives the vault a withdraw authority has
+given it to the whole pool.
+
 ### The action's account list is chosen by the settler
 
 The proof binds the selector, the target program, the beneficiary, the relay

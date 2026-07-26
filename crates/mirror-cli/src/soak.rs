@@ -26,9 +26,13 @@ use solana_transaction::Transaction;
 // pool. Changing it starts a clean one, which is how the evidence run gets to
 // record its own `init_pool` rather than reusing a pool an earlier run created
 // and leaving the creation step undocumented.
-const DENOMINATION: u64 = 20_000_017; // 0.02 SOL
+const DENOMINATION: u64 = 20_000_019; // 0.02 SOL
 const ENTRY_FEE: u64 = 0;
 const K_FLOOR: u32 = 4;
+/// Members in the evidence batch. Above `K_FLOOR` so the crowd rule is satisfied
+/// by the crowd rather than by the timeout, and large enough to hold three
+/// plain transfers beside the two actions the pool signs.
+const BATCH: u64 = 5;
 const RELAY_FEE: u64 = 200_000;
 
 /// The SPL Memo program, at the same address on every cluster.
@@ -43,6 +47,33 @@ const MEMO_PROGRAM: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 /// What the member asks the pool to say on their behalf.
 const MEMO_PAYLOAD: &[u8] = b"mirror-pool: signed by the pool, for a member";
 
+/// The native Stake program.
+const STAKE_PROGRAM: &str = "Stake11111111111111111111111111111111111111";
+/// Still in `DelegateStake`'s account list, deprecated but not removed.
+const STAKE_CONFIG: &str = "StakeConfig11111111111111111111111111111111";
+const SYSVAR_CLOCK: &str = "SysvarC1ock11111111111111111111111111111111";
+const SYSVAR_STAKE_HISTORY: &str = "SysvarStakeHistory1111111111111111111111111";
+const SYSVAR_RENT: &str = "SysvarRent111111111111111111111111111111111";
+
+/// `StakeInstruction::DelegateStake`, a bare u32 discriminant.
+const DELEGATE_STAKE: [u8; 4] = [2, 0, 0, 0];
+
+/// A devnet validator with a large active stake, so the delegation has somewhere
+/// real to go.
+const VOTE_ACCOUNT: &str = "2f9C9AU8nFRKUub8NHToNiZzcwmYiNeipVuP8akKgRVv";
+
+/// `StakeStateV2` is 200 bytes whatever variant it holds.
+const STAKE_ACCOUNT_LEN: usize = 200;
+
+/// What the operator puts into the stake account before the pool delegates it.
+///
+/// Devnet's minimum delegation is 1 SOL and this pool's denomination is 0.02, so
+/// the escrow of one member cannot reach the floor by itself — a pool whose
+/// denomination cleared it would need five-plus SOL to fill a single batch. The
+/// operator funds the account and the member's escrow is added to it; what the
+/// *pool* supplies is the authority, which is the part being demonstrated.
+const STAKE_FUNDING: u64 = 1_100_000_000;
+
 /// One member's pending spend, as settlement needs to see it.
 pub struct Settlement {
     pub spend: Pubkey,
@@ -51,6 +82,8 @@ pub struct Settlement {
     /// The CPI target, when this member's action is a call rather than a
     /// transfer.
     pub target: Option<Pubkey>,
+    /// The accounts that action takes, in the order the callee expects them.
+    pub action_accounts: Vec<AccountMeta>,
 }
 
 /// One recorded step of the run.
@@ -107,6 +140,8 @@ pub struct Soak {
     pub accounting: Option<Accounting>,
     /// The callee's own log line naming the pool's vault as a signer.
     pub signed_action: Option<String>,
+    /// The stake account the pool delegated, and the validator it now backs.
+    pub delegation: Option<(Pubkey, Pubkey)>,
 }
 
 impl Soak {
@@ -123,6 +158,7 @@ impl Soak {
             negatives: Vec::new(),
             accounting: None,
             signed_action: None,
+            delegation: None,
         }
     }
 
@@ -428,6 +464,189 @@ impl Soak {
         Ok((spend_pda, nullifier))
     }
 
+    /// Creates a stake account whose **staker** is the pool's vault.
+    ///
+    /// The withdraw authority is deliberately *not* the vault, and that is the
+    /// threat model applied rather than restated: the pool's signature is
+    /// available to every member, so an authority held by the vault is an
+    /// authority every member holds. Staking is safe to delegate that way
+    /// because the worst a member can do with it is delegate somebody else's
+    /// stake to a different validator. Withdrawal is not, so it stays with the
+    /// operator.
+    pub fn create_stake_account(&mut self) -> Result<Pubkey> {
+        let stake = Keypair::new();
+        let stake_program: Pubkey = STAKE_PROGRAM
+            .parse()
+            .map_err(|e| anyhow!("stake id: {e}"))?;
+        let rent_sysvar: Pubkey = SYSVAR_RENT.parse().map_err(|e| anyhow!("rent id: {e}"))?;
+
+        let create = solana_system_interface::instruction::create_account(
+            &self.payer.pubkey(),
+            &stake.pubkey(),
+            STAKE_FUNDING,
+            STAKE_ACCOUNT_LEN as u64,
+            &stake_program,
+        );
+
+        // StakeInstruction::Initialize { Authorized, Lockup }, bincode: a u32
+        // discriminant then the two authorities and a zero lockup.
+        let mut data = 0u32.to_le_bytes().to_vec();
+        data.extend_from_slice(self.vault.as_ref()); // staker
+        data.extend_from_slice(&self.payer.pubkey().to_bytes()); // withdrawer
+        data.extend_from_slice(&0i64.to_le_bytes()); // lockup.unix_timestamp
+        data.extend_from_slice(&0u64.to_le_bytes()); // lockup.epoch
+        data.extend_from_slice(&[0u8; 32]); // lockup.custodian
+        let initialise = Instruction::new_with_bytes(
+            stake_program,
+            &data,
+            vec![
+                AccountMeta::new(stake.pubkey(), false),
+                AccountMeta::new_readonly(rent_sysvar, false),
+            ],
+        );
+
+        let blockhash = self.client.latest_blockhash()?;
+        let message =
+            solana_message::Message::new(&[create, initialise], Some(&self.payer.pubkey()));
+        let payer = self.payer.insecure_clone();
+        let tx = Transaction::new(&[&payer, &stake], message, blockhash);
+        let sig = self.client.send(&tx)?;
+        self.record(
+            "create stake account",
+            sig,
+            format!(
+                "{} lamports, staker = the pool's vault, withdrawer = the operator",
+                STAKE_FUNDING
+            ),
+        );
+        Ok(stake.pubkey())
+    }
+
+    /// The action list `DelegateStake` expects, in the callee's own order.
+    ///
+    /// Taken from what the `solana` CLI builds rather than from memory: the
+    /// authority sits in the last slot, and the deprecated config account is
+    /// still in the list. Getting this order wrong is not a compile error and
+    /// not a clear runtime one either — the stake program would read the config
+    /// account as the authority and report a missing signature.
+    fn delegate_accounts(&self, stake: &Pubkey) -> Result<Vec<AccountMeta>> {
+        let parse = |s: &str| -> Result<Pubkey> { s.parse().map_err(|e| anyhow!("{s}: {e}")) };
+        Ok(vec![
+            AccountMeta::new(*stake, false),
+            AccountMeta::new_readonly(parse(VOTE_ACCOUNT)?, false),
+            AccountMeta::new_readonly(parse(SYSVAR_CLOCK)?, false),
+            AccountMeta::new_readonly(parse(SYSVAR_STAKE_HISTORY)?, false),
+            AccountMeta::new_readonly(parse(STAKE_CONFIG)?, false),
+            AccountMeta::new_readonly(self.vault, false),
+        ])
+    }
+
+    /// Submits a spend whose action is a real stake delegation, authorised by
+    /// the pool.
+    #[allow(clippy::too_many_arguments)]
+    pub fn submit_stake_delegation(
+        &mut self,
+        keys: &Keys,
+        tree: &MerkleTree,
+        notes: &[Note],
+        index: usize,
+        stake: &Pubkey,
+        relay: &Keypair,
+    ) -> Result<(Pubkey, [u8; 32])> {
+        use ark_std::rand::SeedableRng;
+        let stake_program: Pubkey = STAKE_PROGRAM
+            .parse()
+            .map_err(|e| anyhow!("stake id: {e}"))?;
+        let merkle_proof = tree.proof(index as u64).map_err(|e| anyhow!("{e}"))?;
+        // The stake account is the beneficiary, so the member's escrow lands in
+        // the stake they authorised rather than beside it.
+        let binding = mirror_core::action_binding(
+            SELECTOR_INVOKE_SIGNED,
+            &stake_program.to_bytes(),
+            &stake.to_bytes(),
+            RELAY_FEE,
+            6,
+            &DELEGATE_STAKE,
+        );
+        let witness = Witness {
+            note: notes[index],
+            merkle_proof: &merkle_proof,
+            root: tree.root().map_err(|e| anyhow!("{e}"))?,
+            action_binding: binding,
+        };
+        let mut rng = ark_std::rand::rngs::StdRng::from_seed([index as u8 + 1; 32]);
+        let proof = prove(keys, &witness, &mut rng).map_err(|e| anyhow!("{e}"))?;
+        let nullifier = proof.public_inputs[1];
+        let (spend_pda, _) = spend_address(&self.program_id, &self.pool, &nullifier);
+
+        let ix = Instruction::new_with_bytes(
+            self.program_id,
+            &MirrorIx::SubmitSpend {
+                proof_a: proof.proof_a,
+                proof_b: proof.proof_b,
+                proof_c: proof.proof_c,
+                root: proof.public_inputs[0],
+                nullifier,
+                selector: SELECTOR_INVOKE_SIGNED,
+                target_program: stake_program.to_bytes(),
+                beneficiary: stake.to_bytes(),
+                relay_fee: RELAY_FEE,
+                action_accounts: 6,
+                payload: DELEGATE_STAKE.to_vec(),
+            }
+            .pack(),
+            vec![
+                AccountMeta::new(relay.pubkey(), true),
+                AccountMeta::new(self.pool, false),
+                AccountMeta::new(spend_pda, false),
+                AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+            ],
+        );
+        let sig = self.send(ix, &[relay])?;
+        self.record(
+            "submit_spend",
+            sig,
+            format!("note {index}, relay-signed, action: pool-signed stake delegation"),
+        );
+        Ok((spend_pda, nullifier))
+    }
+
+    /// Reads the stake account back and reports which validator it now backs.
+    ///
+    /// `StakeStateV2` is a bincode enum: a u32 discriminant, then `Meta` (8 bytes
+    /// of rent reserve, two 32-byte authorities, a 48-byte lockup), then
+    /// `Delegation`, whose first field is the vote account. Variant 2 is `Stake`,
+    /// which an account only reaches by being delegated — an initialised but
+    /// undelegated account is variant 1, so the discriminant alone distinguishes
+    /// "the instruction landed" from "the delegation took".
+    pub fn confirm_delegated(&mut self, stake: &Pubkey) -> Result<()> {
+        let data = self
+            .client
+            .account_data(stake)?
+            .ok_or_else(|| anyhow!("the stake account {stake} vanished"))?;
+        if data.len() < 156 {
+            return Err(anyhow!(
+                "the stake account is {} bytes, too short to be a stake state",
+                data.len()
+            ));
+        }
+        let discriminant = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+        if discriminant != 2 {
+            return Err(anyhow!(
+                "the stake account is in state {discriminant}, not Stake(2): the \
+                 delegation did not take"
+            ));
+        }
+        let voter = Pubkey::new_from_array(
+            data[124..156]
+                .try_into()
+                .map_err(|_| anyhow!("reading the vote account"))?,
+        );
+        println!("  stake account delegated to {voter}");
+        self.delegation = Some((*stake, voter));
+        Ok(())
+    }
+
     /// Submits a spend expected to fail, recording the program's error code.
     #[allow(clippy::too_many_arguments)]
     pub fn expect_rejection(
@@ -489,10 +708,11 @@ impl Soak {
             if let Some(target) = entry.target {
                 actions += 1;
                 metas.push(AccountMeta::new_readonly(target, false));
-                // The action's single account. It reaches the callee as a
-                // *signer* — the program sets that flag itself, from seeds no
-                // settler holds, which is why this meta says otherwise.
-                metas.push(AccountMeta::new(self.vault, false));
+                // The action's own accounts, in the callee's order. Where one of
+                // them is the vault it reaches the callee as a *signer* — the
+                // program sets that flag itself, from seeds no settler holds,
+                // which is why the meta here says otherwise.
+                metas.extend(entry.action_accounts.iter().cloned());
             }
         }
         let ix = Instruction::new_with_bytes(
@@ -640,12 +860,12 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     // starts empty and the old notes are still in the file.
     let ledger_path = format!("data/soak-notes-{DENOMINATION}.json");
     let ledger = std::path::Path::new(&ledger_path);
-    let (tree, notes) = soak.deposit(K_FLOOR as u64, ledger)?;
+    let (tree, notes) = soak.deposit(BATCH, ledger)?;
 
     // Spend the notes this run deposited, not the earliest ones. A rerun
     // against a pool that already holds spent notes would otherwise replay a
     // burnt nullifier and stop.
-    let first_fresh = notes.len() - K_FLOOR as usize;
+    let first_fresh = notes.len() - BATCH as usize;
 
     // One relay and one beneficiary per member: no member key appears anywhere.
     //
@@ -655,16 +875,45 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     // timestamp, one signer and a batch of actions, with nothing separating the
     // member who staked from the members who merely moved value.
     let memo: Pubkey = MEMO_PROGRAM.parse().map_err(|e| anyhow!("memo id: {e}"))?;
-    let last = first_fresh + K_FLOOR as usize - 1;
+    let stake_program: Pubkey = STAKE_PROGRAM
+        .parse()
+        .map_err(|e| anyhow!("stake id: {e}"))?;
+
+    // The stake account exists before any member asks for anything, and who
+    // created it is public. What the pool supplies is the authority to delegate
+    // it, and which member asked for that is what the anonymity set hides.
+    let stake = soak.create_stake_account()?;
+
+    let memo_note = first_fresh + BATCH as usize - 2;
+    let stake_note = first_fresh + BATCH as usize - 1;
     let mut batch = Vec::new();
-    for i in first_fresh..first_fresh + K_FLOOR as usize {
-        let beneficiary = Keypair::new().pubkey();
+    for i in first_fresh..first_fresh + BATCH as usize {
         let relay = payer.insecure_clone();
-        let (spend, target) = if i == last {
+        let entry = if i == stake_note {
+            let (spend, _) =
+                soak.submit_stake_delegation(&keys, &tree, &notes, i, &stake, &relay)?;
+            Settlement {
+                spend,
+                // The stake account is the beneficiary, so this member's escrow
+                // ends up inside the stake they authorised.
+                beneficiary: stake,
+                relay: relay.pubkey(),
+                target: Some(stake_program),
+                action_accounts: soak.delegate_accounts(&stake)?,
+            }
+        } else if i == memo_note {
+            let beneficiary = Keypair::new().pubkey();
             let (spend, _) =
                 soak.submit_signed_action(&keys, &tree, &notes, i, &beneficiary, &relay, &memo)?;
-            (spend, Some(memo))
+            Settlement {
+                spend,
+                beneficiary,
+                relay: relay.pubkey(),
+                target: Some(memo),
+                action_accounts: vec![AccountMeta::new(soak.vault(), false)],
+            }
         } else {
+            let beneficiary = Keypair::new().pubkey();
             let (spend, _) = soak.submit_spend(
                 &keys,
                 &tree,
@@ -674,26 +923,28 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
                 &relay,
                 "submit_spend",
             )?;
-            (spend, None)
+            Settlement {
+                spend,
+                beneficiary,
+                relay: relay.pubkey(),
+                target: None,
+                action_accounts: Vec::new(),
+            }
         };
-        batch.push(Settlement {
-            spend,
-            beneficiary,
-            relay: relay.pubkey(),
-            target,
-        });
+        batch.push(entry);
     }
 
     let vault_before = soak.balance(&soak.vault())?;
     let settle_sig = soak.settle(&batch)?;
     soak.confirm_pool_signed(&settle_sig)?;
+    soak.confirm_delegated(&stake)?;
     let vault_after = soak.balance(&soak.vault())?;
     // The vault carries no data, so its floor is the rent-exempt minimum for a
     // zero-byte account — asked of the cluster rather than assumed.
     let vault_floor = soak.rent_exempt_minimum(0)?;
     let accounting = Accounting {
         denomination: DENOMINATION,
-        notes_settled: K_FLOOR as u64,
+        notes_settled: BATCH,
         relay_fee: RELAY_FEE,
         vault_before_settle: vault_before,
         vault_after_settle: vault_after,
@@ -887,6 +1138,40 @@ fn write_proof(soak: &Soak, url: &str, out: &std::path::Path) -> Result<()> {
              and fails the run if it is absent, so this section cannot appear without the \
              callee having said it.\n",
             soak.vault()
+        ));
+    }
+
+    if let Some((stake, voter)) = &soak.delegation {
+        md.push_str("\n## The pool delegated stake, as a member's authority\n\n");
+        md.push_str(&format!(
+            "The same settlement carried a second signed action, and this one is the case \
+             the design exists for: a **real stake delegation**. Stake account \
+             [`{stake}`](https://explorer.solana.com/address/{stake}?cluster=devnet) is now \
+             delegated to validator \
+             [`{voter}`](https://explorer.solana.com/address/{voter}?cluster=devnet).\n\n"
+        ));
+        md.push_str(
+            "`DelegateStake` requires the **staker authority** to sign. No member can be that \
+             authority without appearing on chain and undoing the point, so the pool is, and \
+             the pool signed. The account state is read back after settlement: a stake \
+             account only reaches the `Stake` variant by being delegated — an initialised but \
+             undelegated one is a different variant — so the check distinguishes \"the \
+             instruction landed\" from \"the delegation took\", and the validator's key is \
+             read out of the account rather than assumed from what was requested.\n\n",
+        );
+        md.push_str(
+            "**The withdraw authority is deliberately not the pool.** The pool's signature is \
+             available to every member, so an authority the vault holds is an authority every \
+             member holds. Delegation is safe on those terms — the worst a member can do is \
+             re-delegate to another validator. Withdrawal is not, and it stays with the \
+             operator. That is `docs/THREAT_MODEL.md` applied rather than repeated.\n\n",
+        );
+        md.push_str(&format!(
+            "What is hidden here is precisely one thing: **which member asked**. The stake \
+             account, the validator, the amount and the timing are all public, and the \
+             anonymity set is the {BATCH} members who settled together. What an observer \
+             cannot recover is which of them authorised this delegation rather than one of \
+             the plain transfers beside it.\n"
         ));
     }
 
