@@ -160,103 +160,45 @@ chain time presented as a population; and a class key at raw-address resolution,
 which splits two members funded by the same exchange into different classes and
 so reports a larger anonymity set than exists.
 
-## Schedule
+## What was cut, and why
 
-92 hours remain at the time of writing. Deadline is 2026-07-28 23:59 BRT.
+This document is the design as it was decided, so the places where the shipped
+protocol departs from it are the interesting part. Six things here did not ship,
+and each was a decision rather than an overrun.
 
-### Day 1 — primitives and circuit
-`mirror-core`: Poseidon over BN254, the incremental Merkle accumulator with its
-zero ladder, note commitments and nullifiers, and the byte layouts shared with
-the program. `mirror-circuit`: the R1CS statement, key generation, the host
-prover, and export of the verifying key in the on-chain layout.
-
-*Done when* a proof generated on the host verifies against the exported
-verifying-key bytes, and an in-circuit Merkle root equals one computed natively.
-
-### Day 2 — the on-chain program
-Instructions: `init_pool`, `deposit`, `open_epoch`, `submit_spend` (verify, burn
-nullifier, write ticket), `settle_epoch`, `claim_reward`, `self_spend`. State:
-pool, epoch, frontier accumulator with root history, nullifier PDAs, tickets.
-
-*Done when* the suite runs against the built `.so` and covers the accounting
-invariant, replay rejection, `k`-floor rejection, action-binding mismatch,
-malformed input on every handler, and a drain attempt of each shape described
-above. CI green on fmt, clippy, tests and `build-sbf`.
-
-### Day 3 — measurement, CLI, setup ceremony
-`mirror-provenance` against real mainnet data with the sample committed. The CLI
-end to end: keygen, deposit, prove, spend, claim, and an `audit` command that
-recomputes effective-`k` from committed data. Setup with a transcript that binds
-the **full** verifying key and a circuit digest, and a `verify-setup` any third
-party can run — checking every element, because a verifier that compares only
-`delta` would green-light a verifying key belonging to a different circuit.
-
-### Day 4 — deploy, evidence, submission
-Devnet soak producing signatures for every flow plus on-chain negative cases with
-their error codes, then mainnet deployment. Documentation: README, ARCHITECTURE,
-THREAT_MODEL with honest limits, PROOF, EFFECTIVE_K. Open the PR with time for
-CI to finish, and submit on Earn.
-
-### Cut lines, in the order things get dropped
-
-Multi-party ceremony support degrades to a reproducible single-contributor setup
-with the multi-party path documented. Dwell rewards degrade to a flat entry fee.
-The provenance sample shrinks before its method weakens. **The accounting
-invariant, the negative tests, the honest limitations section and a green CI are
-never cut** — they are the difference between a privacy tool and a demo of one.
-
-### What actually got cut, and why
-
-This plan is as written on day zero. Six things in it did not ship, and each was
-a decision rather than an overrun:
-
-- **`open_epoch` and epoch state.** Folded into `submit_spend` and
-  `settle_epoch`, which need none: a spend records its own timestamp and
-  settlement reads the clock. Four instructions instead of seven.
+- **`open_epoch` and explicit epoch state.** Folded into `submit_spend` and
+  `settle_epoch`, which need neither: a spend records its own timestamp and
+  settlement reads the clock. Four instructions instead of seven, and one fewer
+  account whose lifecycle could disagree with the pool's.
 - **`claim_reward`, dwell rewards, and the entry fee with them.** The rewards
-  were cut to a flat entry fee, as the cut line above anticipated — and then the
-  fee was cut too, because a fee with no payout is not a simplification, it is a
-  fund trap. Fees accrue on the pool account; no instruction pays them out; and
-  none can be added without an authority this program deliberately does not
-  have. `Pool::initialise` now refuses any nonzero entry fee, so the trap is
+  went first. The fee that funded them went second, and for a sharper reason: a
+  fee with no payout is not a simplification, it is a fund trap. Fees would
+  accrue on the pool account, no instruction would pay them out, and none could
+  be added without an authority this program deliberately does not have.
+  `Pool::initialise` now refuses any nonzero entry fee, so the trap is
   unrepresentable rather than documented. The field stays in the layout for a
   version that ships a real payout path.
 - **`self_spend`.** Not built because it is not needed: a member relays for
-  themselves at zero fee and settles their own batch after the timeout. Same
-  exit, one fewer instruction, less attack surface. Pinned by
+  themselves at zero fee and settles their own batch once the timeout passes.
+  The same exit, one fewer instruction, less surface. Pinned by
   `a_member_can_always_exit_without_any_relay`.
-- **The `audit` command.** Shipped as `analyze`.
-- **"The measurement is load-bearing."** Withdrawn rather than descoped. A
-  program cannot check funding provenance, so the on-chain `k_floor` bounds
-  program-visible membership only and the measurement lives beside it. Claiming
-  otherwise would have been exactly the marketing line this plan disavows.
-- **Mainnet.** Deliberately not deployed: the setup is reproducible rather than
-  secure, and a live pool with public toxic waste would invite deposits it cannot
-  protect. The README states the reasoning.
+- **The `audit` command.** Shipped as `analyze`, alongside `compare` and
+  `selection`, which the design did not anticipate needing.
+- **"The measurement is load-bearing."** Withdrawn rather than descoped. The
+  design above claimed a pool would refuse to settle below a measured effective
+  anonymity. A program cannot check funding provenance — the data is off-chain
+  and the classification is a judgement — so the on-chain `k_floor` bounds
+  program-visible membership only, and the measurement lives beside the protocol
+  instead of inside it. Descoping the claim while keeping the language would have
+  been the marketing line this document opens by disavowing.
+- **Mainnet.** Deliberately not deployed. The trusted setup is reproducible
+  rather than secure, so a live pool would be inviting deposits it cannot
+  protect. `README.md` states the reasoning where a reader will meet it.
 
 `EFFECTIVE_K` shipped as `docs/PROVENANCE_METHOD.md`.
 
-### Stretch, only if the above is complete
-
-A composability contribution to `account-cooker`, funding an agent fleet through
-mirror-pool so that every agent wallet shares one provenance class. An agent
-fleet is defeated by its common-funder graph long before its behaviour looks
-wrong, and a shielded funding path is the piece that attacks it. It is a second
-prize with a separate champion, and the work is small once the pool exists.
-
-## Risks
-
-**The circuit costs more than a day.** Mitigated: the two integration unknowns
-that usually eat that day — the arkworks-to-Solana byte layout and the
-Poseidon-to-gadget agreement — were resolved before implementation started.
-
-**RPC capacity for the provenance sample.** Mitigated by committing the raw
-sample so the result reproduces offline, and by sizing the sample to the access
-we actually have rather than to the number we would like to report.
-
-**Mainnet deployment cost.** A program of this size is a few SOL to deploy.
-Devnet evidence is the fallback and is on the critical path regardless.
-
-**The field moves while we build.** The response is not to race anyone's line
-count. It is to ship the thing this space declares open and unsolved, and to
-make every number in it checkable by someone who does not trust us.
+Two things shipped that the design did not contain at all: a selector that lets
+the pool sign a call as a member's **authority**, which is what a stake
+delegation needs and a transfer does not, and the measurement programme that
+produced the eight runs in `docs/MEASUREMENT_LOG.md`. Both are described where
+they live rather than here.

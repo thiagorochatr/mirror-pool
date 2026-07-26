@@ -1398,7 +1398,7 @@ Target crate: `crates/mirror-provenance`.
 **The differentiator is not a smaller number than anyone else's. It is that a reviewer
 can tell which direction our error goes.**
 
-### 10.3 Prior art — what we may and may not claim
+### 10.3 Prior art, and where this sits in it
 
 The funding-provenance channel is **not novel**. Wang et al., *On How Zero-Knowledge Proof
 Blockchain Mixers Improve, and Worsen User Privacy*, WWW 2023, Heuristic H4 "Intermediary
@@ -1411,34 +1411,39 @@ Measured effect on TC 0.1 ETH (|OAS| = 11,941): H4 alone −4.20 %; all five heu
 combined −30.68 %. Their metric is Bayes vulnerability `Adv = 1/|SAS|` — identical to our
 min-entropy rung.
 
-**Claim exactly three things, all defensible:**
+Three things here are new, and each is stated so that a reader can check it rather than
+take it:
 
-1. **First on Solana.** DBLP's full index returns six Solana blockchain papers (phishing,
-   rug detection, transaction failure, Jito MEV, NFT ecosystem, SolRPDS) — **none** on
-   privacy, anonymity, deanonymization, address clustering, mixers or shielded pools.
-   arXiv full-text agrees. Elusiv sunset 2024-02-29 (team → Arcium, general MPC) and was
-   never measured; Light Protocol pivoted to ZK Compression; Privacy Cash (launched
-   2025-08-27) is the most-used Solana ZK mixer and has never been measured.
-2. **Entity-level label ladder with reported sensitivity**, where all prior work — Wang et
-   al. included — fixes one resolution.
-3. **`ρ = 2^{−H(C)}` as a k-independent headline**, where all prior work reports a
-   percentage reduction for one pool at one size.
+1. **This is the first such measurement on Solana.** DBLP's full index returns six Solana
+   blockchain papers — phishing, rug detection, transaction failure, Jito MEV, the NFT
+   ecosystem, SolRPDS — and **none** on privacy, anonymity, deanonymization, address
+   clustering, mixers or shielded pools. arXiv full-text agrees. Of the protocols
+   themselves: Elusiv sunset on 2024-02-29 (its team moved to Arcium and general MPC) and
+   was never measured; Light Protocol pivoted to ZK Compression; Privacy Cash, launched
+   2025-08-27 and the most-used Solana ZK mixer, has never been measured. The search is
+   reproducible and a counter-example would settle it.
+2. **The label ladder is entity-level, with its sensitivity reported.** Prior work,
+   Wang et al. included, fixes a single resolution and reports the number it produces.
+3. **`ρ = 2^{−H(C)}` is a k-independent headline.** Prior work reports a percentage
+   reduction for one pool at one size, which cannot be compared across pools or
+   extrapolated to a larger one.
 
-Useful framing: SPL Token-2022 confidential transfers hide *amounts and balances only* —
-sender and receiver addresses stay public — so by construction the advertised anonymity
-set is exactly 1. Solana's flagship privacy primitive has no anonymity set, and the one
-protocol class where an advertised-vs-effective gap could exist has never been studied.
+For scale: SPL Token-2022 confidential transfers hide *amounts and balances only* — sender
+and receiver addresses stay public — so the advertised anonymity set is exactly 1 by
+construction. Solana's flagship privacy primitive has no anonymity set, and the one
+protocol class where an advertised-versus-effective gap could exist had not been studied.
 
 **Comparanda for our result:** Tutela (arXiv:2201.06811) −37 % ± 15 %; Wang et al. −27.34 %
 (ETH) / −46.02 % (BSC); Béres et al. (IEEE DAPPS 2021) anonymity set 400 → ~12 under a
 one-day timing assumption; Kappos et al. (USENIX Security 2018, Zcash) −69.1 % **of value,
 not of members**; Möser et al. (PoPETs 2018, Monero) ring size 11 → effective 1.16–1.80.
 
-**Do not cite arXiv:2510.09433** (Cristodaro, Kraner & Tessone, Tornado Cash cross-chain
-clustering). It was **withdrawn** at v3 on 2025-11-18: *"This paper has been withdrawn by
-the author due to mistakes in the references"* **[V]**. Its numbers still circulate
-widely in search results and are easy to pick up second-hand, which is exactly why the
-withdrawal is recorded here rather than the paper simply being left uncited.
+One paper is deliberately absent from those comparanda. arXiv:2510.09433 (Cristodaro,
+Kraner & Tessone, Tornado Cash cross-chain clustering) was **withdrawn** at v3 on
+2025-11-18 — *"This paper has been withdrawn by the author due to mistakes in the
+references"*. Its numbers still surface in search results and are easy to pick up
+second-hand, so the withdrawal is recorded here rather than the paper being silently
+left uncited.
 
 **Terminology.** "Provenance class" is not standard. Define it once against the
 established vocabulary: *"we partition the anonymity set into* **provenance classes**,
