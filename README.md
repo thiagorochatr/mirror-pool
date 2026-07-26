@@ -43,13 +43,19 @@ So this submission claims exactly two things:
    action's on-chain funding trace leads to the pool and is identical for every
    member.
 2. **The membership side is measured**, from real mainnet data, with the method
-   and its limits published beside the number. Measured on a live pool's
-   depositors: **`ρ = 0.0955`**, inside an unresolved bracket of
-   `0.0350 … 0.1136` and a 95% sampling interval of `0.0848 … 0.1790`, from a
-   clean census with **zero** infrastructure failures and **zero** members whose
-   funding we claim not to exist — 54 of 83 reached a provenance class. Knowing a
-   member's funding class costs that pool roughly an order of magnitude of its
-   nominal anonymity.
+   and its limits published beside the number.
+
+   **The pool measured is not this one.** It is Privacy Cash
+   (`9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD`), an unrelated and live Solana
+   mixer, because `mirror-pool` has no depositors and a measurement of our own
+   empty pool would be a measurement of nothing. So this is a tool pointed at
+   somebody else's protocol, and every number below describes theirs.
+
+   **`ρ = 0.0955`**, inside an unresolved bracket of `0.0350 … 0.1136` and a 95%
+   sampling interval of `0.0848 … 0.1790`, from a clean census with **zero**
+   infrastructure failures and **zero** members whose funding we claim not to
+   exist — 54 of 83 reached a provenance class. Knowing a member's funding class
+   costs that pool roughly an order of magnitude of its nominal anonymity.
 
    The sample's class distribution is heavy-tailed and most of it was never
    observed — Good–Turing coverage 0.65, with Chao1 estimating 108 classes
