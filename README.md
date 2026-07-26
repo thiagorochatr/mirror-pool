@@ -79,12 +79,47 @@ not say. There is a section below of things we deliberately do not claim.
 | `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain. |
 | `crates/mirror-circuit` | R1CS gadget, membership circuit, prover, key export. |
 | `crates/mirror-provenance` | The funding-provenance measurement. |
-| `crates/mirror-cli` | `setup`, `verify-setup`, `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection`, `soak`. |
+| `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle` for members; `setup`, `verify-setup`, `soak` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
 
 **198 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
+
+## Using it
+
+```
+mirror note-new --denomination D --out m1.json     # a note is a local secret
+mirror deposit  --note m1.json                     # escrow it, join the set
+mirror tree                                        # rebuild the accumulator from chain
+mirror spend    --note m1.json --to <addr> --relay relay.json
+mirror settle                                      # permissionless
+```
+
+`docs/USAGE.md` is the walkthrough, and every line of output in it was produced
+by running the command against devnet.
+
+**No server, no indexer, no account with anybody.** The program stores only the
+accumulator's frontier — enough to append a leaf, not enough to prove one is
+there — so a client needs the whole leaf set. `mirror tree` recovers it from the
+transaction history, rebuilds the accumulator, and checks the root against the
+one the program holds:
+
+```
+  leaves recovered  2
+  pool reports      2
+  rebuilt root      0c77cb909067c1a57811be8c05237aff2715c65c6250fdde764ed768096cd732
+  on-chain root     0c77cb909067c1a57811be8c05237aff2715c65c6250fdde764ed768096cd732
+```
+
+A matching root proves the recovered set is complete and correctly ordered, which
+is the precondition a membership proof needs. It means a member can act from a
+machine that has never seen the pool, carrying nothing but their note file — and
+that no operator, including us, sits between a member and their own money.
+
+The relay signs and the member never does, so no member key appears on chain
+after the deposit. Below the crowd floor, `settle` says what it is waiting for
+and why rather than returning an error code.
 
 ## Synchronised actions are the point
 
@@ -477,4 +512,5 @@ that keeps only its successful runs is selecting rather than reporting.
 | `docs/MEASUREMENT_LOG.md` | Every run. |
 | `docs/THREAT_MODEL.md` | The adversary, what holds, and every place it stops. |
 | `docs/PROOF.md` | Devnet signatures for every flow, and the rejections. |
-| `docs/PLAN.md` | What was planned, and what was cut. |
+| `docs/USAGE.md` | Every command, with real output. |
+| `docs/PLAN.md` | The design as decided, and where the shipped protocol departs from it. |

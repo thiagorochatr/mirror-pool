@@ -793,7 +793,7 @@ pub fn keys() -> Result<Keys> {
     generate_reproducible(crate::DEV_SETUP_SEED.as_bytes()).map_err(|e| anyhow!("{e}"))
 }
 
-fn read_keypair(path: &str) -> Result<Keypair> {
+pub fn read_keypair(path: &str) -> Result<Keypair> {
     let expanded = if let Some(rest) = path.strip_prefix("~/") {
         format!("{}/{rest}", std::env::var("HOME")?)
     } else {

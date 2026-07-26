@@ -6,7 +6,15 @@ use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 
 mod chain;
+mod client;
+mod history;
+mod note;
 mod soak;
+
+/// The public devnet cluster, so the common case needs no flag.
+const DEFAULT_URL: &str = "https://api.devnet.solana.com";
+/// Where the Solana CLI keeps its default keypair.
+const DEFAULT_KEYPAIR: &str = "~/.config/solana/id.json";
 
 /// The seed the committed verifying key was generated from.
 ///
@@ -198,6 +206,113 @@ enum Command {
         #[arg(long)]
         expect: Option<String>,
     },
+
+    /// Creates a pool for a denomination. Permissionless, and one per size.
+    InitPool {
+        #[arg(long)]
+        program: String,
+        /// Lamports each deposit escrows. This also names the pool.
+        #[arg(long)]
+        denomination: u64,
+        /// Notes the pool must hold before it will act.
+        #[arg(long, default_value_t = 2)]
+        k_floor: u32,
+        #[arg(long, default_value = DEFAULT_URL)]
+        url: String,
+        #[arg(long, default_value = DEFAULT_KEYPAIR)]
+        keypair: String,
+    },
+
+    /// Draws a fresh note and writes its secret to a file.
+    ///
+    /// The file is the deposit. Nobody can reissue it, which is the same
+    /// property that means nobody can freeze it.
+    NoteNew {
+        /// The pool this note will join, named by its denomination.
+        #[arg(long)]
+        denomination: u64,
+        /// Where to write it. Refuses to overwrite.
+        #[arg(long, default_value = "note.json")]
+        out: PathBuf,
+    },
+
+    /// Escrows a denomination and adds the note to the anonymity set.
+    Deposit {
+        #[arg(long)]
+        program: String,
+        #[arg(long)]
+        note: PathBuf,
+        #[arg(long, default_value = DEFAULT_URL)]
+        url: String,
+        #[arg(long, default_value = DEFAULT_KEYPAIR)]
+        keypair: String,
+    },
+
+    /// Rebuilds the accumulator from chain history and checks it against the pool.
+    ///
+    /// Needs no indexer and no local file. The check is what makes a membership
+    /// proof trustworthy: a rebuilt root that matches the chain's is proof the
+    /// recovered leaf set is complete and correctly ordered.
+    Tree {
+        #[arg(long)]
+        program: String,
+        #[arg(long)]
+        denomination: u64,
+        #[arg(long, default_value = DEFAULT_URL)]
+        url: String,
+    },
+
+    /// Proves membership and records an action, signed by a relay.
+    ///
+    /// The relay signs so the member never does. A member who signs their own
+    /// spend has published the link this pool exists to break.
+    Spend {
+        #[arg(long)]
+        program: String,
+        #[arg(long)]
+        note: PathBuf,
+        /// Who receives the payout.
+        #[arg(long)]
+        to: String,
+        /// The relay's keypair. Must not be the member's wallet.
+        #[arg(long)]
+        relay: String,
+        /// Taken out of the denomination, never added to it.
+        #[arg(long, default_value_t = 0)]
+        relay_fee: u64,
+        /// Call this program instead of paying the beneficiary directly.
+        #[arg(long)]
+        invoke: Option<String>,
+        /// Instruction data for --invoke, hex.
+        #[arg(long, default_value = "")]
+        payload: String,
+        /// How many accounts the invoked instruction takes. Bound into the proof.
+        #[arg(long, default_value_t = 0)]
+        accounts: u8,
+        /// Hand the pool's vault to the callee as a signer, so the pool acts as
+        /// the authority. This is what a stake delegation needs.
+        #[arg(long)]
+        pool_signs: bool,
+        #[arg(long, default_value = DEFAULT_URL)]
+        url: String,
+    },
+
+    /// Executes every pending transfer in one transaction. Permissionless.
+    Settle {
+        #[arg(long)]
+        program: String,
+        #[arg(long)]
+        denomination: u64,
+        #[arg(long, default_value = DEFAULT_URL)]
+        url: String,
+        #[arg(long, default_value = DEFAULT_KEYPAIR)]
+        keypair: String,
+    },
+}
+
+fn parse_program(s: &str) -> Result<solana_program::pubkey::Pubkey> {
+    s.parse()
+        .map_err(|e| anyhow::anyhow!("--program is not a pubkey: {e}"))
 }
 
 fn vk_digest(vk: &mirror_circuit::SolanaVerifyingKey) -> String {
@@ -843,6 +958,104 @@ fn main() -> Result<()> {
             keypair,
             out,
         } => soak::run(&program, &url, &keypair, &out),
+
+        Command::InitPool {
+            program,
+            denomination,
+            k_floor,
+            url,
+            keypair,
+        } => {
+            let chain = chain::Chain::new(&url);
+            let payer = soak::read_keypair(&keypair)?;
+            client::init_pool(
+                &chain,
+                &parse_program(&program)?,
+                denomination,
+                k_floor,
+                &payer,
+            )
+        }
+
+        Command::NoteNew { denomination, out } => client::note_new(denomination, &out),
+
+        Command::Deposit {
+            program,
+            note,
+            url,
+            keypair,
+        } => {
+            let chain = chain::Chain::new(&url);
+            let depositor = soak::read_keypair(&keypair)?;
+            client::deposit(&chain, &parse_program(&program)?, &note, &depositor)
+        }
+
+        Command::Tree {
+            program,
+            denomination,
+            url,
+        } => {
+            let chain = chain::Chain::new(&url);
+            client::tree(&chain, &parse_program(&program)?, denomination).map(|_| ())
+        }
+
+        Command::Spend {
+            program,
+            note,
+            to,
+            relay,
+            relay_fee,
+            invoke,
+            payload,
+            accounts,
+            pool_signs,
+            url,
+        } => {
+            let chain = chain::Chain::new(&url);
+            let relay = soak::read_keypair(&relay)?;
+            let beneficiary: solana_program::pubkey::Pubkey = to
+                .parse()
+                .map_err(|e| anyhow::anyhow!("--to is not a pubkey: {e}"))?;
+            let action = match invoke {
+                None => client::Action::Transfer,
+                Some(target) => client::Action::Invoke {
+                    target: target
+                        .parse()
+                        .map_err(|e| anyhow::anyhow!("--invoke is not a pubkey: {e}"))?,
+                    payload: hex::decode(payload.trim_start_matches("0x"))
+                        .context("--payload is not hex")?,
+                    accounts,
+                    pool_signs,
+                },
+            };
+            client::spend(
+                &chain,
+                &parse_program(&program)?,
+                &note,
+                &beneficiary,
+                &relay,
+                relay_fee,
+                action,
+            )
+        }
+
+        Command::Settle {
+            program,
+            denomination,
+            url,
+            keypair,
+        } => {
+            let chain = chain::Chain::new(&url);
+            let settler = soak::read_keypair(&keypair)?;
+            let now = client::now()?;
+            client::settle(
+                &chain,
+                &parse_program(&program)?,
+                denomination,
+                &settler,
+                now,
+            )
+        }
         Command::VerifySetup { seed, expect } => {
             let keys = mirror_circuit::generate_reproducible(seed.as_bytes())
                 .map_err(|e| anyhow::anyhow!("{e}"))?;

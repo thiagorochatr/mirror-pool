@@ -182,6 +182,92 @@ impl Chain {
             .collect())
     }
 
+    /// Every signature that touched `address`, oldest first.
+    ///
+    /// Pages until the cluster runs out. The RPC returns newest first and pages
+    /// backwards through `before`, so the reversal at the end is what turns this
+    /// into an insertion order — and insertion order is the whole point, because
+    /// a Merkle accumulator rebuilt in the wrong order produces a different root
+    /// and no proof against it will ever verify.
+    ///
+    /// Failed transactions are dropped here rather than by the caller. They
+    /// changed no state, so a rebuild that included them would insert leaves the
+    /// chain never inserted.
+    pub fn signatures_for_address(&self, address: &Pubkey) -> Result<Vec<String>> {
+        let mut out: Vec<String> = Vec::new();
+        let mut before: Option<String> = None;
+        loop {
+            let params = match &before {
+                Some(b) => serde_json::json!([
+                    address.to_string(),
+                    { "limit": 1000, "before": b, "commitment": "confirmed" }
+                ]),
+                None => serde_json::json!([
+                    address.to_string(),
+                    { "limit": 1000, "commitment": "confirmed" }
+                ]),
+            };
+            let page = self.call("getSignaturesForAddress", params)?;
+            let entries = page
+                .as_array()
+                .ok_or_else(|| anyhow!("getSignaturesForAddress: not an array"))?;
+            if entries.is_empty() {
+                break;
+            }
+            for entry in entries {
+                let sig = entry
+                    .get("signature")
+                    .and_then(|s| s.as_str())
+                    .ok_or_else(|| anyhow!("getSignaturesForAddress: entry without signature"))?;
+                before = Some(sig.to_string());
+                if entry.get("err").map(|e| !e.is_null()).unwrap_or(false) {
+                    continue;
+                }
+                out.push(sig.to_string());
+            }
+            if entries.len() < 1000 {
+                break;
+            }
+        }
+        out.reverse();
+        Ok(out)
+    }
+
+    /// A landed transaction, decoded.
+    ///
+    /// Asked for as base64 and deserialised here rather than read out of the
+    /// RPC's parsed JSON, because parsed instruction data arrives base58-encoded
+    /// and decoding that would mean carrying an alphabet this crate otherwise
+    /// has no use for.
+    pub fn transaction(&self, signature: &str) -> Result<Option<Transaction>> {
+        let v = self.call(
+            "getTransaction",
+            serde_json::json!([
+                signature,
+                {
+                    "commitment": "confirmed",
+                    "encoding": "base64",
+                    "maxSupportedTransactionVersion": 0
+                }
+            ]),
+        )?;
+        if v.is_null() {
+            return Ok(None);
+        }
+        let encoded = v
+            .pointer("/transaction/0")
+            .and_then(|t| t.as_str())
+            .ok_or_else(|| anyhow!("getTransaction: {signature} carried no transaction"))?;
+        let raw = base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|e| anyhow!("getTransaction: {signature} is not base64: {e}"))?;
+        // A versioned transaction will not deserialise into this shape. Treating
+        // that as "not one of ours" is correct: this program is only ever called
+        // from legacy transactions built by this CLI, and a versioned one that
+        // happened to touch the pool carries nothing we need.
+        Ok(bincode::deserialize::<Transaction>(&raw).ok())
+    }
+
     pub fn balance(&self, key: &Pubkey) -> Result<u64> {
         let v = self.call(
             "getBalance",
