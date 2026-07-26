@@ -9,6 +9,7 @@
 //! the limits of what the numbers prove are in `docs/PROVENANCE_METHOD.md`.
 #![forbid(unsafe_code)]
 
+pub mod bootstrap;
 pub mod classify;
 pub mod edge;
 pub mod facts;
@@ -18,6 +19,7 @@ pub mod outcome;
 pub mod rpc;
 pub mod trace;
 
+pub use bootstrap::{difference_interval, loss_factor_interval, Interval};
 pub use classify::{AnchorSet, Classifier, SetStructure, Thresholds};
 pub use edge::{FundingEdge, TransactionView};
 pub use facts::{AddressFacts, SigCount};

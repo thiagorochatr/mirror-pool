@@ -124,6 +124,30 @@ enum Command {
         #[arg(long, default_value = "sample.json")]
         sample: PathBuf,
     },
+    /// Compares the loss factor of two populations measured the same way.
+    ///
+    /// `ρ` is the headline because it is independent of `k` and therefore
+    /// comparable across pools of different sizes. This is the command that
+    /// exercises that property rather than asserting it.
+    ///
+    /// The comparison is a bootstrap over the difference, not a subtraction of
+    /// two point estimates. Two samples drawn from the same underlying shape
+    /// will differ by *something*, and reporting that something as a finding is
+    /// the error this command exists to prevent: if the interval contains zero,
+    /// it says so and declines to rank them.
+    Compare {
+        /// The population being examined.
+        #[arg(long)]
+        sample: PathBuf,
+        /// The population it is measured against.
+        #[arg(long)]
+        against: PathBuf,
+        /// A name for each, used only in the output.
+        #[arg(long, default_value = "sample")]
+        label: String,
+        #[arg(long, default_value = "baseline")]
+        against_label: String,
+    },
     /// Runs the whole lifecycle against a live cluster and prints every
     /// signature, so the result is checkable rather than asserted.
     Soak {
@@ -157,6 +181,37 @@ fn vk_digest(vk: &mirror_circuit::SolanaVerifyingKey) -> String {
     let mut hasher = Sha256::new();
     hasher.update(vk.digest_preimage());
     hex::encode(hasher.finalize())
+}
+
+/// Loads a committed sample and returns one class label per resolved member.
+///
+/// Applies the same failure gate `analyze` does. A comparison drawn from a run
+/// whose unresolved bucket is substantially our own infrastructure would be
+/// comparing endpoints rather than populations, and it would do so invisibly —
+/// the difference between two pools and the difference between two collection
+/// runs look identical in the output.
+fn resolved_labels(path: &std::path::Path) -> Result<Vec<String>> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let sample = mirror_provenance::Sample::from_json(&text)?;
+    let (results, census) = mirror_provenance::classify_sample(
+        &sample,
+        &mirror_provenance::AnchorSet::default(),
+        &mirror_provenance::Thresholds::default(),
+        sample.manifest.collected_at,
+    );
+    if !census.may_publish() {
+        anyhow::bail!(
+            "{}: the RPC failure rate is {:.2}%, above the 1% limit. This sample yields no \
+             headline on its own and cannot be one side of a comparison.",
+            path.display(),
+            census.failure_rate() * 100.0
+        );
+    }
+    Ok(results
+        .iter()
+        .filter_map(|(_, o)| o.label().map(|s| s.to_string()))
+        .collect())
 }
 
 fn main() -> Result<()> {
@@ -451,6 +506,29 @@ fn main() -> Result<()> {
                         println!("  t={t:<4} {:.4}", share);
                     }
 
+                    // Sampling error, which the bracket below does not cover.
+                    // These depositors are a draw from a larger population, and
+                    // without an interval over that draw a reader cannot tell a
+                    // real difference between two pools from a lucky sample.
+                    if let Some(i) = mirror_provenance::loss_factor_interval(
+                        &labels,
+                        mirror_provenance::bootstrap::DEFAULT_REPLICATES,
+                        mirror_provenance::bootstrap::DEFAULT_SEED,
+                    ) {
+                        println!();
+                        println!(
+                            "rho sampling interval  {:.4} .. {:.4}   (95%, {} bootstrap replicates \
+                             over the members drawn)",
+                            i.lo, i.hi, i.replicates
+                        );
+                        println!(
+                            "  This is the spread of the estimator, not its distance from the \
+                             truth. Plug-in\n  entropy is biased low at small n, so rho is biased \
+                             HIGH: the real loss factor is\n  plausibly below this interval, and \
+                             equally so for any population measured this way."
+                        );
+                    }
+
                     // The bracket. A point estimate alone would not say whether
                     // the number is driven by what was measured or by what was
                     // not.
@@ -497,6 +575,76 @@ fn main() -> Result<()> {
                     }
                 }
             }
+            Ok(())
+        }
+        Command::Compare {
+            sample,
+            against,
+            label,
+            against_label,
+        } => {
+            let a = resolved_labels(&sample)?;
+            let b = resolved_labels(&against)?;
+
+            let reps = mirror_provenance::bootstrap::DEFAULT_REPLICATES;
+            let seed = mirror_provenance::bootstrap::DEFAULT_SEED;
+
+            let ia = mirror_provenance::loss_factor_interval(&a, reps, seed)
+                .ok_or_else(|| anyhow::anyhow!("{label}: no member resolved to a class"))?;
+            let ib = mirror_provenance::loss_factor_interval(&b, reps, seed)
+                .ok_or_else(|| anyhow::anyhow!("{against_label}: no member resolved to a class"))?;
+
+            let width = label.len().max(against_label.len()).max(10);
+            println!("{:<width$}  members   rho      95% interval", "population");
+            println!(
+                "{label:<width$}  {:>7}   {:.4}   {:.4} .. {:.4}",
+                a.len(),
+                ia.point,
+                ia.lo,
+                ia.hi
+            );
+            println!(
+                "{against_label:<width$}  {:>7}   {:.4}   {:.4} .. {:.4}",
+                b.len(),
+                ib.point,
+                ib.lo,
+                ib.hi
+            );
+
+            let d = mirror_provenance::difference_interval(&a, &b, reps, seed)
+                .ok_or_else(|| anyhow::anyhow!("nothing to compare"))?;
+            println!();
+            println!(
+                "difference ({label} − {against_label}): {:+.4}   95% {:+.4} .. {:+.4}",
+                d.point, d.lo, d.hi
+            );
+            println!();
+
+            if d.excludes_zero() {
+                let (more, less) = if d.point > 0.0 {
+                    (&label, &against_label)
+                } else {
+                    (&against_label, &label)
+                };
+                println!(
+                    "SEPARATED. The interval on the difference excludes zero, so at these sample\n\
+                     sizes {more} is the more provenance-concentrated population of the two —\n\
+                     a member's funding class narrows the guess further there than in {less}."
+                );
+            } else {
+                println!(
+                    "NOT SEPARATED. The interval on the difference contains zero, so these two\n\
+                     populations are indistinguishable at these sample sizes. The point estimates\n\
+                     differ, and that difference is not evidence: quoting it as one would be\n\
+                     reporting the draw."
+                );
+            }
+            println!();
+            println!(
+                "Both estimates share the same downward bias in entropy, so both rho values are\n\
+                 biased high by roughly the same amount. That is why the comparison survives a\n\
+                 bias that neither individual number does."
+            );
             Ok(())
         }
         Command::Soak {
