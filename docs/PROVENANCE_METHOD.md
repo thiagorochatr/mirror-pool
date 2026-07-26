@@ -581,7 +581,42 @@ clean ("who created this wallet"), and one RPC call for most addresses.
 `getSignaturesForAddress` returns **newest-first**, and the only cursors are `before`
 (page backwards) and `until` (stop early); there is no forward cursor and `limit` caps
 at 1,000 **[V]**. So for an address with fewer than 1,000 lifetime signatures, the
-**last element of the first page** is the birth transaction.
+**last element of the first page** is the oldest transaction.
+
+**The oldest transaction is not the birth edge.** It is where the search for the birth
+edge starts. An address routinely appears as a passive participant in someone else's
+transaction — an associated-token-account creation, a multisig configuration, a program
+call that merely references it — *before* it ever receives value, and in that case its
+oldest transaction carries a lamport delta of exactly zero for it.
+
+So the walk continues **forward** from the oldest until a crediting transaction appears,
+bounded by `BIRTH_SCAN_CAP`. Exhausting that budget without finding a credit is
+`birth-scan-exhausted`, which is **budget-unresolved**, and it is a separate outcome
+from `no-incoming-edge` for a reason that is the whole discipline of §6 in miniature:
+
+| outcome | claim | about |
+|---|---|---|
+| `no-incoming-edge` | this address has no funding credit | the chain |
+| `birth-scan-exhausted` | we stopped reading before finding one | us |
+
+> **Failure mode, and this one was ours.** The first implementation here fetched *only*
+> the oldest transaction and, if it was not a credit, reported `no-incoming-edge`. Two
+> seeds checked by hand had 6,457 and 11,491 lifetime signatures, were plainly funded,
+> and were reported as having no funding at all — because one transaction out of eleven
+> thousand had a zero delta. The measured cost was a **six-fold** inflation of the
+> evidence-unresolved bucket in the population where it bit hardest, and the reason it
+> survived review is that the output was indistinguishable from a real finding.
+>
+> It is recorded here rather than quietly repaired because a document that lists other
+> people's failure modes and omits its own is not a method, it is marketing.
+
+> **Failure mode.** Scanning an address's most recent transactions to find its funder.
+> `getSignaturesForAddress` returns newest-first, so taking the first handful is the
+> path of least resistance — and funding is by definition among an address's *oldest*
+> transactions. For any address with more history than the scan window, this reads the
+> wrong end of the record, and it fails **silently**: the output is "unresolved", which
+> is indistinguishable from a genuinely unresolvable wallet. The bias falls hardest on
+> active wallets, which are the ones a provenance study most needs to resolve.
 
 > **Failure mode.** Scanning an address's most recent transactions to find its funder.
 > `getSignaturesForAddress` returns newest-first, so taking the first handful is the

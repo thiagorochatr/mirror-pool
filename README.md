@@ -203,6 +203,14 @@ weakest of them, and none of them is visible in the output.
   wallet's history. Reading the most recent transactions instead is the wrong end
   of the record for any wallet with more than a handful, and manufactures
   "unresolved" for precisely the active wallets worth resolving.
+- **The oldest transaction is where that search starts, not where it ends.** An
+  address often appears in someone else's transaction — an ATA creation, a
+  multisig setup — before it is ever funded, so its oldest transaction credits it
+  nothing. We got this wrong: the tracer read that one transaction and reported
+  "no incoming edge", turning *we stopped reading* into *there is nothing there*
+  for wallets with eleven thousand transactions. Found while building a control
+  population, fixed, every affected number re-collected, and written up in
+  `docs/MEASUREMENT_LOG.md` rather than quietly repaired.
 - **The hub threshold is decoupled from the paging cap.** Collapse them into one
   number — easy to do, since both are "how many signatures do we look at" — and
   "reaches an attributable origin" quietly becomes a synonym for "hit the RPC page
