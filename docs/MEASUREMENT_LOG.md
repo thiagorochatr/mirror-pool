@@ -286,6 +286,52 @@ in Run 4 suggests a different population would have a lighter one.
 including a result that undercuts the argument for measuring privacy pools at
 all, and including a refusal.
 
+## Runs 6 and 7 — pre-registered re-collections, forced by a bug in our own tracer
+
+Committed before either collection started.
+
+**Why these exist.** Run 5's control produced an unresolved bucket six times
+larger than the privacy pool's, in the *evidence* category. Checking two of those
+seeds by hand found the cause, and it was ours: the tracer implemented "the
+oldest transaction, if it is a credit" while the documented rule — in the README,
+in the method, and in the module's own comment — is **the oldest credit**. An
+address whose first transaction merely references it, which is common, was
+reported as having no funding at all.
+
+That is an infrastructure limit reported as evidence about the chain, which §6 of
+the method forbids in as many words. It is fixed, with the exhausted case given
+its own outcome so it counts as budget and never as evidence.
+
+**Every `ρ` published before this point was computed with the broken tracer**,
+including the Run 4 headline. So both populations are collected again.
+
+| | frame | parameters |
+|---|---|---|
+| **Run 6** | the same 100 Privacy Cash depositors as Runs 2–4 | depth 16, page cap 24, birth scan 24 |
+| **Run 7** | the same 100 Marinade depositors as Run 5 | depth 16, page cap 24, birth scan 24 |
+
+Identical parameters to Run 4 and Run 5 respectively, save the birth scan the fix
+introduces. Same frames, not re-drawn.
+
+**Prediction, recorded in advance.** Resolution rises in both, and by more in the
+control, because that is where the misdiagnosed bucket was concentrated. The
+direction of the *comparison* is genuinely unknown, and that is the point of
+running both: the bug suppressed resolution in whichever population had more
+addresses whose first transaction was not their funding, and there is no reason
+to assume that is the one that flatters us.
+
+`ρ` itself may move in either direction. Members who were previously dropped will
+land in classes, and whether they land in the crowded ones or in new singletons
+decides the sign.
+
+**Stopping rule.** One collection per frame at these parameters. Both are
+reported whatever they say — including a corrected headline worse than the one
+already published, and including the comparison failing to separate.
+
+**What is not being re-run.** Runs 1 and 2, which produced no headline: one on a
+size-biased frame, one above the RPC-failure limit. Neither's conclusion depends
+on the birth-edge rule, and both remain in this document as they were.
+
 ## What we do not conclude
 
 **Nothing about how private that pool is, and the headline does not become that
