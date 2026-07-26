@@ -48,13 +48,16 @@ So this submission claims exactly two things:
    member's funding class costs that pool roughly an order of magnitude of its
    nominal anonymity.
 
-   The sample's class distribution is heavy-tailed and two-thirds unobserved,
-   and that is reported as a finding rather than hidden as a caveat: raising the
-   traversal budget between runs resolved ten more members and made coverage
-   *worse*, because the new members landed in new singleton classes rather than
-   in the observed ones. There is no budget at which this distribution becomes
-   well-observed. `docs/MEASUREMENT_LOG.md` has every run, including the two
-   that produced nothing, and Run 4's budget was committed before it ran.
+   The sample's class distribution is heavy-tailed and most of it was never
+   observed — Good–Turing coverage 0.65, with Chao1 estimating 108 classes
+   against 23 seen — and that is reported as a finding rather than buried as a
+   caveat. One earlier run resolved ten *more* members and came back with
+   coverage *worse*, because the new members landed in fresh singleton classes
+   rather than in the observed ones. There is no budget at which this
+   distribution becomes well-observed.
+
+   `docs/MEASUREMENT_LOG.md` has all eight runs, including the three that
+   produced no headline and the one whose pre-registered prediction was wrong.
 
 Anything we cannot support with a measurement whose method is published, we do
 not say. There is a section below of things we deliberately do not claim.
@@ -67,9 +70,9 @@ not say. There is a section below of things we deliberately do not claim.
 | `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain. |
 | `crates/mirror-circuit` | R1CS gadget, membership circuit, prover, key export. |
 | `crates/mirror-provenance` | The funding-provenance measurement. |
-| `crates/mirror-cli` | `setup`, `verify-setup`, `check-endpoint`, `seeds`, `collect`, `analyze`, `soak`. |
+| `crates/mirror-cli` | `setup`, `verify-setup`, `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection`, `soak`. |
 
-**183 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**193 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -180,16 +183,26 @@ mirror selection --earlier lo.json --later hi.json # are the unresolved missing 
 ```
 
 `data/sample-privacycash-run6.json` is the committed artifact behind the
-headline. Every earlier sample stays committed beside it — Run 3, Run 4, and the
-control — so a reader can recompute not only the number but the corrections:
-the budget increase between Runs 3 and 4, and the tracer fix between Runs 4 and
-6. None of it needs RPC access or trust in how our endpoint behaved.
+headline. Six samples are committed in all, and they are what make each
+correction checkable rather than merely described:
 
-`docs/MEASUREMENT_LOG.md` records every run, including the two that produced no
-headline at all: one whose frame was size-biased and resolved nothing, and one
-that came back above the 1% RPC-failure limit. Those two have no committed
-sample, and saying so is part of the record — what is committed is what the
-published numbers come from.
+| file | run | what it is |
+|---|---|---|
+| `sample-smoke.json` | 1 | the size-biased frame. 12 attempted, **0 resolved** |
+| `sample-privacycash.json` | 3 | member-weighted, smaller budget |
+| `sample-privacycash-run4.json` | 4 | bigger budget, broken tracer |
+| `sample-privacycash-run6.json` | **6** | **the headline**, tracer fixed |
+| `sample-marinade.json` | 5 | the control, broken tracer |
+| `sample-marinade-run7.json` | 7 | the control, tracer fixed |
+| `sample-marinade-run8.json` | 8 | the control at double the page cap |
+
+`mirror analyze` on any of them reproduces that run's numbers offline, and
+`mirror selection` on a pair reproduces the missing-at-random check. Run 1's
+sample is committed too, and it is the one that resolved nothing — a failed run
+is evidence about the method and is kept as such.
+
+**Run 2 is the one exception**: it came back above the 1% RPC-failure limit and
+its sample is not committed. Saying so is part of the record.
 
 **Every run since Run 4 had its budget and its prediction committed to git
 before the collection started**, so the parameters are declarations rather than

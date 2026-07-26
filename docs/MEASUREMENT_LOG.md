@@ -3,6 +3,28 @@
 Every collection run, including the ones that produced nothing. A measurement
 project that only records its successful runs is not reporting, it is selecting.
 
+## The artifacts, so every run below is checkable offline
+
+| run | sample | frame |
+|---|---|---|
+| 1 | `data/sample-smoke.json` | `data/seeds-smoke.txt` |
+| 2 | *not committed* — above the RPC-failure limit | `data/seeds-privacycash.txt` |
+| 3 | `data/sample-privacycash.json` | `data/seeds-privacycash.txt` |
+| 4 | `data/sample-privacycash-run4.json` | `data/seeds-privacycash.txt` |
+| **6** | **`data/sample-privacycash-run6.json`** — the headline | `data/seeds-privacycash.txt` |
+| 5 | `data/sample-marinade.json` | `data/seeds-marinade.txt` |
+| 7 | `data/sample-marinade-run7.json` | `data/seeds-marinade.txt` |
+| 8 | `data/sample-marinade-run8.json` | `data/seeds-marinade.txt` |
+
+```
+mirror analyze   --sample data/sample-privacycash-run6.json
+mirror compare   --sample data/sample-privacycash-run6.json --against data/sample-marinade-run8.json
+mirror selection --earlier data/sample-marinade.json --later data/sample-marinade-run7.json
+```
+
+All three are pure and offline. Nothing below needs our endpoint, our key, or
+our word for how a run behaved.
+
 ---
 
 ## Run 1 — 2026-07-25, pipeline validation, no publishable result
