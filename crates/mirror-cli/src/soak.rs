@@ -22,9 +22,11 @@ use solana_program::{
 use solana_signer::Signer;
 use solana_transaction::Transaction;
 
-const DENOMINATION: u64 = 20_000_001; // 0.02 SOL; a pool is per-denomination, so
-                                      // this also picks out a fresh pool for the
-                                      // evidence run.
+// A pool is unique per denomination, so this constant is also what selects the
+// pool. Changing it starts a clean one, which is how the evidence run gets to
+// record its own `init_pool` rather than reusing a pool an earlier run created
+// and leaving the creation step undocumented.
+const DENOMINATION: u64 = 20_000_003; // 0.02 SOL
 const ENTRY_FEE: u64 = 0;
 const K_FLOOR: u32 = 4;
 const RELAY_FEE: u64 = 200_000;
@@ -36,6 +38,41 @@ pub struct Step {
     pub note: String,
 }
 
+/// What the vault actually held, so the solvency claim is checkable from this
+/// artifact instead of from a sentence asserting it.
+///
+/// Saying "the vault closed to its rent-exempt minimum to the lamport" and then
+/// publishing an evidence file containing only signatures asks a reader to take
+/// the interesting part on trust. These are the numbers that sentence is about.
+pub struct Accounting {
+    pub denomination: u64,
+    pub notes_settled: u64,
+    pub relay_fee: u64,
+    pub vault_before_settle: u64,
+    pub vault_after_settle: u64,
+    pub vault_rent_exempt_minimum: u64,
+}
+
+impl Accounting {
+    /// What settlement was obliged to disburse: the full denomination for each
+    /// note, which the relay fee is taken out of rather than added to.
+    pub fn expected_payout(&self) -> u64 {
+        self.denomination.saturating_mul(self.notes_settled)
+    }
+
+    pub fn observed_payout(&self) -> u64 {
+        self.vault_before_settle
+            .saturating_sub(self.vault_after_settle)
+    }
+
+    /// Whether the vault came to rest exactly on its rent-exempt floor, with
+    /// every note paid and not one lamport more.
+    pub fn closed_exactly(&self) -> bool {
+        self.observed_payout() == self.expected_payout()
+            && self.vault_after_settle == self.vault_rent_exempt_minimum
+    }
+}
+
 pub struct Soak {
     client: Chain,
     program_id: Pubkey,
@@ -44,6 +81,7 @@ pub struct Soak {
     vault: Pubkey,
     pub steps: Vec<Step>,
     pub negatives: Vec<(String, String)>,
+    pub accounting: Option<Accounting>,
 }
 
 impl Soak {
@@ -58,6 +96,7 @@ impl Soak {
             vault,
             steps: Vec::new(),
             negatives: Vec::new(),
+            accounting: None,
         }
     }
 
@@ -319,6 +358,10 @@ impl Soak {
     pub fn balance(&self, key: &Pubkey) -> Result<u64> {
         self.client.balance(key)
     }
+
+    pub fn rent_exempt_minimum(&self, space: usize) -> Result<u64> {
+        self.client.rent_exempt_minimum(space)
+    }
     pub fn program_id(&self) -> Pubkey {
         self.program_id
     }
@@ -416,10 +459,35 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     let vault_before = soak.balance(&soak.vault())?;
     soak.settle(&batch)?;
     let vault_after = soak.balance(&soak.vault())?;
+    // The vault carries no data, so its floor is the rent-exempt minimum for a
+    // zero-byte account — asked of the cluster rather than assumed.
+    let vault_floor = soak.rent_exempt_minimum(0)?;
+    let accounting = Accounting {
+        denomination: DENOMINATION,
+        notes_settled: K_FLOOR as u64,
+        relay_fee: RELAY_FEE,
+        vault_before_settle: vault_before,
+        vault_after_settle: vault_after,
+        vault_rent_exempt_minimum: vault_floor,
+    };
     println!(
-        "  vault {vault_before} -> {vault_after} (paid out {})",
-        vault_before.saturating_sub(vault_after)
+        "  vault {vault_before} -> {vault_after} (paid out {}, expected {}, floor {vault_floor})",
+        accounting.observed_payout(),
+        accounting.expected_payout(),
     );
+    // Assert it here rather than only reporting it. A soak that prints an
+    // unexpected number and exits zero is a soak that proves nothing.
+    if !accounting.closed_exactly() {
+        return Err(anyhow!(
+            "vault did not close cleanly: paid out {} against an expected {}, \
+             and came to rest at {} against a rent-exempt floor of {vault_floor}",
+            accounting.observed_payout(),
+            accounting.expected_payout(),
+            accounting.vault_after_settle,
+        ));
+    }
+    println!("  vault closed to its rent-exempt floor exactly");
+    soak.accounting = Some(accounting);
 
     println!("\nnegative path:");
     // A replayed proof: the nullifier record already exists.
@@ -483,6 +551,48 @@ fn write_proof(soak: &Soak, url: &str, out: &std::path::Path) -> Result<()> {
         md.push_str(&format!(
             "| {} | [`{}`](https://explorer.solana.com/tx/{}?cluster={cluster}) | {} |\n",
             s.name, s.signature, s.signature, s.note
+        ));
+    }
+
+    if let Some(a) = &soak.accounting {
+        md.push_str("\n## Vault accounting\n\n");
+        md.push_str(
+            "The accounting invariant is a statement about the vault's lamports, so \
+             here are the lamports. The vault holds escrow and carries no data, which \
+             is what makes its floor the rent-exempt minimum for a zero-byte account \
+             — read from the cluster during the run, not assumed.\n\n",
+        );
+        md.push_str("| quantity | lamports |\n|---|---|\n");
+        md.push_str(&format!("| denomination | {} |\n", a.denomination));
+        md.push_str(&format!("| notes settled | {} |\n", a.notes_settled));
+        md.push_str(&format!(
+            "| relay fee (taken out of the denomination, not added) | {} |\n",
+            a.relay_fee
+        ));
+        md.push_str(&format!(
+            "| vault before settlement | {} |\n",
+            a.vault_before_settle
+        ));
+        md.push_str(&format!(
+            "| vault after settlement | {} |\n",
+            a.vault_after_settle
+        ));
+        md.push_str(&format!(
+            "| rent-exempt minimum, 0 bytes | {} |\n",
+            a.vault_rent_exempt_minimum
+        ));
+        md.push_str(&format!("| **paid out** | **{}** |\n", a.observed_payout()));
+        md.push_str(&format!(
+            "| **owed** (denomination × notes) | **{}** |\n\n",
+            a.expected_payout()
+        ));
+        md.push_str(&format!(
+            "Paid out equals owed, and the vault came to rest on its floor with a \
+             remainder of {} lamports. The soak asserts both and fails the run \
+             otherwise, so this table cannot record a discrepancy and still exit \
+             successfully.\n",
+            a.vault_after_settle
+                .saturating_sub(a.vault_rent_exempt_minimum)
         ));
     }
 

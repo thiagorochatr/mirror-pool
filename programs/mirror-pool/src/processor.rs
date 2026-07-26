@@ -159,8 +159,8 @@ fn init_pool(
 
     let denom_le = denomination.to_le_bytes();
 
-    // The pool account carries the accumulator and, above its own rent, the
-    // reward pool that entry fees accrue into.
+    // The pool account carries the accumulator and its own rent, and nothing
+    // else: entry fees are refused at initialisation, so nothing accrues here.
     create_pda_account(
         payer,
         pool_account,

@@ -61,13 +61,13 @@ not say. There is a section below of things we deliberately do not claim.
 
 | | |
 |---|---|
-| `programs/mirror-pool` | The on-chain program. `submit_spend`, proof and all, measured at **97,860 CU** on a real SVM. |
+| `programs/mirror-pool` | The on-chain program. `submit_spend`, proof and all, measured at **101,123 CU** on a real SVM. |
 | `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain. |
 | `crates/mirror-circuit` | R1CS gadget, membership circuit, prover, key export. |
 | `crates/mirror-provenance` | The funding-provenance measurement. |
 | `crates/mirror-cli` | `setup`, `verify-setup`, `check-endpoint`, `seeds`, `collect`, `analyze`, `soak`. |
 
-**182 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**183 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -78,7 +78,7 @@ The brief asks for an anonymity set for *behaviour*, not for funds. That
 distinction is load-bearing here, so it is tested rather than asserted:
 
 ```
-settled 4 real CPI actions in one transaction, 39,636 CU
+settled 4 real CPI actions in one transaction, 39,644 CU
 ```
 
 `a_crowd_of_members_perform_a_real_protocol_action_together` seeds a pool,
@@ -232,7 +232,13 @@ Live on **devnet** at `8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa`. The whole
 lifecycle ran there against a real validator — pool creation, deposits, spends
 each carrying a Groth16 proof verified by the deployed program's own syscall, and
 a settlement that closed the vault to its rent-exempt minimum to the lamport.
-Every signature is in `docs/PROOF.md`.
+
+`docs/PROOF.md` has every signature *and* the lamports, because "closed to the
+rent-exempt minimum" is the interesting part of that sentence and a list of
+signatures does not show it: 80,000,012 owed against 80,000,012 paid out, and a
+vault resting on its floor with a remainder of zero. The soak asserts both and
+fails the run otherwise, so that table cannot record a discrepancy and still
+exit successfully.
 
 **Not on mainnet, and that is a decision rather than an omission.** The trusted
 setup here is reproducible, not secure: the seed is public, so the toxic waste is

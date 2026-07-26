@@ -73,9 +73,15 @@ vault *after* lamports move rather than inferred from the arithmetic that moved
 them, and the spend counter refuses to exceed the deposit counter outright.
 
 Escrow lives in its own vault PDA holding no data, so the invariant reads against
-a balance containing nothing but escrow and its own rent. Entry fees accrue on
-the pool account instead, where they can never be mistaken for lamports backing
-an unspent note.
+a balance containing nothing but escrow and its own rent. Nothing else is ever
+credited to it, and pool creation refuses a nonzero entry fee, so there is no
+second category of lamports anywhere that could be mistaken for backing for an
+unspent note.
+
+`docs/PROOF.md` carries the devnet numbers: four notes settled, 80,000,012
+lamports owed and 80,000,012 paid, and a vault that came to rest on its
+rent-exempt floor with a remainder of zero. The soak asserts that rather than
+printing it, so a run that disagreed would fail instead of publishing.
 
 ## The circuit
 
@@ -85,7 +91,7 @@ with root `R`, my nullifier is `H1(k)`, and this proof is bound to `action`.*
 Three public inputs, and that is a cost decision. On-chain verification measures
 as `74,179 + 5,661 × N` compute units, so each input costs about 5.7k CU. See
 `GROTH16_INTEGRATION.md`; the figure this repository reproduces directly is the
-whole `submit_spend` instruction at 97,860 CU.
+whole `submit_spend` instruction at 101,123 CU.
 
 | public input | why it cannot be a witness |
 |---|---|
@@ -115,10 +121,10 @@ constants rather than re-deriving them.
 The gadget and the host are each checked against circomlib's published
 `poseidon([1,2])` vector rather than against each other, and the syscall is then
 checked against the host on-chain — the end-to-end suite asserts the root the
-deployed program builds equals the root the host built. Several published Solana
-projects ship a gadget whose native and in-circuit hashes are different
-functions; that failure only appears at proving time, and this is the test that
-catches it.
+deployed program builds equals the root the host built. A gadget whose native and
+in-circuit hashes are different functions is the classic failure here: nothing
+catches it until proving time, and the symptom — proofs that verify nowhere —
+points at everything except the hash. This is the test that catches it.
 
 A pure-Rust Poseidon on SBF overflows the 4 KB stack frame and costs roughly
 1,500× the syscall even where codegen lets it complete, so no arkworks code is

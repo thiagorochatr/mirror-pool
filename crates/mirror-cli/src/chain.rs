@@ -162,4 +162,20 @@ impl Chain {
             .and_then(|b| b.as_u64())
             .ok_or_else(|| anyhow!("balance missing"))
     }
+
+    /// The rent-exempt floor for an account of `space` bytes.
+    ///
+    /// Asked of the cluster rather than computed here. The rent parameters are
+    /// chain state, so a constant baked into this binary would be a second
+    /// source of truth that is right until it is not — and the number is used
+    /// to assert that a vault settled to its floor exactly, which is a claim
+    /// worth grounding in what the cluster itself says.
+    pub fn rent_exempt_minimum(&self, space: usize) -> Result<u64> {
+        let v = self.call(
+            "getMinimumBalanceForRentExemption",
+            serde_json::json!([space, { "commitment": "confirmed" }]),
+        )?;
+        v.as_u64()
+            .ok_or_else(|| anyhow!("rent-exempt minimum missing"))
+    }
 }

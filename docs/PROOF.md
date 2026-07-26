@@ -4,22 +4,40 @@ Every line here is a transaction that landed. Nothing is simulated: the proof is
 
 - cluster: `devnet`
 - program: `8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa`
-- pool: `CoxF5A4YG6bgtZ55WTYpLkXXJWC8oFbpsxbmfhvMe14W`
-- vault: `HCkWvxyREJiLByGHbKt47uXJxjTubDM3V2Fs1zjmPu2p`
+- pool: `ABb58741sCZV6nWtwfK1dEqonLBp2dGDiAe85jBnWa22`
+- vault: `5vWyEoKQjoYMUnyRe1yzSnGGUBfhs654ssxiFadwxB5t`
 
 ## Flows
 
 | step | signature | note |
 |---|---|---|
-| deposit | [`4GCouwQ6xCierPJSoWWcpi7gq91k15YnuAbsQXMFXgK9XcSThsZ6xTamBcdt5R43o2LWUNNUDqosNpQFr48jtE9f`](https://explorer.solana.com/tx/4GCouwQ6xCierPJSoWWcpi7gq91k15YnuAbsQXMFXgK9XcSThsZ6xTamBcdt5R43o2LWUNNUDqosNpQFr48jtE9f?cluster=devnet) | note 5 |
-| deposit | [`NidbwQVPYXtQ65pSs7i5GujuALQVbiKvwMz4mPahtURz9PQuz1qQ7K6ioYGwkYEKZ662LBo92NNHiQYCiJzbrXX`](https://explorer.solana.com/tx/NidbwQVPYXtQ65pSs7i5GujuALQVbiKvwMz4mPahtURz9PQuz1qQ7K6ioYGwkYEKZ662LBo92NNHiQYCiJzbrXX?cluster=devnet) | note 6 |
-| deposit | [`2tkuqJAivXhhdqzgwHk432Pmz5WF7qUZbax5Pps4ufxeppnuiGSFYgxKXfvzfKht6phUEZ5pMDTKqMrY8SPwHz3j`](https://explorer.solana.com/tx/2tkuqJAivXhhdqzgwHk432Pmz5WF7qUZbax5Pps4ufxeppnuiGSFYgxKXfvzfKht6phUEZ5pMDTKqMrY8SPwHz3j?cluster=devnet) | note 7 |
-| deposit | [`4amq6HyxccQtKPXcvpy6jNSQ8EhwxEybFA1f3sy8mFCBXy2PSrYcA5nnrQigiAMguEhVNMEsai3566DWP4UzhUuA`](https://explorer.solana.com/tx/4amq6HyxccQtKPXcvpy6jNSQ8EhwxEybFA1f3sy8mFCBXy2PSrYcA5nnrQigiAMguEhVNMEsai3566DWP4UzhUuA?cluster=devnet) | note 8 |
-| submit_spend | [`2PDhAtCvDRFCW3u3nUaXvWSNjZkS72cdbNGoH1hAbpXoeGRnv4UcUCvnFMkscHnnW3M2kcFe722WieZApHmHrx8H`](https://explorer.solana.com/tx/2PDhAtCvDRFCW3u3nUaXvWSNjZkS72cdbNGoH1hAbpXoeGRnv4UcUCvnFMkscHnnW3M2kcFe722WieZApHmHrx8H?cluster=devnet) | note 4, relay-signed |
-| submit_spend | [`2MoYdaFjZE3GjW6QRdARzrQjprRyHALzC5uEyN7cY7PK4qyCsr2j5AJ7LVc17Ldydk4UNhMR6Eh7TZnKCiydyS4L`](https://explorer.solana.com/tx/2MoYdaFjZE3GjW6QRdARzrQjprRyHALzC5uEyN7cY7PK4qyCsr2j5AJ7LVc17Ldydk4UNhMR6Eh7TZnKCiydyS4L?cluster=devnet) | note 5, relay-signed |
-| submit_spend | [`2d5D67BzdtuPzpXEAZFqK6MCQr92Zn7TH5ynCvuVP5mhacNX7cpZ7o3w4CfzfK1DbRrzHnqiR1xN4az1xtHRu6Zw`](https://explorer.solana.com/tx/2d5D67BzdtuPzpXEAZFqK6MCQr92Zn7TH5ynCvuVP5mhacNX7cpZ7o3w4CfzfK1DbRrzHnqiR1xN4az1xtHRu6Zw?cluster=devnet) | note 6, relay-signed |
-| submit_spend | [`413vqoRynW8WzAFaHuhGx8hrxTz9GcwWf5c5EPjig8Lkx4DUJyXA2RdoF7HhaMRgubciy8fr7tT1zM4UHe8rRdGd`](https://explorer.solana.com/tx/413vqoRynW8WzAFaHuhGx8hrxTz9GcwWf5c5EPjig8Lkx4DUJyXA2RdoF7HhaMRgubciy8fr7tT1zM4UHe8rRdGd?cluster=devnet) | note 7, relay-signed |
-| settle_epoch | [`5WrDG3EoU2kwVe1rEdkiQ8tNP1YbxAkKobquV8QSQoJLJn6qCQg1pbAixSmpzDvJxPcXXtFx3fUWnpdrprbkrAZj`](https://explorer.solana.com/tx/5WrDG3EoU2kwVe1rEdkiQ8tNP1YbxAkKobquV8QSQoJLJn6qCQg1pbAixSmpzDvJxPcXXtFx3fUWnpdrprbkrAZj?cluster=devnet) | 4 spends |
+| init_pool | [`a1Um5GdackChmKVUNUgneYCEFiqQ4hjcqVQFhb9tTeAiYNQBRKCbgCJf8TAYXWP877b95ZDAxcebJWrbrnSVRFm`](https://explorer.solana.com/tx/a1Um5GdackChmKVUNUgneYCEFiqQ4hjcqVQFhb9tTeAiYNQBRKCbgCJf8TAYXWP877b95ZDAxcebJWrbrnSVRFm?cluster=devnet) | denomination 20000003, k_floor 4 |
+| deposit | [`5ZJhBMLfajJBxfxeHgArQ25uHx6XZDp8PH44W4wuE4g15yexTmiC6oJJXfaLBHu9MLXRD3ggwEpB6FVpTMWvV8Py`](https://explorer.solana.com/tx/5ZJhBMLfajJBxfxeHgArQ25uHx6XZDp8PH44W4wuE4g15yexTmiC6oJJXfaLBHu9MLXRD3ggwEpB6FVpTMWvV8Py?cluster=devnet) | note 1 |
+| deposit | [`3cXFiZSM2Z3onk31w8Q7Q21d56ZqrNACEQh4VdzLg2ub8aXURRVuZLL9TKqcnFWAtiftYRoGn9xxERx3RF21zVmX`](https://explorer.solana.com/tx/3cXFiZSM2Z3onk31w8Q7Q21d56ZqrNACEQh4VdzLg2ub8aXURRVuZLL9TKqcnFWAtiftYRoGn9xxERx3RF21zVmX?cluster=devnet) | note 2 |
+| deposit | [`4HSKcvxtBnxSeECCEc2UPCfc4xoUcbiMminMET73A5mAwqPtjR5u2prLgRaxPMcWS18EZB5pbktKhAZdGLXB45LG`](https://explorer.solana.com/tx/4HSKcvxtBnxSeECCEc2UPCfc4xoUcbiMminMET73A5mAwqPtjR5u2prLgRaxPMcWS18EZB5pbktKhAZdGLXB45LG?cluster=devnet) | note 3 |
+| deposit | [`4vXba4TPxyGJeZosLnaDddJom7yerWCVAGoMHQsT1RMwCS7NQ34rEbX1TqA6DUYUV3Pugj7SDY34DN8MaruHMVpP`](https://explorer.solana.com/tx/4vXba4TPxyGJeZosLnaDddJom7yerWCVAGoMHQsT1RMwCS7NQ34rEbX1TqA6DUYUV3Pugj7SDY34DN8MaruHMVpP?cluster=devnet) | note 4 |
+| submit_spend | [`2AxhzG9wa3nVsuxNJf7WmhVYHNQw1QimrFvSdBKgz3ZyyTJbr9D4iDtzVq8Ap7f4vqVrKCcsWLabVUpEhiPmCu6R`](https://explorer.solana.com/tx/2AxhzG9wa3nVsuxNJf7WmhVYHNQw1QimrFvSdBKgz3ZyyTJbr9D4iDtzVq8Ap7f4vqVrKCcsWLabVUpEhiPmCu6R?cluster=devnet) | note 0, relay-signed |
+| submit_spend | [`4n5zRhNC3GpmDAxoauNMsb9xm9FWDgqMMFGSKuB8176xBrAVPCUSx54uBZphVdHbUu3LZeNgXCgQCaUDorynKU73`](https://explorer.solana.com/tx/4n5zRhNC3GpmDAxoauNMsb9xm9FWDgqMMFGSKuB8176xBrAVPCUSx54uBZphVdHbUu3LZeNgXCgQCaUDorynKU73?cluster=devnet) | note 1, relay-signed |
+| submit_spend | [`5TTZhv3kJ1EQpVjdh3nUZt5rgPHSXzfqWfyeGx97vj8XM4BJz1orxc6pYqiSirqGUWUbVkX6zvmiN65RcGcRp71v`](https://explorer.solana.com/tx/5TTZhv3kJ1EQpVjdh3nUZt5rgPHSXzfqWfyeGx97vj8XM4BJz1orxc6pYqiSirqGUWUbVkX6zvmiN65RcGcRp71v?cluster=devnet) | note 2, relay-signed |
+| submit_spend | [`eiczViayoZXPJ5VbEoFSQT6Pu9udpZByo532RA7YTWfKSqoL7GqcuhiCxZmeyekSeyyRW8GKstzNCFLdajW4M7G`](https://explorer.solana.com/tx/eiczViayoZXPJ5VbEoFSQT6Pu9udpZByo532RA7YTWfKSqoL7GqcuhiCxZmeyekSeyyRW8GKstzNCFLdajW4M7G?cluster=devnet) | note 3, relay-signed |
+| settle_epoch | [`44qJhqRE1rxkZqqbgnKoy1vZBoqa2P3dmH6zuwbQy4RgCp72XgUkWqqjiaNR9iUXp2gZndtcxMuLWsH4so6d2TiF`](https://explorer.solana.com/tx/44qJhqRE1rxkZqqbgnKoy1vZBoqa2P3dmH6zuwbQy4RgCp72XgUkWqqjiaNR9iUXp2gZndtcxMuLWsH4so6d2TiF?cluster=devnet) | 4 spends |
+
+## Vault accounting
+
+The accounting invariant is a statement about the vault's lamports, so here are the lamports. The vault holds escrow and carries no data, which is what makes its floor the rent-exempt minimum for a zero-byte account — read from the cluster during the run, not assumed.
+
+| quantity | lamports |
+|---|---|
+| denomination | 20000003 |
+| notes settled | 4 |
+| relay fee (taken out of the denomination, not added) | 200000 |
+| vault before settlement | 80890892 |
+| vault after settlement | 890880 |
+| rent-exempt minimum, 0 bytes | 890880 |
+| **paid out** | **80000012** |
+| **owed** (denomination × notes) | **80000012** |
+
+Paid out equals owed, and the vault came to rest on its floor with a remainder of 0 lamports. The soak asserts both and fails the run otherwise, so this table cannot record a discrepancy and still exit successfully.
 
 ## Rejections
 
