@@ -345,6 +345,45 @@ two samples of the same underlying shape always differ by *something*.
 The unit test that matters here is not that a stark difference separates — that
 is easy. It is that two identically shaped populations do **not**.
 
+### 2.6b Testing the assumption the bracket rests on
+
+The unresolved bracket bounds what the unresolved members *could* have been. Every
+number computed from the resolved ones alone additionally assumes those resolved
+members are a **fair draw of the classes present** — that resolvability is
+independent of provenance class.
+
+That assumption is usually stated and left there. It is testable.
+
+**The design.** Collect one frame at two budgets. Partition the larger run's
+resolved members into
+
+- those the smaller budget also reached — *cheap to trace*, and
+- those only the larger budget reached — *expensive to trace*,
+
+and bootstrap the difference in `ρ` between the two groups.
+
+**Separation is the bad outcome.** If expensive-to-trace members carry a different
+class distribution from cheap ones, the unresolved are not missing at random, the
+resolved subset is biased toward whichever classes happen to be cheap, and no
+amount of extra budget repairs it — more budget moves the boundary without
+removing it. Every cross-population comparison would then be uninterpretable.
+
+**Measured, both populations, on the runs in `MEASUREMENT_LOG.md`:**
+
+| population | cheap | expensive | difference, 95% |
+|---|---|---|---|
+| staking control | 16 members, ρ 0.0743 | 22 members, ρ 0.0585 | −0.0144 … +0.0786 |
+| privacy pool | 39 members, ρ 0.1179 | 15 members, ρ 0.1250 | −0.1507 … +0.0704 |
+
+Neither separates. At the margin these budgets test, being resolvable is not
+picking out particular provenance classes.
+
+**What that licenses, exactly.** It is evidence that the members *just beyond* a
+cheaper budget resemble those inside it. It says nothing about members beyond the
+larger budget, where a heavier tail could still sit, and it is a statement about
+these two populations at these budgets rather than a general law. It is reported
+as evidence, never as the assumption being discharged.
+
 ### 2.7 Reference vectors for unit tests
 
 Exact values, computed at full double precision. Assert to 1e-9.

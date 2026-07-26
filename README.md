@@ -176,6 +176,7 @@ mirror seeds   --program <program-id>  # member-weighted frame, one row per depo
 mirror collect --seeds seeds.txt    # the only networked step; writes sample.json
 mirror analyze --sample sample.json # pure, offline, deterministic
 mirror compare --sample a.json --against b.json   # is the difference real?
+mirror selection --earlier lo.json --later hi.json # are the unresolved missing at random?
 ```
 
 `data/sample-privacycash-run6.json` is the committed artifact behind the
@@ -252,6 +253,27 @@ same way on every population measured the same way, so a *difference* survives
 what neither absolute number does — and when the interval on the difference
 contains zero, the tool says the two are indistinguishable and declines to rank
 them.
+
+### The assumption underneath all of it, tested
+
+Dropping unresolved members is only harmless if the ones that resolve are a fair
+draw of the classes present. Every bracket and every comparison rests on that,
+and it is normally asserted and left alone. It is testable: collect one frame at
+two budgets, split the resolved members into *cheap to trace* and *expensive to
+trace*, and ask whether the two groups have the same class distribution.
+
+| population | cheap | expensive | difference, 95% |
+|---|---|---|---|
+| staking control | 16, ρ 0.0743 | 22, ρ 0.0585 | −0.0144 … +0.0786 |
+| privacy pool | 39, ρ 0.1179 | 15, ρ 0.1250 | −0.1507 … +0.0704 |
+
+Neither separates: at this margin, being resolvable does not pick out particular
+provenance classes. Evidence, not proof — it speaks for the members just beyond
+a cheaper budget, not for those beyond the larger one.
+
+Had it separated, that would have been the more important result, and it would
+have invalidated the cross-population comparison outright rather than merely
+delaying it.
 
 ### The comparison we ran, and refused
 
