@@ -455,6 +455,66 @@ provenance-concentrated than ordinary users. The point estimates say so and the
 sample does not support saying it. `ρ`'s comparability across populations remains
 **demonstrated as machinery and unproven as a finding.**
 
+## Run 8 — pre-registered, and the weakest pre-registration in this document
+
+Committed before the collection started, like Runs 4 to 7. It needs a disclosure
+the others did not.
+
+**The problem with this run, stated first.** Run 7's comparison already told us
+the direction: the difference favours the privacy pool, and the only thing
+standing between that and a publishable finding is the control's resolution rate.
+So this run is being made **with knowledge of which outcome would suit us**, which
+is exactly the condition pre-registration exists to neutralise and cannot fully
+neutralise here. Runs 4 and 6 did not have that problem; this one does.
+
+What can be done about it is done: the budget and the stopping rule are fixed in
+advance, this is the final run of the programme whatever it returns, and this
+paragraph is committed alongside. What cannot be done about it is the knowledge
+itself. A reader should discount this run relative to the others, and the reason
+is written here rather than left for them to notice.
+
+**Why it is worth running anyway.** The refusal in Run 7 rested on a suspicion —
+that resolvability correlates with provenance class — and that suspicion has since
+been **tested and not supported**, on both populations, by the selection check
+above. The specific objection that blocked the comparison is now the objection
+with evidence against it, so raising resolution is no longer papering over a
+confound; it is removing the one gate that remains.
+
+**Frame.** The same 100 Marinade depositors as Runs 5 and 7. Not re-drawn.
+
+**What changes, and only this.** 87 of 92 chains in Run 7 ended at the signature
+page cap. That is the binding constraint and the only one being moved.
+
+| parameter | Run 7 | Run 8 |
+|---|---|---|
+| signature page cap | 24 | **48** |
+| depth | 16 | 16 |
+| birth scan | 24 | 24 |
+
+Depth is unchanged because it was not binding: Run 7 had zero depth-exceeded
+outcomes.
+
+**Prediction, recorded in advance.** Resolution rises above the 46 needed, but not
+by much — the page cap is being doubled against a population where nearly every
+chain hit it, so the marginal member is expensive. ρ for the control most likely
+falls further, because the members still missing are the ones with the longest
+funding chains and those are the least likely to share a class with anyone.
+
+If the control's ρ falls, the difference widens and the comparison separates. **We
+are predicting the result that suits us, having already seen a version of it**,
+and it is on the record so that a reader can hold us to it either way.
+
+**Stopping rule, absolute.** This is the last collection in this document. If the
+control still resolves below half, the comparison is reported as unachieved and
+stays unachieved. If it resolves above half and the difference fails to separate,
+that is reported as the finding. No Run 9 under any outcome.
+
+**Also pre-specified:** the selection check will be run again at the new margin
+(Run 7 → Run 8). If it *does* detect selection there, the comparison is refused
+regardless of the resolution rate, because that would mean the members this run
+added are not a fair draw and the extra resolution bought nothing but a
+better-looking denominator.
+
 ## What we do not conclude
 
 **Nothing about how private that pool is, and the headline does not become that
