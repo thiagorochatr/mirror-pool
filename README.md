@@ -291,21 +291,31 @@ difference: +0.0592   95% +0.0259 .. +0.1229
 
 The interval on the difference excludes zero, and it points the way this
 project's argument wants: the privacy pool reads as the more concentrated
-population. **The tool refuses to report it**, because the control resolves 38
-of 92 members and what survives is its *traceable* subset — and traceability is
-not independent of provenance class. A wallet funded straight from an exchange
-resolves in one hop; one funded through fresh intermediaries exhausts the
-budget. That selection alone can manufacture the difference.
+population. **The tool refuses to report it**, because the control resolves 42
+of 92 members and what survives is its *traceable* subset.
 
 The gate that refuses this did not exist when `compare` was written, and was
 added after seeing the control fall on the wrong side of it. So: **we built the
 check that refuses our own favourable result, after learning the result was
 favourable.** Both the code and that sentence are in the repository.
 
-What it would take is resolution above half on the control — a bigger traversal
-budget, not a different metric. It is not attempted, because Run 7's stopping
-rule was one collection per frame, and a stopping rule that bends when the
-result is close is not one.
+Then we spent a run trying to clear it, having predicted in advance — in the
+committed log, knowing which answer suited us — that a doubled budget would get
+the control above half. **It did not.** Resolution went 38 → 42 against the 46
+needed, and the prediction is on the record as wrong.
+
+That failed run produced the more interesting number anyway: **311 RPC calls per
+additional resolved member, against 50 for the population as a whole.** The
+control is not under-resolved because we were stingy. Its remaining members have
+genuinely long funding chains, and the *staking* pool — where nobody wants
+deniability — turns out to be markedly harder to trace than the privacy pool,
+which resolved at 65% for a third of the cost per member. We do not claim to know
+why, and the explanation that would flatter us is one of the two candidates,
+which is exactly why we are not asserting it.
+
+The comparison is reported as **unachieved**. There was no further run: the
+stopping rule was fixed before collection, and a stopping rule that bends when
+the result is close is not one.
 
 ### The folklore formula is inverted
 

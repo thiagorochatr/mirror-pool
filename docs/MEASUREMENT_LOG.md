@@ -515,6 +515,69 @@ regardless of the resolution rate, because that would mean the members this run
 added are not a fair draw and the extra resolution bought nothing but a
 better-looking denominator.
 
+### Run 8 — result: the prediction was wrong and the comparison stays unachieved
+
+Helius, archival probes passed. 3,133 calls, 699 seconds.
+
+```
+attempted 92 | resolved 42 | evidence-unresolved 0 | budget-unresolved 50
+             | scope-unresolved 0 | rpc failures 0 (0.00%)
+```
+
+| | Run 7 | Run 8 |
+|---|---|---|
+| signature page cap | 24 | 48 |
+| rpc calls | 1,887 | 3,133 |
+| resolved | 38 | **42** |
+| needed for the gate | 46 | 46 |
+| ρ (point) | 0.0362 | 0.0335 |
+| classes observed | 30 | 33 |
+
+**The prediction failed.** It said resolution would rise above the 46 needed. It
+rose to 42. Doubling the page cap bought **four members for 1,246 calls** — about
+311 calls each, against an average of 50 in Run 7. The prediction that ρ would
+fall was right, and the one that mattered was not.
+
+**So the comparison is refused again, and this time it is final.**
+
+```
+privacy pool     54   ρ 0.0955   resampled 0.0848 .. 0.1790   bias +0.0276
+staking control  42   ρ 0.0335   resampled 0.0428 .. 0.0657   bias +0.0188
+
+difference: +0.0619   95% +0.0307 .. +0.1267
+```
+
+The difference still excludes zero and still points our way. The gate still holds
+it back. Run 8's stopping rule was absolute and is honoured: there is no Run 9.
+
+**The selection check declined to run at the new margin**, and correctly: only 4
+members were newly resolved, below the 5 it requires, so it reported nothing
+rather than computing a number from four points. The check at the earlier margin
+stands and is the evidence on record.
+
+### What the marginal cost says, which is the actual finding here
+
+The interesting number in Run 8 is not `ρ`. It is **311 calls per additional
+resolved member, against 50 for the population as a whole** — a sixfold
+deterioration from doubling the budget once.
+
+That reframes the refusal. The control is not under-resolved because we were
+stingy; it is under-resolved because the members still missing have genuinely
+long funding chains, and each further one costs more than the last. Reaching 46
+would plausibly cost as much again as the entire run, and reaching a comfortable
+margin above it, several times that.
+
+**A depositor population that resists provenance tracing this hard is itself a
+result**, and it is the opposite of what one would guess: the *staking* pool —
+where nobody is seeking deniability — is markedly harder to trace than the
+privacy pool, whose depositors resolved at 65% for a third of the cost per member.
+
+We do not claim to know why. Two candidates we cannot separate with this data:
+staking attracts older wallets with deeper histories, or privacy-pool depositors
+disproportionately fund from exchanges, which terminate in one hop. The second
+would, if true, sharpen the concentration finding rather than soften it — which
+is precisely why we are not asserting it.
+
 ## What we do not conclude
 
 **Nothing about how private that pool is, and the headline does not become that
