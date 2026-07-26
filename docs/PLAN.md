@@ -143,6 +143,10 @@ Payouts are capped per epoch and gated on the `k` floor, so a lone participant
 cannot recycle their own fee back to themselves — a reward scheme that pays out
 without a crowd gate is not an incentive, it is a refund with extra steps.
 
+> **Shipped instead:** none of this. The dwell mechanism was cut, and once it
+> was, the fee funding it had no recipient — so the fee was cut as well, by
+> refusing any nonzero value at pool creation. See *What actually got cut*.
+
 ### Provenance measurement
 
 A separate crate collects real mainnet funding data and reports effective
@@ -207,9 +211,14 @@ a decision rather than an overrun:
 - **`open_epoch` and epoch state.** Folded into `submit_spend` and
   `settle_epoch`, which need none: a spend records its own timestamp and
   settlement reads the clock. Four instructions instead of seven.
-- **`claim_reward` and dwell rewards.** Cut to a flat entry fee, as the cut line
-  above anticipated. The fees accrue on the pool account and no instruction pays
-  them out, which is a known loose end rather than a feature.
+- **`claim_reward`, dwell rewards, and the entry fee with them.** The rewards
+  were cut to a flat entry fee, as the cut line above anticipated — and then the
+  fee was cut too, because a fee with no payout is not a simplification, it is a
+  fund trap. Fees accrue on the pool account; no instruction pays them out; and
+  none can be added without an authority this program deliberately does not
+  have. `Pool::initialise` now refuses any nonzero entry fee, so the trap is
+  unrepresentable rather than documented. The field stays in the layout for a
+  version that ships a real payout path.
 - **`self_spend`.** Not built because it is not needed: a member relays for
   themselves at zero fee and settles their own batch after the timeout. Same
   exit, one fewer instruction, less attack surface. Pinned by

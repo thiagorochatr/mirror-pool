@@ -138,9 +138,16 @@ is no confidential-value layer here.
 ### Small crowds
 
 `k_floor` is enforced against notes in the tree, and a pool whose deposits are
-mostly Sybils of one actor has a large nominal `k` and a small real one. The
-entry fee prices set inflation; it does not prevent it. The provenance
-measurement is the honest reading of what the set is worth.
+mostly Sybils of one actor has a large nominal `k` and a small real one.
+
+Nothing in this program prevents that, and the entry fee that was meant to price
+it does not exist: it would have accrued on the pool account with no instruction
+able to pay it out, so pool creation refuses any nonzero value. What remains as a
+cost to a Sybil is the denomination itself, which is recoverable, plus rent and
+fees, which are not — a weak deterrent, stated as one.
+
+The provenance measurement is the honest reading of what a set is actually worth,
+and it is the reason this limitation is measurable rather than merely admitted.
 
 ### Not audited
 

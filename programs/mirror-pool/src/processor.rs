@@ -223,25 +223,24 @@ fn deposit(program_id: &Pubkey, accounts: &[AccountInfo], commitment: [u8; 32]) 
     // the insert, after lamports had already moved.
     let leaf = Field::from_bytes(commitment).map_err(MirrorProgramError::from)?;
 
-    let (denomination, entry_fee) = {
+    let denomination = {
         let mut data = pool_account.try_borrow_mut_data()?;
         let pool = Pool::load(&mut data)?;
         if *vault_account.key != vault_address(program_id, pool_account.key).0 {
             return Err(MirrorProgramError::InvalidPda.into());
         }
-        (pool.denomination(), pool.entry_fee())
+        pool.denomination()
     };
 
+    // A depositor pays the denomination and nothing else. There is no fee
+    // transfer here because `Pool::initialise` refuses a nonzero entry fee —
+    // fees would accrue on the pool account with no instruction able to pay
+    // them out, and no authority that could be given one. Should a future
+    // version add a real payout path, the collection belongs here.
     solana_program::program::invoke(
         &system_instruction::transfer(depositor.key, vault_account.key, denomination),
         &[depositor.clone(), vault_account.clone(), system.clone()],
     )?;
-    if entry_fee > 0 {
-        solana_program::program::invoke(
-            &system_instruction::transfer(depositor.key, pool_account.key, entry_fee),
-            &[depositor.clone(), pool_account.clone(), system.clone()],
-        )?;
-    }
 
     let mut data = pool_account.try_borrow_mut_data()?;
     let mut pool = Pool::load(&mut data)?;

@@ -190,9 +190,22 @@ impl<'a> Pool<'a> {
         if !(MIN_K_FLOOR..=MAX_K_FLOOR).contains(&k_floor) {
             return Err(MirrorProgramError::InvalidParameter);
         }
-        // An entry fee at or above the denomination costs more to join than the
-        // note is worth.
-        if entry_fee >= denomination {
+        // The entry fee must be zero, and this is a deliberate refusal rather
+        // than an unfinished feature.
+        //
+        // Fees accrue on the pool account. The dwell-reward mechanism that was
+        // meant to pay them out was cut, and it cannot simply be added back:
+        // paying them to anyone requires an authority, and this program has
+        // none by design — there is deliberately no key whose loss freezes the
+        // pool. So a nonzero fee here would be lamports that every depositor
+        // pays and that no instruction, and no person, can ever recover.
+        //
+        // Permitting that and documenting it as a known gap would be leaving a
+        // fund trap armed behind a paragraph. The field stays in the layout
+        // because the accessor and the offsets are already load-bearing and a
+        // future version with a real payout path will want it; until that path
+        // exists, the only permitted value is zero.
+        if entry_fee != 0 {
             return Err(MirrorProgramError::InvalidParameter);
         }
 
@@ -323,11 +336,7 @@ mod tests {
         let mut data = blank();
         {
             let mut pool = Pool::load_uninitialised(&mut data).unwrap();
-            // The fee has to stay below the denomination, so scale it rather
-            // than hardcoding one that only suits large pools.
-            let entry_fee = denomination / 100;
-            pool.initialise(254, 253, denomination, entry_fee, 4)
-                .unwrap();
+            pool.initialise(254, 253, denomination, 0, 4).unwrap();
         }
         data
     }
@@ -339,7 +348,7 @@ mod tests {
         assert_eq!(pool.bump(), 254);
         assert_eq!(pool.vault_bump(), 253);
         assert_eq!(pool.denomination(), 100_000);
-        assert_eq!(pool.entry_fee(), 1_000); // 1% of 100_000
+        assert_eq!(pool.entry_fee(), 0);
         assert_eq!(pool.k_floor(), 4);
         assert_eq!(pool.deposit_count(), 0);
         assert_eq!(pool.spend_count(), 0);
@@ -470,15 +479,28 @@ mod tests {
         assert!(pool.initialise(1, 1, 1_000_000, 0, MIN_K_FLOOR).is_ok());
     }
 
+    /// A nonzero entry fee is unrecoverable, so it is refused at creation
+    /// rather than documented as a caveat.
+    ///
+    /// Fees land on the pool account and no instruction pays them out; adding
+    /// one would require an authority this program deliberately does not have.
+    /// Any nonzero value is therefore lamports that depositors pay and nobody
+    /// can ever retrieve — including a value well below the denomination, which
+    /// is the case an "is the fee affordable" check would happily wave through.
     #[test]
-    fn an_entry_fee_worth_more_than_the_note_is_refused() {
+    fn a_nonzero_entry_fee_is_refused() {
         let mut data = blank();
         let mut pool = Pool::load_uninitialised(&mut data).unwrap();
-        assert!(matches!(
-            pool.initialise(1, 1, 1_000, 1_000, 4),
-            Err(MirrorProgramError::InvalidParameter)
-        ));
-        assert!(pool.initialise(1, 1, 1_000, 999, 4).is_ok());
+        for fee in [1, 999, 1_000, u64::MAX] {
+            assert!(
+                matches!(
+                    pool.initialise(1, 1, 1_000, fee, 4),
+                    Err(MirrorProgramError::InvalidParameter)
+                ),
+                "entry fee {fee} must be refused: nothing can pay it out"
+            );
+        }
+        assert!(pool.initialise(1, 1, 1_000, 0, 4).is_ok());
     }
 
     #[test]
