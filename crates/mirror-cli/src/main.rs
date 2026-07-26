@@ -148,6 +148,29 @@ enum Command {
         #[arg(long, default_value = "baseline")]
         against_label: String,
     },
+    /// Tests whether *being resolvable* is correlated with provenance class.
+    ///
+    /// This is the assumption every unresolved bracket and every cross-population
+    /// comparison quietly rests on. Dropping unresolved members is only harmless
+    /// if the members that resolve are a fair draw of the classes present. If
+    /// easy-to-trace members are systematically exchange-funded and hard ones are
+    /// systematically something else, then the resolved subset is not the
+    /// population, and a difference between two such subsets can be pure
+    /// selection.
+    ///
+    /// Given the same frame collected at two budgets, it splits the larger run's
+    /// resolved members into those the smaller run also resolved and those only
+    /// the larger one reached, and asks whether those two groups have the same
+    /// class distribution. **Separation is bad news** — it is evidence that the
+    /// unresolved are not missing at random.
+    Selection {
+        /// The smaller-budget collection.
+        #[arg(long)]
+        earlier: PathBuf,
+        /// The larger-budget collection of the same frame.
+        #[arg(long)]
+        later: PathBuf,
+    },
     /// Runs the whole lifecycle against a live cluster and prints every
     /// signature, so the result is checkable rather than asserted.
     Soak {
@@ -181,6 +204,27 @@ fn vk_digest(vk: &mirror_circuit::SolanaVerifyingKey) -> String {
     let mut hasher = Sha256::new();
     hasher.update(vk.digest_preimage());
     hex::encode(hasher.finalize())
+}
+
+/// Loads a committed sample and returns each seed's class label, where it
+/// reached one.
+///
+/// Keyed by seed rather than flattened, so two collections of the same frame can
+/// be aligned member by member.
+fn labels_by_seed(path: &std::path::Path) -> Result<std::collections::BTreeMap<String, String>> {
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let sample = mirror_provenance::Sample::from_json(&text)?;
+    let (results, _) = mirror_provenance::classify_sample(
+        &sample,
+        &mirror_provenance::AnchorSet::default(),
+        &mirror_provenance::Thresholds::default(),
+        sample.manifest.collected_at,
+    );
+    Ok(results
+        .into_iter()
+        .filter_map(|(seed, o)| o.label().map(|l| (seed, l.to_string())))
+        .collect())
 }
 
 /// Loads a committed sample and returns one class label per resolved member.
@@ -701,6 +745,96 @@ fn main() -> Result<()> {
                  biased high by roughly the same amount. That is why the comparison survives a\n\
                  bias that neither individual number does."
             );
+            Ok(())
+        }
+        Command::Selection { earlier, later } => {
+            let before = labels_by_seed(&earlier)?;
+            let after = labels_by_seed(&later)?;
+
+            // Members the larger budget reached, split by whether the smaller
+            // one reached them too.
+            let mut easy: Vec<String> = Vec::new();
+            let mut hard: Vec<String> = Vec::new();
+            for (seed, label) in &after {
+                if before.contains_key(seed) {
+                    easy.push(label.clone());
+                } else {
+                    hard.push(label.clone());
+                }
+            }
+
+            println!("earlier  {} resolved", before.len());
+            println!(
+                "later    {} resolved  ({} of them newly)",
+                after.len(),
+                hard.len()
+            );
+            println!();
+
+            if hard.len() < 5 {
+                println!(
+                    "Only {} members were newly resolved. That is too few to say anything \
+                     about\nwhether resolvability selects on class, and this check reports \
+                     nothing rather\nthan reporting a number computed from it.",
+                    hard.len()
+                );
+                return Ok(());
+            }
+
+            let reps = mirror_provenance::bootstrap::DEFAULT_REPLICATES;
+            let seed = mirror_provenance::bootstrap::DEFAULT_SEED;
+            let ie = mirror_provenance::loss_factor_interval(&easy, reps, seed)
+                .ok_or_else(|| anyhow::anyhow!("no easily-resolved members"))?;
+            let ih = mirror_provenance::loss_factor_interval(&hard, reps, seed)
+                .ok_or_else(|| anyhow::anyhow!("no newly-resolved members"))?;
+
+            println!("group                    members   rho      resampled 2.5-97.5%");
+            println!(
+                "resolved at both budgets  {:>7}   {:.4}   {:.4} .. {:.4}",
+                easy.len(),
+                ie.point,
+                ie.lo,
+                ie.hi
+            );
+            println!(
+                "only at the larger        {:>7}   {:.4}   {:.4} .. {:.4}",
+                hard.len(),
+                ih.point,
+                ih.lo,
+                ih.hi
+            );
+
+            let d = mirror_provenance::difference_interval(&easy, &hard, reps, seed)
+                .ok_or_else(|| anyhow::anyhow!("nothing to compare"))?;
+            println!();
+            println!(
+                "difference (easy − hard): {:+.4}   95% {:+.4} .. {:+.4}",
+                d.point, d.lo, d.hi
+            );
+            println!();
+
+            if d.excludes_zero() {
+                println!(
+                    "SELECTION DETECTED. Members that only a larger budget reaches have a\n\
+                     measurably different class distribution from those any budget reaches.\n\n\
+                     The unresolved are therefore NOT missing at random, and dropping them is\n\
+                     not neutral: the resolved subset of a population is biased toward whichever\n\
+                     classes happen to be cheap to trace. Every unresolved bracket in this\n\
+                     project is still a valid bound, but no comparison between two populations\n\
+                     at different resolution rates can be trusted, and more budget does not fix\n\
+                     that — it moves the boundary without removing it."
+                );
+            } else {
+                println!(
+                    "NO SELECTION DETECTED at this margin. The members that needed a larger\n\
+                     budget carry a class distribution indistinguishable from those that did\n\
+                     not, so at this margin resolvability is not picking out particular\n\
+                     provenance classes.\n\n\
+                     This is evidence, not proof. It says the members just beyond the cheaper\n\
+                     budget look like the ones inside it; it cannot speak for members beyond\n\
+                     the larger budget too, and a heavier tail could still be hiding there."
+                );
+            }
             Ok(())
         }
         Command::Soak {

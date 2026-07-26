@@ -84,7 +84,21 @@ pub struct CollectionConfig {
     /// So the walk continues forward from the oldest until a credit appears.
     /// Exhausting this budget without finding one is a **budget** outcome and is
     /// recorded as such, never as evidence about the address.
+    ///
+    /// Defaulted on deserialisation so that samples committed before this field
+    /// existed still load. A committed artifact is the whole point of the
+    /// two-pass split — anyone must be able to recompute a published number from
+    /// it years later — and a schema change that silently makes old samples
+    /// unreadable would quietly retire the evidence for every earlier claim.
+    #[serde(default = "default_birth_scan_cap")]
     pub birth_scan_cap: u32,
+}
+
+/// What runs before this field existed effectively did: read exactly one
+/// transaction and stop. Recorded honestly rather than backfilled with today's
+/// value, so an old sample reports the budget it was actually collected under.
+fn default_birth_scan_cap() -> u32 {
+    1
 }
 
 impl Default for CollectionConfig {
