@@ -14,8 +14,10 @@ mirror-core        field, Poseidon, Merkle accumulator, notes   (linked on-chain
 mirror-circuit     R1CS gadget, membership circuit, prover      (host only)
 mirror-pool        the on-chain program
 mirror-provenance  funding-provenance measurement               (host only)
-mirror-cli         setup, verify-setup, check-endpoint, seeds, collect,
-                   analyze, compare, selection, soak
+mirror-cli         members:  init-pool, note-new, deposit, tree, spend, settle
+                   operators: setup, verify-setup, soak, crowd
+                   measuring: check-endpoint, seeds, collect, analyze,
+                              compare, selection
 ```
 
 `mirror-core` is shared by the program and the host deliberately: a commitment,
@@ -92,11 +94,11 @@ with root `R`, my nullifier is `H1(k)`, and this proof is bound to `action`.*
 Three public inputs, and that is a cost decision. On-chain verification measures
 as `74,179 + 5,661 × N` compute units, so each input costs about 5.7k CU. See
 `GROTH16_INTEGRATION.md`; the figure this repository reproduces directly is the
-whole `submit_spend` instruction at 101,127 CU.
+whole `submit_spend` instruction at about 101,000 CU.
 
 | public input | why it cannot be a witness |
 |---|---|
-| `root` | the program checks it against its own root history |
+| `root` | the program checks it against its own root history — the last `ROOT_HISTORY = 128` roots, so a proof stays valid for 128 deposits after the one it was built against, and no longer |
 | `nullifier` | the program records it to prevent replay |
 | `action_binding` | the program recomputes it from the action it executes |
 
@@ -108,7 +110,7 @@ participates in verification only through the R1CS columns that reference it; an
 input used in no constraint has an all-zero column, its `gamma_abc` term is the
 identity, and *any* value satisfies the equation. Without that one constraint a
 relay could swap the action after proving and the proof would still verify.
-`tests/onchain_layout.rs` tampers with that exact input and asserts the real
+`crates/mirror-circuit/tests/onchain_layout.rs` tampers with that exact input and asserts the real
 verifier rejects it, so the property is checked rather than reasoned about.
 
 ### Three-way parity
@@ -139,7 +141,12 @@ is worse for every member in it. There is no privileged authority, so no key
 whose loss freezes the escrow.
 
 **`deposit`** — escrows exactly the pool's denomination, read from the pool and
-never from the instruction, and appends the commitment to the accumulator.
+never from the instruction, and appends the commitment to the accumulator. The
+tree is `TREE_DEPTH = 20`, so a pool holds up to 1,048,576 notes; the program
+keeps only the frontier — one node per level — which is enough to append a leaf
+and produce a root, and not enough to prove any particular leaf is in the tree.
+Recovering the leaves is the client's job, and `mirror tree` does it from the
+transaction history.
 
 **`submit_spend`** — verifies the Groth16 proof on-chain, burns the nullifier,
 records the authorised action. Pays out nothing.
@@ -280,7 +287,7 @@ is how a provenance figure comes to mean less than it appears to.
 |---|---|---|
 | unresolved bracket | what if the unresolved had landed differently? | exact bound over both extremes |
 | sampling spread | how much of `ρ` is *which* members we drew? | bootstrap over members, seeded and published |
-| selection | are the resolved members a fair draw of the classes? | one frame at two budgets, cheap vs expensive to trace |
+| selection | are the resolved members a fair draw of the classes? | one frame at two budgets, cheap vs expensive to trace (see `README.md` for which published pair is a genuine budget margin) |
 
 The third is the one usually left as an assumption. `mirror selection` tests it,
 and **separation is the bad outcome**: it would mean the unresolved are not

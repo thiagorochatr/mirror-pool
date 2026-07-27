@@ -1,6 +1,19 @@
 # Funding-Provenance Effective-k — measurement specification
 
-Status: specification, v1. Implement against this document.
+Status: specification, v1 — and `crates/mirror-provenance` was built against it.
+
+Read it as the method rather than as a description of the code. Most of it
+shipped; three things did not, and each is marked where it appears rather than
+quietly dropped:
+
+- **`verify-labels`** (§5.4) was specified to re-check every curated anchor
+  against the chain. The anchor set exists in `classify.rs`; the command that
+  falsifies it does not, so Tier-2 labels rest on their cited sources alone.
+- **The multi-file artifact layout** (§7.3) became one JSON document per run.
+  What shipped is described there.
+- **The `n = 1,100` baseline frame** (§3) was not collected. The published runs
+  are the smaller ones in `docs/MEASUREMENT_LOG.md`, and what that costs the
+  estimate is stated there rather than here.
 
 Every empirical number below names its source. Numbers tagged **[M 2026-07-25]** were
 measured directly against Solana mainnet on that date (probe method stated inline);
@@ -79,7 +92,7 @@ over the survivors. Prior over `X` is uniform on `A`.
 - compromise of any party.
 
 Those are separate channels. Folding any of them in inflates the number and destroys
-comparability with the published Ethereum results we benchmark against (§10.3).
+comparability with the published Ethereum results we benchmark against (§10.2).
 
 ### 1.2 The two-sidedness rule
 
@@ -659,14 +672,6 @@ from `no-incoming-edge` for a reason that is the whole discipline of §6 in mini
 > is indistinguishable from a genuinely unresolvable wallet. The bias falls hardest on
 > active wallets, which are the ones a provenance study most needs to resolve.
 
-> **Failure mode.** Scanning an address's most recent transactions to find its funder.
-> `getSignaturesForAddress` returns newest-first, so taking the first handful is the
-> path of least resistance — and funding is by definition among an address's *oldest*
-> transactions. For any address with more history than the scan window, this reads the
-> wrong end of the record, and it fails **silently**: the output is "unresolved", which
-> is indistinguishable from a genuinely unresolvable wallet. The bias falls hardest on
-> active wallets, which are the ones a provenance study most needs to resolve.
-
 **Independent corroboration of the rule.** Dune Spellbook contains
 `addresses_events_solana.first_funded_by`, described in its own `schema.yml` as *"Table
 showing who first funded each Solana address in SOL"* — i.e. the canonical open
@@ -857,7 +862,8 @@ and our derived artifact.
 | `ashpoolin/gelato.sh` | MIT | 24 Solana CEX addresses |
 | `0xB10C/ofac-sanctioned-digital-currency-addresses` | MIT | `sanctioned_addresses_SOL.json` |
 
-Ship as `labels/anchors.json`, one record per address:
+The specification's record shape, one per address — the anchor set that shipped
+lives in `classify.rs` rather than in a file:
 
 ```json
 {
@@ -872,9 +878,14 @@ Ship as `labels/anchors.json`, one record per address:
 }
 ```
 
-Ship `mirror-provenance verify-labels`, which re-checks each anchor against the chain
-(e.g. that a claimed exchange fee payer still pays for withdrawals from its claimed hot
-wallets). **The anchor list must be falsifiable, not asserted.**
+The specification called for `verify-labels`, re-checking each anchor against the
+chain (e.g. that a claimed exchange fee payer still pays for withdrawals from its
+claimed hot wallets), because **an anchor list must be falsifiable, not
+asserted**. *This did not ship.* The anchor set is in `classify.rs` and every
+entry cites its source, but nothing re-derives it from the chain, so a stale
+anchor would go unnoticed. It is the largest unclosed gap in the label ladder
+and the reason Tier-2 results are reported beside Tier-1 rather than instead of
+them.
 
 **OFAC.** Use the **XML** feed, not the CSV: the CSV export omits them.
 `https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.XML`
@@ -1021,9 +1032,14 @@ the same set.
 - `MIRROR_RPC=replay` — runs **entirely offline** from the committed store. This is the
   default in CI.
 
-Content-addressed: `data/raw/<sha256>.json`; index `data/index.jsonl` mapping
+Content-addressed: `data/raw/<sha256>.json`, with an index mapping
 `(method, canonical_params) → sha256`. Canonical params = JSON with sorted keys, no
 whitespace.
+
+*Specified, not shipped.* `rpc.rs` implements the `slot ≤ S` filter, the paging
+and the failure taxonomy below; the on-disk cache is not built, because no run
+here was large enough to need one. The runs are reproducible from their
+committed sample files instead — see §7.3.
 
 ### 7.3 On-disk format
 
@@ -1044,19 +1060,26 @@ belong in git. **Commit the projection plus the hash of the original.**
 }
 ```
 
-In-repo artifacts (all small):
+**What shipped.** One file per run rather than the several this section
+originally specified, because the runs are small enough that splitting them buys
+nothing and costs a reader a join. `mirror collect` writes a single JSON
+document with three top-level keys:
 
-| file | contents | size at n=2,000 |
-|---|---|---|
-| `data/frame.jsonl` | sampled slots + blockhashes | ~100 KB |
-| `data/sample.jsonl` | selected addresses + selection ordinal + stratum | ~200 KB |
-| `data/traces.jsonl` | per-address path, edges, terminal class, rule fired, flags | ~2 MB |
-| `labels/anchors.json` | Tier-2 anchors | ~100 KB |
-| `manifest.json` | §7.5 | ~4 KB |
+| key | contents |
+|---|---|
+| `manifest` | §7.5 — endpoint, archival probe, collection time, every threshold, the RPC call count, and the exclusion and ambiguity rates |
+| `chains` | one traced funding chain per sampled address: the path, the edges, the terminal class, the rule that fired, and the failure flags |
+| `facts` | the sampled address set, in selection order |
 
-Bulk projections go to a tagged GitHub Release with checksums recorded in-repo. Ship
-`--verify-projection`, which re-fetches originals and re-derives the projection
-byte-for-byte.
+The runs published here are in `data/sample-*.json` — around 200 KB each at
+n ≈ 80–100 traced chains, which is small enough to commit whole. `mirror
+analyze` reads one of these and computes every metric in §2 from it, so a reader
+can rerun the analysis without touching an RPC endpoint, and `mirror compare`
+takes two.
+
+The record/replay design in §7.2 exists so that a bigger collection could ship
+its raw responses separately with checksums recorded in-repo. No run here is
+large enough to need that.
 
 ### 7.4 `first_funded_by` as cross-check, not collection path
 
@@ -1114,8 +1137,12 @@ maintained `goog_blockchain_*` datasets cover nine chains and do not include Sol
 }
 ```
 
-`mirror-provenance verify` recomputes every published number from the committed store
-and asserts equality. Wire it into CI.
+What shipped instead is `mirror analyze <run.json>`: it recomputes every published
+number for a run from the committed file and touches no network, so any figure in
+`docs/MEASUREMENT_LOG.md` can be re-derived from the artifact beside it. It is not
+wired into CI, because the runs are data rather than code — a change to
+`metrics.rs` that moved a published number would be caught by the §2.7 reference
+vectors, which are.
 
 ---
 
@@ -1209,7 +1236,7 @@ least useful explanation. A harness is built scenario by scenario; the favourabl
 scenario is stubbed first to get the plumbing running; the stub returns the answer the
 author expects; and nothing downstream ever fails, because a tautology cannot fail.
 
-**Three tells a reviewer can check in thirty seconds**, and which we must never produce:
+**Three tells a reader can check in thirty seconds**, and which no honest report produces:
 
 1. a literal `if scenario == X { return <constant> }` inside a metric;
 2. every cell in the favourable column being an exact integer while the unfavourable
@@ -1321,8 +1348,9 @@ beside non-zero amount/timing/fee-payer figures, plus the no-pool control.
 
 **Sound: partially, with a sharp ceiling.** `λ(D) = "mirror-pool"` for every pool-funded
 wallet, so the provenance partition over pool-funded wallets is a single class. That is
-real, and it is the primitive the other bounty repos want, since their admitted
-number-one problem is the common-funder graph.
+real, and it is the primitive any decoy-based design needs, because the
+common-funder graph is what collapses a decoy set: decoys funded from one wallet
+share a provenance class with each other and not with the member.
 
 **But there is an exact bound, and it should be stated as a theorem:**
 
@@ -1350,55 +1378,36 @@ anonymity.** That is a genuinely useful service and an honest deflation of the p
    informative — it says the recipient wanted privacy. (c) maximizes anonymity *within*
    the pool population while maximizing the visibility of *belonging to* it. Against the
    question "is this user privacy-seeking?" it increases leakage to 1 bit while decreasing
-   it on "which user". State this ourselves before a reviewer does.
+   it on "which user". It is stated here because a method that only reports the
+   channel it improves is not a method.
 
 **Tautology risk: MEDIUM-HIGH** if measured as "all pool-funded wallets have class =
 pool" (definitional). Not a tautology if measured as:
 
 - **the ceiling test** — does realized class size equal the pool's effective-k, or does it
   collapse toward 1 under amount/timing sub-partitioning?
-- **a cross-repo A/B** — offer it as an API to the other two bounty repos, run our tracer
-  on their decoy sets *before* (common funder) and *after* (pool-funded), and report both
-  effective-k values from the same binary. Hard to fake, easy to check, and it makes
-  their data our evidence.
+- **an A/B against a decoy-based design** — run the tracer over the same decoy set
+  *before* (funded from one wallet) and *after* (pool-funded), and report both
+  effective-k values from the same binary. Hard to fake and easy to check, because
+  the only thing that changed between the two numbers is the funding path.
 
 ---
 
 ## 10. Implementation
 
-### 10.1 Build order
+### 10.1 What a reader should check first
 
-Target crate: `crates/mirror-provenance`.
+`metrics.rs` is §2 as pure functions over class-size multisets — the §2.7 reference
+vectors, the ordering invariant and the negative control, with no RPC, no scenario
+parameter and no I/O. It is the file to read first, because every number this
+method reports passes through it and nothing in it depends on which chain the
+data came from.
 
-1. `metrics.rs` — §2 as pure functions over class-size multisets, with the §2.7 reference
-   vectors, the ordering invariant, and the negative control. **No RPC, no scenario
-   parameter, no I/O.** This is the file a reviewer reads first; it must be obviously
-   honest.
-2. `edges.rs` — §4.1 balance-delta extractor, with a committed mainnet fixture pinning the
-   verified `accountKeys` / `preBalances` alignment for a v0 lookup-table transaction.
-3. `rpc.rs` — §6.1 preconditions, §7.2 record/replay, `slot ≤ S` filter, `before`-cursor
-   paging with explicit truncation flags, §6.2 failure taxonomy, fail-closed reporting.
-4. `labels.rs` — §5 ladder with nesting enforced by types, Tier-0/1 derivation,
-   `labels/anchors.json`, `verify-labels`.
-5. `trace.rs` — §4.3–4.6 birth-edge traversal with the §4.7 parameters.
-6. `sample.rs` — §3 block-sampled frame, epoch stratification, blockhash seed, stratified
-   cluster bootstrap.
-7. `mirror-provenance verify` in CI, running in `replay` mode.
+The claim that matters is not a smaller number than anyone else's. It is that a
+reader can tell **which direction the error goes**, which is why the unresolved
+and failure census (§6) is reported beside every estimate rather than after it.
 
-### 10.2 Publication order
-
-1. `ρ` — the loss factor
-2. the `eff_k(k)` curve with CIs
-3. the §5.6 label-resolution ladder with the §2.6 bracket
-4. the class-size CCDF
-5. the unresolved and failure census
-6. the adversary model
-7. the limitations
-
-**The differentiator is not a smaller number than anyone else's. It is that a reviewer
-can tell which direction our error goes.**
-
-### 10.3 Prior art, and where this sits in it
+### 10.2 Prior art, and where this sits in it
 
 The funding-provenance channel is **not novel**. Wang et al., *On How Zero-Knowledge Proof
 Blockchain Mixers Improve, and Worsen User Privacy*, WWW 2023, Heuristic H4 "Intermediary
@@ -1459,7 +1468,7 @@ contraction) → Androulaki et al., FC 2013 (change addresses) → Meiklejohn et
 theirs). For the account model the right citation is **Victor, FC 2020, deposit-address
 reuse**, the direct ancestor of what we are doing.
 
-### 10.4 Structural template
+### 10.3 Structural template
 
 Huseynov, Shahzaib, Seres & Tapolcai, *A Tattered Cloak of Invisibility: Measuring
 Anonymity Loss in Railgun on Ethereum*, arXiv:2606.25926 (June 2026) is the closest

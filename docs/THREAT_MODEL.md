@@ -85,7 +85,7 @@ different circuit. This one compares every element. Reproducibility is worth
 having and it is not security.
 
 Production needs a multi-party ceremony. The scaffolding for one is not in this
-submission and we do not claim it is.
+repository and we do not claim it is.
 
 ### The program is upgradeable
 
@@ -229,7 +229,7 @@ Denominations are pool constants and public. Nothing hides quantity.
 
 And what the design is *for* is the behavioural case. The measurement, the
 crowd rule, the shared settlement timestamp and the CPI dispatch all exist to
-make a stake or a vote unattributable. A submission that wanted a value mixer
+make a stake or a vote unattributable. A design that wanted a value mixer
 would not need any of them.
 
 **Defeating an adversary with off-chain data.** Someone who knows a member

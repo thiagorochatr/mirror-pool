@@ -20,9 +20,46 @@ delegation or a governance vote needs and what a transfer cannot do.
 Rust end to end. MIT. No Anchor, no Circom, no JavaScript anywhere in the
 proving path.
 
+## Getting it running
+
+Two prerequisites, and only two.
+
+**Rust.** `rust-toolchain.toml` pins 1.97.1 with `rustfmt` and `clippy`, so
+[rustup](https://rustup.rs) installs the right version by itself the first time
+you build — no manual step.
+
+**The Agave (Solana) toolchain**, for `cargo-build-sbf`. The on-chain program is
+compiled to SBF and the test suite loads that `.so` into a real SVM, so without
+this the suite cannot run at all:
+
 ```
-make verify          # fmt, clippy -D warnings, tests, build-sbf
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+solana --version          # confirms it is on PATH
 ```
+
+Then:
+
+```
+git clone https://github.com/solanabr/mirror-pool && cd mirror-pool
+make verify               # fmt, clippy -D warnings, build-sbf, 216 tests
+```
+
+`make verify` is the whole check, and it is the same command CI runs — see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml), which invokes `make
+verify` and nothing else, so the two cannot drift apart. On a cold clone it
+takes a few minutes, most of it compiling arkworks. Nothing here needs a
+network, a validator or a funded wallet.
+
+To get the member-facing tool as a binary:
+
+```
+cargo build --release     # target/release/mirror
+```
+
+[`docs/USAGE.md`](docs/USAGE.md) walks the whole journey from there — creating a
+note through to settling a batch — with real devnet output for every command.
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the design and why each
+decision is what it is.
 
 ## The problem this takes as its subject
 
@@ -37,7 +74,7 @@ No pool controls where its users' money came from. What that channel can be is
 *measured*, and measured honestly — which as far as we can tell nobody has done
 against live Solana data with a published method.
 
-So this submission claims exactly two things:
+So this project claims exactly two things:
 
 1. **The action side is closed.** Actions execute from the pool's vault PDA, so an
    action's on-chain funding trace leads to the pool and is identical for every
@@ -65,8 +102,9 @@ So this submission claims exactly two things:
    rather than in the observed ones. There is no budget at which this
    distribution becomes well-observed.
 
-   `docs/MEASUREMENT_LOG.md` has all eight runs, including the three that
-   produced no headline and the one whose pre-registered prediction was wrong.
+   `docs/MEASUREMENT_LOG.md` has all eight runs, including the three the tool
+   itself refused to publish a headline from and the one whose pre-registered
+   prediction turned out wrong.
 
 Anything we cannot support with a measurement whose method is published, we do
 not say. There is a section below of things we deliberately do not claim.
@@ -75,7 +113,7 @@ not say. There is a section below of things we deliberately do not claim.
 
 | | |
 |---|---|
-| `programs/mirror-pool` | The on-chain program. `submit_spend`, proof and all, measured at **101,127 CU** on a real SVM. |
+| `programs/mirror-pool` | The on-chain program. `submit_spend`, proof and all, costs about **101,000 CU** on a real SVM — half the default budget for one instruction. |
 | `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain. |
 | `crates/mirror-circuit` | R1CS gadget, membership circuit, prover, key export. |
 | `crates/mirror-provenance` | The funding-provenance measurement. |
@@ -89,15 +127,22 @@ and what the chain does cannot pass unnoticed.
 ## Using it
 
 ```
-mirror note-new --denomination D --out m1.json     # a note is a local secret
-mirror deposit  --note m1.json                     # escrow it, join the set
-mirror tree                                        # rebuild the accumulator from chain
-mirror spend    --note m1.json --to <addr> --relay relay.json
-mirror settle                                      # permissionless
+export P=<program-id>   # every command needs it; D is the pool's denomination
+
+mirror note-new --denomination D --out m1.json         # a note is a local secret
+mirror deposit  --program $P --note m1.json            # escrow it, join the set
+mirror tree     --program $P --denomination D          # rebuild the accumulator
+mirror spend    --program $P --note m1.json \
+                --to <addr> --relay relay.json         # the relay signs, never you
+mirror settle   --program $P --denomination D          # permissionless
 ```
 
-`docs/USAGE.md` is the walkthrough, and every line of output in it was produced
-by running the command against devnet.
+`docs/USAGE.md` is the walkthrough for these six, and every line of output in it
+was produced by running the command against devnet. The other ten subcommands
+are for operating a pool (`setup`, `verify-setup`, `soak`, `crowd`) and for the
+measurement (`check-endpoint`, `seeds`, `collect`, `analyze`, `compare`,
+`selection`); `--help` documents each, and `docs/MEASUREMENT_LOG.md` gives the
+exact invocation for every published number.
 
 **No server, no indexer, no account with anybody.** The program stores only the
 accumulator's frontier — enough to append a leaf, not enough to prove one is
@@ -178,8 +223,14 @@ The brief asks for an anonymity set for *behaviour*, not for funds. That
 distinction is load-bearing here, so it is tested rather than asserted:
 
 ```
-settled 4 real CPI actions in one transaction, 39,820 CU
+settled 4 real CPI actions in one transaction, 40251 CU
 ```
+
+That figure moves by a few thousand between runs — the accounts are generated
+fresh each time and `find_program_address` searches a different number of bumps
+to derive each record's address — so what the test *asserts* is the property
+rather than the number: four CPI actions and their payouts stay under 60,000 CU,
+comfortably inside one instruction's default budget.
 
 `a_crowd_of_members_perform_a_real_protocol_action_together` seeds a pool,
 loads the **real SPL Memo program** into the SVM, and has four members each
@@ -203,8 +254,8 @@ bolted on:
   the callee as a *signer*, which is what a stake delegation or a governance vote
   needs and what a transfer does not: somebody must sign as the authority, and
   for a member who must never appear on chain, that somebody can only be the
-  pool. `the_pool_signs_an_action_as_its_own_authority` proves it at **30,827 CU**
-  against real SPL Memo — a program that refuses any account handed to it that
+  pool. `the_pool_signs_an_action_as_its_own_authority` proves it under
+  **50,000 CU** against real SPL Memo — a program that refuses any account handed to it that
   has not signed, and that names its signers in its logs. The test reads that log
   for the vault's own key, so the claim rests on someone else's program. Devnet
   carries the case this exists for: a **real stake delegation**, with the pool as
@@ -309,7 +360,7 @@ mirror selection --earlier lo.json --later hi.json # are the unresolved missing 
 ```
 
 `data/sample-privacycash-run6.json` is the committed artifact behind the
-headline. Six samples are committed in all, and they are what make each
+headline. Seven samples are committed in all, and they are what make each
 correction checkable rather than merely described:
 
 | file | run | what it is |
@@ -401,14 +452,25 @@ and it is normally asserted and left alone. It is testable: collect one frame at
 two budgets, split the resolved members into *cheap to trace* and *expensive to
 trace*, and ask whether the two groups have the same class distribution.
 
-| population | cheap | expensive | difference, 95% |
-|---|---|---|---|
-| staking control | 16, ρ 0.0743 | 22, ρ 0.0585 | −0.0144 … +0.0786 |
-| privacy pool | 39, ρ 0.1179 | 15, ρ 0.1250 | −0.1507 … +0.0704 |
+| population | pair | cheap | expensive | difference, 95% |
+|---|---|---|---|---|
+| privacy pool | depth 8/cap 8 → 16/24 | 39, ρ 0.1179 | 15, ρ 0.1250 | −0.1507 … +0.0704 |
+| staking control | same budget, tracer fixed | 16, ρ 0.0743 | 22, ρ 0.0585 | −0.0144 … +0.0786 |
 
 Neither separates: at this margin, being resolvable does not pick out particular
-provenance classes. Evidence, not proof — it speaks for the members just beyond
-a cheaper budget, not for those beyond the larger one.
+provenance classes.
+
+**Only the first row is a budget margin**, and the second is weaker than it
+looks. The two staking runs used identical parameters — depth 16, page cap 24 —
+and differ by the tracer fix rather than by budget, so its *expensive* group is
+"members the broken tracer failed on" rather than "members a smaller budget
+could not reach". It is a real check on whether that bug selected for particular
+classes, which is worth knowing, and it is not a second budget margin. The
+manifests in `data/` carry the parameters, so this is checkable rather than
+taken on trust.
+
+Evidence, not proof, in either case — the first row speaks for the members just
+beyond a cheaper budget, not for those beyond the larger one.
 
 Had it separated, that would have been the more important result, and it would
 have invalidated the cross-population comparison outright rather than merely
@@ -448,7 +510,8 @@ additional resolved member, against 50 for the population as a whole.** The
 control is not under-resolved because we were stingy. Its remaining members have
 genuinely long funding chains, and the *staking* pool — where nobody wants
 deniability — turns out to be markedly harder to trace than the privacy pool,
-which resolved at 65% for a third of the cost per member. We do not claim to know
+which resolved at 65% for two-thirds of the cost per member (33 RPC calls
+per resolved member against 50). We do not claim to know
 why, and the explanation that would flatter us is one of the two candidates,
 which is exactly why we are not asserting it.
 
@@ -537,7 +600,7 @@ multi-party ceremony, not more SOL.
   the public seed and compares it element by element against the one compiled
   into the program — expected digest
   `b0165d5eac6fe8273b6564c78e8ba548c97e6050ae785e9142de63c81aa905b7`. Reproducible
-  and insecure is a coherent position for an unaudited submission; the incoherent
+  and insecure is a coherent position for an unaudited protocol; the incoherent
   one is a setup that is *both* insecure and unreproducible, which is what
   publishing the entropy while withholding the proving key produces — nobody can
   verify the key, and nobody can regenerate it either.
@@ -549,9 +612,11 @@ multi-party ceremony, not more SOL.
   populations is demonstrated as machinery and unproven as a finding.
 - Not audited.
 
-`docs/MEASUREMENT_LOG.md` records every collection run, including the three that
-produced no headline and the two the tool itself refused. A measurement project
-that keeps only its successful runs is selecting rather than reporting.
+`docs/MEASUREMENT_LOG.md` records every collection run, including the three the
+tool itself refused to publish a headline from — twice on the failure gate, once
+on the bracket — and the one whose pre-registered prediction turned out wrong. A
+measurement project that keeps only its successful runs is selecting rather than
+reporting.
 
 ## Documentation
 
@@ -564,5 +629,5 @@ that keeps only its successful runs is selecting rather than reporting.
 | `docs/THREAT_MODEL.md` | The adversary, what holds, and every place it stops. |
 | `docs/PROOF.md` | Devnet signatures for every flow, and the rejections. |
 | `docs/CROWD.md` | Six members delegating to six different validators in one devnet transaction, and what divergence costs. |
-| `docs/USAGE.md` | Every command, with real output. |
+| `docs/USAGE.md` | The six member-facing commands, end to end, with real devnet output. |
 | `docs/PLAN.md` | The design as decided, and where the shipped protocol departs from it. |

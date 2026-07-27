@@ -1021,7 +1021,7 @@ fn report(outcome: &Outcome) -> String {
          conversation. A delegation costs roughly an order of magnitude more per member \
          than a payment does.\n\n\
          Each member's Groth16 proof was verified earlier, in their own `submit_spend`, \
-         which is measured at 101,127 CU. That is why the two phases exist: verifying \
+         which costs about 101,000 CU. That is why the two phases exist: verifying \
          {members} proofs here would cost over 600,000 CU — comfortably past the 200,000 a \
          single instruction gets by default, and a large fraction of the 1.4M a whole \
          transaction may ever request.\n\n",
@@ -1054,6 +1054,17 @@ fn report(outcome: &Outcome) -> String {
         ));
     }
     md.push('\n');
+
+    md.push_str("## Reproducing this document\n\n");
+    md.push_str(&format!(
+        "Every value above was written by the run that produced it, and the run recorded \
+         them in `data/crowd-result-{denomination}.json`. `mirror crowd --render-only` \
+         rebuilds this file from that record without touching a cluster, so the prose \
+         around a number can be improved without re-running a measurement — and a number \
+         cannot be changed without re-running one.\n\n\
+         Every address and signature here is on devnet and can be checked against the \
+         cluster rather than against this file.\n\n"
+    ));
 
     md.push_str("## Scope\n\n");
     md.push_str(

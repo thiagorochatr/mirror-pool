@@ -19,10 +19,16 @@ project that only records its successful runs is not reporting, it is selecting.
 ```
 mirror analyze   --sample data/sample-privacycash-run6.json
 mirror compare   --sample data/sample-privacycash-run6.json --against data/sample-marinade-run8.json
+mirror selection --earlier data/sample-privacycash.json --later data/sample-privacycash-run6.json
 mirror selection --earlier data/sample-marinade.json --later data/sample-marinade-run7.json
 ```
 
-All three are pure and offline. Nothing below needs our endpoint, our key, or
+The two `selection` runs are the two rows of the table in `README.md`, and only
+the first is a budget margin — the marinade pair used identical parameters and
+differs by the tracer fix. The manifests carry the parameters, so which is which
+is checkable here rather than asserted.
+
+All of them are pure and offline. Nothing below needs our endpoint, our key, or
 our word for how a run behaved.
 
 ---
@@ -168,7 +174,7 @@ the failure gate and once on the bracket, and each refusal was correct.
 44 unresolved are budget outcomes, chains that ran out of depth or paging before
 reaching a class. That is a bigger call budget spent on depth rather than on
 sample size, which is a straightforward thing to buy and not something this
-submission claims to have bought.
+run claims to have bought.
 
 ## Run 4 — pre-registered before collection, 2026-07-25
 
@@ -592,7 +598,8 @@ margin above it, several times that.
 **A depositor population that resists provenance tracing this hard is itself a
 result**, and it is the opposite of what one would guess: the *staking* pool —
 where nobody is seeking deniability — is markedly harder to trace than the
-privacy pool, whose depositors resolved at 65% for a third of the cost per member.
+privacy pool, whose depositors resolved at 65% for two-thirds of the cost per
+member — 1,776 calls for 54 resolved against 1,887 for 38.
 
 We do not claim to know why. Two candidates we cannot separate with this data:
 staking attracts older wallets with deeper histories, or privacy-pool depositors
@@ -603,26 +610,30 @@ is precisely why we are not asserting it.
 ## What we do not conclude
 
 **Nothing about how private that pool is, and the headline does not become that
-claim by clearing a gate.** ρ = 0.1032 is a point estimate inside a bracket
-spanning 0.032 to 0.132, drawn from one frame of one pool at one moment, and its
-class distribution is demonstrably heavy-tailed and two-thirds unobserved. It is
-published because the method is published, not because it settles anything.
+claim by clearing a gate.** ρ = 0.0955 is a point estimate inside an unresolved
+bracket spanning 0.0350 to 0.1136, drawn from one frame of one pool at one
+moment, and its class distribution is demonstrably heavy-tailed and mostly
+unobserved. It is published because the method is published, not because it
+settles anything.
 
 Three things it specifically does not support:
 
-- **A comparison between pools.** ρ is designed to be comparable across pools —
-  that is why it is the headline — but only one pool has been measured. The
-  property is asserted here and not yet exercised.
+- **A ranking of the two pools measured.** ρ is designed to be comparable across
+  pools, and the machinery was exercised: Runs 5, 7 and 8 collected a staking
+  control and ran `compare` against it. The tool **refused** to report the
+  difference, because the control resolved fewer than half its members and the
+  gate that catches exactly that failure fired. Comparability is demonstrated as
+  machinery and unachieved as a result.
 - **An extrapolation to larger `k`.** Effective-k measured at small `k`
-  understates the steady-state loss, and the heavy tail found in Run 4 is a
-  reason to expect that gap to widen rather than close.
+  understates the steady-state loss, and the heavy tail is a reason to expect
+  that gap to widen rather than close.
 - **A statement about any individual member.** The metric is a property of a
   distribution. Nothing here identifies anyone, and the worst-case class of size
   one is a feature of heavy-tailed provenance in general, not a finding about a
   person.
 
-What the four runs do support is narrower and, we think, more useful: that this
+What the eight runs do support is narrower and, we think, more useful: that this
 channel is measurable from live Solana data with a published method, that the
 measurement is expensive and the tail does not close, and that a pipeline built
-to refuse is one that refuses — three times, correctly, before it produced a
-number.
+to refuse is one that refuses — before it produced a number, and again after,
+including on a comparison this document would have preferred to report.

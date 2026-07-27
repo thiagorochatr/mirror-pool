@@ -47,7 +47,7 @@ At 6 members the settlement weighs 1194 bytes with 38 to spare; one more member 
 
 This settlement burned **142856 CU of the 200000** a single instruction gets by default — 71% of the budget, for 6 payouts and 6 cross-program invocations. That is a different regime from a batch of plain transfers: `ten_spends_fit_in_one_settlement_and_the_packet_is_what_stops_the_eleventh` settles ten of those in 19,545 CU, where compute is nowhere in the conversation. A delegation costs roughly an order of magnitude more per member than a payment does.
 
-Each member's Groth16 proof was verified earlier, in their own `submit_spend`, which is measured at 101,127 CU. That is why the two phases exist: verifying 6 proofs here would cost over 600,000 CU — comfortably past the 200,000 a single instruction gets by default, and a large fraction of the 1.4M a whole transaction may ever request.
+Each member's Groth16 proof was verified earlier, in their own `submit_spend`, which costs about 101,000 CU. That is why the two phases exist: verifying 6 proofs here would cost over 600,000 CU — comfortably past the 200,000 a single instruction gets by default, and a large fraction of the 1.4M a whole transaction may ever request.
 
 The packet still binds first — 6 members is where the bytes run out, and the budget is not exhausted there — but the two limits are no longer independent, and that is the part worth stating plainly. The usual answer to a settlement that runs out of compute is to ask for more with a `SetComputeUnitLimit` instruction. Measured against this very batch, that instruction costs **40 bytes**, and a full settlement has 38 to spare. **Raising the budget means dropping a member.**
 
@@ -77,6 +77,12 @@ So the ceiling here is not a byte count that a future compute optimisation would
 | create stake account | [`2fRNA4wLYzoJceT2HmAXEPrvK1Sv1haqfRJK7vDDcyKCLQPa65ebcE9u6Lm8DZbdgfWm2LiaS5nDUzvxaCNrwecE`](https://explorer.solana.com/tx/2fRNA4wLYzoJceT2HmAXEPrvK1Sv1haqfRJK7vDDcyKCLQPa65ebcE9u6Lm8DZbdgfWm2LiaS5nDUzvxaCNrwecE?cluster=devnet) | 1100000000 lamports, staker = the pool's vault |
 | submit_spend | [`4haLJna7fmp85ahKppvXR8bVgGSFmhsftxy1XEfuztZ8mKVKxdVzdwLVwS6CedD2fmzdMwPWc5Na2DAaNvUZdgQM`](https://explorer.solana.com/tx/4haLJna7fmp85ahKppvXR8bVgGSFmhsftxy1XEfuztZ8mKVKxdVzdwLVwS6CedD2fmzdMwPWc5Na2DAaNvUZdgQM?cluster=devnet) | note 5, relay-signed, delegate to 2u83Dx5qPV4QnujjJQv8v2SoqG1ixuAxPK5Jwhtkovd1 |
 | settle_epoch | [`5SqtqpuJw3pAoBMMB9DmXaqFr93rWsnqWMyacRZ3ZpP5eQpacLTAjrYugAW2ni3PMucAzDLJ4TsLZU3aQd3ZVMPZ`](https://explorer.solana.com/tx/5SqtqpuJw3pAoBMMB9DmXaqFr93rWsnqWMyacRZ3ZpP5eQpacLTAjrYugAW2ni3PMucAzDLJ4TsLZU3aQd3ZVMPZ?cluster=devnet) | 6 delegations to 6 different validators, one transaction, 1194 bytes |
+
+## Reproducing this document
+
+Every value above was written by the run that produced it, and the run recorded them in `data/crowd-result-43000007.json`. `mirror crowd --render-only` rebuilds this file from that record without touching a cluster, so the prose around a number can be improved without re-running a measurement — and a number cannot be changed without re-running one.
+
+Every address and signature here is on devnet and can be checked against the cluster rather than against this file.
 
 ## Scope
 

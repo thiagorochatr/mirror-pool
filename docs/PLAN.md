@@ -1,4 +1,9 @@
-# mirror-pool — implementation plan
+# The design as decided, and where the protocol departs from it
+
+This is the design record: what was decided before the protocol was built, and —
+in the last section — the six things that did not ship and why each was a
+decision rather than an overrun. It is kept because the departures are the
+interesting part; `ARCHITECTURE.md` describes what exists today.
 
 ## The thesis
 
@@ -101,7 +106,7 @@ and the relay fee, so every economically meaningful field is inside the proof.
 
 ### Two-phase epochs — synchronization without a CU explosion
 
-The bounty's premise is synchronized crowds: many identical actions landing
+The premise is synchronized crowds: many identical actions landing
 together so that timing and ordering carry no signal. Verifying `N` proofs in one
 transaction does not fit — three proofs exhaust the transaction size limit long
 before the compute limit.

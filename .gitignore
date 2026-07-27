@@ -5,6 +5,7 @@ target/
 !programs/**/fixtures/*.so
 .env
 keys/
+.claude/
 *.keypair.json
 notes/
 sp4/

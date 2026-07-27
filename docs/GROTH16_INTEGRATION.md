@@ -58,8 +58,16 @@ than a slice.
 
 Measured in LiteSVM against a real SBF build, with a scratch circuit per input
 count that is not part of this repository. The figure this repository does
-reproduce is the whole `submit_spend` instruction at three inputs — 101,127 CU,
-printed by `cargo test -p mirror-pool-program --test end_to_end -- --nocapture`.
+reproduce is the whole `submit_spend` instruction at three inputs — about
+101,000 CU, printed by `cargo test -p mirror-pool-program --test end_to_end --
+--nocapture`.
+
+The instruction's cost is not identical run to run. Each run derives the spend
+record's address from a freshly generated nullifier, and `find_program_address`
+searches a different number of bumps to get there, which moves the total by a
+few thousand CU. So the test asserts a bound — under 110,000 CU, against the
+200,000 a single instruction gets by default — rather than pinning a figure that
+would fail on nothing.
 
 | Public inputs | `verify()` |
 |---|---|

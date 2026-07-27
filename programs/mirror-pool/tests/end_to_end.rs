@@ -314,9 +314,13 @@ fn a_real_proof_verifies_on_chain_and_records_the_spend() {
     let ix = spend_ix(&env, &proof, nullifier, &beneficiary, &relay.pubkey());
     let cu = env.send_expect_cu(ix, &relay);
     println!("submit_spend consumed {cu} compute units");
+    // The headline cost of the protocol, and the reason the two phases exist.
+    // Bounded rather than pinned: the exact figure moves by a few thousand CU
+    // between runs with the bump search on a freshly generated nullifier.
     assert!(
-        cu < 200_000,
-        "submit_spend used {cu} CU, above the default per-instruction budget"
+        cu < 110_000,
+        "submit_spend used {cu} CU, above what it has ever measured and close \
+         to the 200,000 default per-instruction budget"
     );
 
     let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
@@ -1089,6 +1093,18 @@ fn a_crowd_of_members_perform_a_real_protocol_action_together() {
         "settled {} real CPI actions in one transaction, {cu} CU",
         batch.len()
     );
+    // A bound, not a fixed figure. Settlement's cost moves by a few thousand CU
+    // between runs because the accounts are freshly generated each time and
+    // `find_program_address` searches a different number of bumps to derive each
+    // record's address. Pinning the exact number would produce a test that fails
+    // on nothing, so what is asserted is the property the design depends on:
+    // four CPI actions and their payouts fit in one instruction's default
+    // budget, with room to spare.
+    assert!(
+        cu < 60_000,
+        "four settled CPI actions cost {cu} CU, well above what this batch has \
+         ever measured — settlement got materially more expensive"
+    );
 
     for (spend, beneficiary, _) in &batch {
         let mut data = env.svm.get_account(spend).unwrap().data;
@@ -1360,6 +1376,11 @@ fn the_pool_signs_an_action_as_its_own_authority() {
     );
     println!(
         "the pool signed a real CPI as authority, {} CU",
+        meta.compute_units_consumed
+    );
+    assert!(
+        meta.compute_units_consumed < 50_000,
+        "a pool-signed action cost {} CU, well above what it has ever measured",
         meta.compute_units_consumed
     );
 
