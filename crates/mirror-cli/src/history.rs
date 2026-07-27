@@ -86,6 +86,15 @@ pub fn scan(chain: &Chain, program_id: &Pubkey, pool: &Pubkey, verbose: bool) ->
         if verbose && n > 0 && n % 25 == 0 {
             println!("  {n}/{} …", signatures.len());
         }
+        // Paced deliberately. `getTransaction` is the expensive RPC method and
+        // the one public endpoints throttle first, and a rebuild asks for it
+        // once per signature — so a pool with any history sends a burst that
+        // gets the client throttled partway through and fails a member who was
+        // only trying to spend their own note. A short pause costs seconds and
+        // removes the failure entirely.
+        if n > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(120));
+        }
         let Some(tx) = chain.transaction(signature)? else {
             continue;
         };

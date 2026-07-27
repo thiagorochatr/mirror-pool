@@ -38,10 +38,18 @@ impl Chain {
         let body = serde_json::json!({
             "jsonrpc": "2.0", "id": 1, "method": method, "params": params,
         });
+        // Ten attempts with a bounded exponential backoff, which is roughly
+        // four minutes of patience before giving up. Seven was not enough, and
+        // the reason is specific rather than a matter of taste: rebuilding a
+        // pool's accumulator means one `getTransaction` per signature, and the
+        // public endpoints throttle that method far harder than they throttle a
+        // balance read. A client that gives up during the burst leaves a member
+        // unable to spend a note they own, which is the one failure this tool
+        // must not have.
         let mut wait = std::time::Duration::from_millis(500);
         let mut last: Option<String> = None;
         let mut response: Option<serde_json::Value> = None;
-        for _ in 0..7 {
+        for _ in 0..10 {
             match self.agent.post(&self.endpoint).send_json(body.clone()) {
                 Ok(r) => {
                     response = Some(r.into_json()?);
@@ -49,7 +57,10 @@ impl Chain {
                 }
                 Err(ureq::Error::Status(429, _)) => {
                     std::thread::sleep(wait);
-                    wait *= 2;
+                    // Capped, because doubling ten times is over eight minutes
+                    // of sleeping for the last attempt alone, and a member
+                    // watching a command hang learns nothing from it.
+                    wait = (wait * 2).min(std::time::Duration::from_secs(30));
                     last = Some("rate limited".into());
                 }
                 Err(e) => return Err(anyhow!("{method}: {e}")),
