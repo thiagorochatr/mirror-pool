@@ -1028,19 +1028,25 @@ fn report(outcome: &Outcome) -> String {
         cu as f64 * 100.0 / DEFAULT_COMPUTE_BUDGET as f64
     ));
     md.push_str(&format!(
-        "The packet still binds first — {} members is where the bytes run out, and the \
-         budget is not exhausted there — but the two limits are no longer independent, and \
-         that is the part worth stating plainly. The usual answer to a settlement that runs \
-         out of compute is to ask for more with a `SetComputeUnitLimit` instruction. \
-         Measured against this very batch, that instruction costs **{} bytes**, and a full \
-         settlement has {} to spare. **Raising the budget means dropping a member.**\n\n\
-         So the ceiling here is not a byte count that a future compute optimisation would \
-         lift. It is the point where the only two exits are closed at once, and the answer \
-         to a larger crowd is more transactions — which means more timestamps, which is a \
-         real cost to the anonymity and the reason this number is worth knowing.\n\n",
+        "The packet binds first — {} members is where the bytes run out, and the budget is \
+         not exhausted there — but for a **legacy** transaction the two limits are barely \
+         independent, and that is worth stating plainly. The usual answer to a settlement \
+         that runs out of compute is to ask for more with a `SetComputeUnitLimit` \
+         instruction. Measured against this very batch, that instruction costs **{} \
+         bytes**, and a full legacy settlement has {} to spare. In a legacy transaction, \
+         raising the budget means dropping a member.\n\n\
+         **A lookup table lifts that, and this run did not measure how far.** Naming \
+         accounts by one byte each takes the packet out of the way — `mirror settle` does \
+         it automatically, and a batch of twenty plain transfers settled that way on devnet \
+         at 332 bytes of 1232. What then binds a batch of *delegations* is some combination \
+         of the 64-account lock limit and the compute this table already shows to be \
+         expensive, and neither has been measured for this shape. The honest statement is \
+         that {} is the legacy ceiling for divergent delegations and the ceiling through a \
+         table is unmeasured — not that it is the same number.\n\n",
         ceiling.divergent,
         ceiling.budget_bytes,
         PACKET_DATA_SIZE - ceiling.divergent_bytes,
+        ceiling.divergent,
     ));
 
     md.push_str("## Every step\n\n");

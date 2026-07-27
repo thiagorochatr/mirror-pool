@@ -286,10 +286,57 @@ It depends on what the members are doing:
 | stake delegations, everyone to the same validator | 7 |
 | stake delegations, a different validator each | 6 |
 
-The limit is the 1232-byte packet in every row. Each spend brings accounts
-nobody else shares — its record, its beneficiary, its relay — so a payment costs
-about 99 bytes per member, and a call costs more because it also names its
-callee and the callee's accounts.
+Those are the numbers for a **legacy** transaction, which names every account by
+its full 32 bytes. That is what you get with no setup at all, and the 1232-byte
+packet is what stops it.
+
+**Bigger batches settle through a lookup table, and `settle` does it for you.**
+When a batch will not fit legacy, the command publishes a table naming the
+accounts, settles a v0 transaction that refers to them by one byte each, and
+takes the table back down:
+
+```
+$ mirror settle --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --denomination 5000003
+looking for spends waiting to settle:
+  49 transactions touched this pool
+
+  24 spend(s) pending; settling 20 of them, which is what fits under the
+  64-account lock limit. Run this again for the rest — the cost is a
+  second timestamp, which is a real cost to the anonymity of both halves.
+
+  20 spends do not fit a legacy transaction: 2218 bytes, 986 over the 1232-byte packet.
+  Settling through a lookup table instead.
+  lookup table ia9oUXMgArZhGPWyETroygf6bvULHQWBodgpwB43gQ8
+  62 addresses published
+  settlement is 332 bytes of 1232, one signature
+  table deactivated. Close it after ~513 slots to reclaim the rent and remove
+  the published address list:
+    mirror close-table --table ia9oUXMgArZhGPWyETroygf6bvULHQWBodgpwB43gQ8
+
+settled 20 spends in one transaction
+  signature enxa9fztmzEHMLsvhfzJwFVRsNWha7WiSEUEeNn7UPk8KAdpnWQDzEHarGL8d4ckyBvtWrEGCkuvgW7UFgFAHzp
+```
+
+**The packet stops mattering entirely** — twenty members weigh 332 of 1232
+bytes. What binds instead is the number of accounts one transaction may lock:
+three per member plus three for the pool, so twenty members sit at exactly 64.
+`settle` counts them and defers the rest rather than building a transaction the
+cluster refuses.
+
+**Close the table afterwards.** It costs rent, but the reason to close it is what
+it is while it exists: a public, durable account listing every address the
+settlement touched, published before the settlement landed. Leaving one behind
+per batch builds a permanent on-chain index of who settled together.
+
+**Do not set a crowd floor above what one settlement can carry.** `init-pool`
+refuses it now, because a pool whose floor exceeds the per-transaction ceiling
+can never meet it by crowd and can only settle through the hour-long timeout —
+and the floor is fixed at creation, so the fix is a different pool.
+
+For a legacy batch the limit is the packet in every row. Each spend brings
+accounts nobody else shares — its record, its beneficiary, its relay — so a
+payment costs about 99 bytes per member, and a call costs more because it also
+names its callee and the callee's accounts.
 
 **What you ask for changes how many people you can hide among.** A member who
 delegates to their own choice of validator adds a vote account nobody else in
@@ -298,11 +345,13 @@ choose: a crowd that converges on one validator is both larger and less
 distinguishable than a crowd that does not.
 
 For payments compute is nowhere near binding — ten settle in 19,545 of the
-200,000 compute units a single instruction gets. For delegations it is much
-closer: on devnet the six-member divergent batch used 142,856. And at that
-ceiling there is no way out, because the two limits shut together — asking for a
-larger compute budget costs a second instruction worth 40 bytes, and the batch
-has 38 to spare.
+200,000 compute units a single instruction gets, and twenty through a lookup
+table in 35,895. For delegations it is much closer: on devnet the six-member
+divergent batch used 142,856. In a *legacy* transaction there is no way out of
+that, because the two limits shut together — asking for a larger compute budget
+costs a second instruction worth 40 bytes and the batch has 38 to spare. Through
+a table the bytes are there; how many delegations then fit is unmeasured, and
+`CROWD.md` says so rather than assuming.
 
 These are ceilings per *transaction*, not per epoch. Settlement is
 permissionless, so a pool with thirty pending spends settles in three batches;

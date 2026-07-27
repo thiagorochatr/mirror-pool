@@ -325,14 +325,34 @@ mod tests {
                     .len()
         };
 
-        // Sixty members is six times what the packet allows without a table, and
-        // it is not close to the limit — which is the whole finding. Ten is the
-        // floor a settler gets with no setup at all, not the most the program
-        // can carry.
+        // Sixty members is six times what the packet allows without a table and
+        // still nowhere near it — which is the finding, and it is a statement
+        // about *bytes only*. Sixty members lock 183 accounts and the cluster
+        // would refuse them; what a settlement can actually carry is bounded by
+        // MAX_ACCOUNT_LOCKS, asserted just below, and a reader who took the byte
+        // figure for a member count would be reading the wrong constraint.
         let sixty = versioned_at(60);
         assert!(
             sixty < PACKET_DATA_SIZE,
             "sixty members through a table weigh {sixty} bytes, over the packet"
+        );
+
+        // The limit that does bind, and the arithmetic settlement uses to stop
+        // short of it. Twenty members is exactly 64 locks: three per member plus
+        // the settler, the pool and the vault.
+        let payer = Pubkey::new_unique();
+        let program = Pubkey::new_unique();
+        let twenty = settle_shaped(&payer, &program, 20);
+        assert_eq!(
+            locks_for(&twenty.accounts, &program, &payer),
+            MAX_ACCOUNT_LOCKS,
+            "twenty members is supposed to sit exactly on the lock limit"
+        );
+        let twenty_one = settle_shaped(&payer, &program, 21);
+        assert!(
+            locks_for(&twenty_one.accounts, &program, &payer) > MAX_ACCOUNT_LOCKS,
+            "twenty-one members must be over the lock limit, or settlement stops \
+             one short of what it could carry"
         );
         assert!(
             versioned_at(10) < legacy_at(10) / 2,

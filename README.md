@@ -144,12 +144,16 @@ mirror spend    --program $P --note m1.json \
 mirror settle   --program $P --denomination D          # permissionless
 ```
 
-`docs/USAGE.md` is the walkthrough for these six, and every line of output in it
-was produced by running the command against devnet. The other ten subcommands
-are for operating a pool (`setup`, `verify-setup`, `soak`, `crowd`) and for the
-measurement (`check-endpoint`, `seeds`, `collect`, `analyze`, `compare`,
-`selection`); `--help` documents each, and `docs/MEASUREMENT_LOG.md` gives the
-exact invocation for every published number.
+`docs/USAGE.md` is the walkthrough, and every line of output in it was produced
+by running the command against devnet. It covers three more a member may want:
+`init-pool`, which anyone can run, and `disclose` / `disclose-verify`, which
+prove a settled action was yours to one verifier you choose.
+
+The other eleven subcommands operate a pool (`setup`, `verify-setup`, `soak`,
+`crowd`, `close-table`) or run the measurement (`check-endpoint`, `seeds`,
+`collect`, `analyze`, `compare`, `selection`); `--help` documents each, and
+`docs/MEASUREMENT_LOG.md` gives the exact invocation for every published
+number.
 
 **No server, no indexer, no account with anybody.** The program stores only the
 accumulator's frontier — enough to append a leaf, not enough to prove one is
@@ -231,17 +235,38 @@ settled 10 spends in one transaction: 1228 bytes (4 to spare), 19545 CU of 20000
 while the SVM settled the same batch in 24158 CU, so compute is not the constraint
 ```
 
-**With an address lookup table**, the same accounts are named by one byte each
+**With an address lookup table**, the same accounts are named by one byte each,
 and the packet stops being the thing in the way at all. `mirror settle` publishes
-a table automatically for any batch that will not fit legacy, and
-`a_lookup_table_takes_the_packet_out_of_the_way` pins the arithmetic against the
-executed 1228-byte figure above so the two cannot drift apart: sixty members
-still fit inside a packet, six times what legacy allows and nowhere near a limit.
+a table automatically for any batch that will not fit legacy. Twenty members
+settled that way on devnet:
+
+```
+20 spends do not fit a legacy transaction: 2218 bytes, 986 over the 1232-byte packet.
+Settling through a lookup table instead.
+  settlement is 332 bytes of 1232, one signature
+```
+
+[`enxa9fztmzEHM…`](https://explorer.solana.com/tx/enxa9fztmzEHMLsvhfzJwFVRsNWha7WiSEUEeNn7UPk8KAdpnWQDzEHarGL8d4ckyBvtWrEGCkuvgW7UFgFAHzp?cluster=devnet)
+— twenty payouts, `numRequiredSignatures: 1`, 2 static keys and 62 resolved
+through the table, 35,895 CU. Twenty recipients and twenty relays are named in
+that transaction and **not one of them signed it**.
 
 Nothing in the program changes for this. `settle_epoch` requires a signature from
 the settler and from nobody else, and a lookup table can serve any account that
 is not a signer — so the ceiling was always a property of what the client chose
 to build, and ten is the floor rather than the maximum.
+
+**What binds instead is the account-lock limit**, and that number was taken the
+hard way: a batch of 24 was refused by devnet with `TooManyAccountLocks` at 77
+accounts. `solana-transaction` exports `MAX_TX_ACCOUNT_LOCKS = 128`, but that is
+the raised limit and it is not live here, so a client must plan against 64 until
+it can see otherwise. Three accounts per member plus three for the pool puts
+twenty members at exactly 64 locks — the transaction above sits on the limit.
+
+Settlement adds members while the batch still fits and defers the rest, so a
+settler is never handed a transaction the cluster will refuse, and `init-pool`
+refuses a crowd floor higher than one settlement can carry rather than letting a
+pool be created that can only ever settle on its timeout.
 
 **The table is not free, and it is taken back down.** It costs four extra
 transactions, a slot of latency, and rent — and, more to the point, while it
@@ -270,8 +295,10 @@ instruction budget. It is much closer for delegations. On devnet the six-member
 divergent batch burned 142,856 of the 200,000 CU a single instruction gets, and
 `CROWD.md` reports where that leaves a settler: **at that ceiling both exits are
 shut**. Asking for a larger compute budget costs a second instruction, measured
-at 40 bytes against that very batch, and the batch has 38 to spare. Raising the
-budget means dropping a member.
+at 40 bytes against that very batch, and a legacy batch has 38 to spare — so in a
+legacy transaction, raising the budget means dropping a member. A lookup table
+lifts that too, and how far for a batch of delegations is unmeasured: `CROWD.md`
+says so rather than assuming the legacy number carries over.
 
 `ten_spends_fit_in_one_settlement_and_the_packet_is_what_stops_the_eleventh`
 demonstrates the payment limit from both sides: it measures the eleventh batch
