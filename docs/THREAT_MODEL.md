@@ -212,6 +212,33 @@ clause is a discipline the member keeps, not a property the program enforces, an
 a threat model that omits it is describing a smaller adversary than the one that
 exists.
 
+### A large settlement publishes its participant list early
+
+A batch that outgrows the 1232-byte packet settles through an address lookup
+table, and that table is an account: created by the settler, holding every
+address the settlement is about to touch, and **on chain before the settlement
+lands**. It discloses nothing the settlement does not disclose a slot later — the
+same records, beneficiaries and relays, in the same order — but it discloses it
+*earlier*, and while it exists it is a durable, queryable index of who settled
+together, tied to the key that created it.
+
+Two consequences worth stating rather than discovering:
+
+- **Timing.** An observer watching the lookup table program sees the batch
+  assembling before it executes. That is a warning, not a linkage: the addresses
+  in the table are the same public addresses the settlement names.
+- **Persistence.** A table left behind outlives the transaction that needed it,
+  and one per batch accumulates into a permanent record of every cohort a pool
+  ever settled.
+
+So settlement deactivates the table immediately and `mirror close-table` removes
+it once the runtime's cooldown has passed, which returns the rent and — the
+reason that matters here — deletes the list. The cooldown means there is a window
+in which the table exists and cannot yet be closed; nothing shortens it.
+
+Legacy settlement publishes no table at all, which is why it stays the default
+for any batch that fits without one.
+
 ### Amounts are public
 
 Fixed denominations mean the amount is a pool constant rather than a secret. A
