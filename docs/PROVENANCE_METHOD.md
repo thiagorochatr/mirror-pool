@@ -11,6 +11,12 @@ quietly dropped:
   falsifies it does not, so Tier-2 labels rest on their cited sources alone.
 - **The multi-file artifact layout** (§7.3) became one JSON document per run.
   What shipped is described there.
+- **The L0–L3 label-resolution ladder** (§5.1, §5.6). The classification rules
+  R1–R5 shipped and are what produce every published label. Reporting the *same*
+  measurement at four label granularities, and the monotonic bracket that would
+  come out of it, did not: the crate has no notion of a resolution rung, so the
+  published headline is a single figure at the resolution the R-rules give,
+  neither claimed nor claimable as "L2".
 - **The `n = 1,100` baseline frame** (§3) was not collected. The published runs
   are the smaller ones in `docs/MEASUREMENT_LOG.md`, and what that costs the
   estimate is stated there rather than here.
@@ -800,6 +806,13 @@ a violation means the hierarchy was broken and the run must fail.
 **Headline at L2** — the finest two-sided resolution (§1.2). L0/L1 are published as the
 strong-adversary bound, L3 as the weak.
 
+*Not shipped.* The crate classifies each address once, by the R-rules of §5.3,
+and reports one ρ. It does not re-label the same sample at four granularities, so
+there is no L-rung bracket and no run has ever asserted the monotonicity above.
+The published headline carries the resolved/unresolved bracket of §2.6 instead,
+which brackets a different uncertainty: how much the members that failed to
+resolve could move the number, not how much a coarser labeller would.
+
 ### 5.2 Atoms vs crowds — the two-stage pipeline
 
 `2^{H(C)}` and `2^{H(X|C)}` are complements, and which is correct depends on whether
@@ -924,7 +937,14 @@ deposit-address set of uncertain provenance, the L2 effective-k moves from X to 
 with the set not redistributed. The *size* of that movement is the most informative
 statement we can make about how much a free-label result understates a funded adversary.
 
-### 5.6 The sensitivity table (required output)
+### 5.6 The sensitivity table (specified, not produced)
+
+No command emits this table. It is kept because it states what a complete report
+of this method looks like, and because the gap between it and what
+`docs/MEASUREMENT_LOG.md` actually publishes is the honest measure of how far
+the implementation got. The ablation rows are the more valuable half: they say
+how much of the headline rests on each rule, and nothing in the runs answers
+that.
 
 ```
 resolution        classes m   ρ        eff_k_shannon   eff_k_minent   worst   coverage
