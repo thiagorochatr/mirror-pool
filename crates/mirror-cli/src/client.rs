@@ -453,7 +453,7 @@ pub fn settle(
     println!("looking for spends waiting to settle:");
     let history = history::scan(chain, program_id, &state.pool, true)?;
 
-    let mut ready: Vec<(Pubkey, Pubkey, Pubkey, i64)> = Vec::new();
+    let mut ready: Vec<(Pubkey, Pubkey, Pubkey, i64, u64)> = Vec::new();
     let mut skipped_actions: Vec<([u8; 32], u64, u8)> = Vec::new();
     for submitted in &history.spends {
         let Some(mut data) = chain.account_data(&submitted.spend)? else {
@@ -481,6 +481,7 @@ pub fn settle(
             Pubkey::new_from_array(record.beneficiary()),
             Pubkey::new_from_array(record.relay()),
             record.submitted_at(),
+            record.relay_fee(),
         ));
     }
 
@@ -502,6 +503,35 @@ pub fn settle(
         return Ok(());
     }
 
+    // Members are paid `denomination - relay_fee`, and that payout is public — so
+    // a batch mixing fees settles into visibly different amounts and an observer
+    // partitions it by value. The program refuses such a batch; this picks one
+    // fee and settles the members who paid it, rather than assembling a
+    // transaction that will be rejected.
+    //
+    // The largest group goes first, because the batch that hides its members
+    // best is the biggest one available.
+    let mut by_fee: std::collections::BTreeMap<u64, Vec<_>> = std::collections::BTreeMap::new();
+    for entry in ready {
+        by_fee.entry(entry.4).or_default().push(entry);
+    }
+    let fee_groups = by_fee.len();
+    let (chosen_fee, mut ready) = by_fee
+        .into_iter()
+        .max_by_key(|(_, group)| group.len())
+        .expect("there is at least one pending spend");
+    if fee_groups > 1 {
+        println!();
+        println!(
+            "  the pending spends carry {fee_groups} different relay fees. Settling the {} that",
+            ready.len()
+        );
+        println!(
+            "  paid {chosen_fee}: a batch of mixed fees pays visibly different amounts, which"
+        );
+        println!("  lets an observer partition it by value. Run again for the others.");
+    }
+
     // A lookup table takes the packet out of the way, and what takes over is the
     // number of accounts a transaction may lock. Members are added while the
     // batch still fits under it, so a settler is never handed a transaction the
@@ -513,7 +543,7 @@ pub fn settle(
     ];
     let mut metas = base.clone();
     let mut taken = 0usize;
-    for (spend, beneficiary, relay, _) in &ready {
+    for (spend, beneficiary, relay, _, _) in &ready {
         let mut next = metas.clone();
         next.push(AccountMeta::new(*spend, false));
         next.push(AccountMeta::new(*beneficiary, false));
@@ -553,7 +583,7 @@ pub fn settle(
     let crowd = ready.len() as u32 >= state.k_floor;
     let timeout = mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS;
     if !crowd {
-        let youngest = ready.iter().map(|(_, _, _, at)| *at).max().unwrap_or(0);
+        let youngest = ready.iter().map(|(_, _, _, at, _)| *at).max().unwrap_or(0);
         let waited = now.saturating_sub(youngest);
         if waited < timeout {
             println!();

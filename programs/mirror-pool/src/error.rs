@@ -71,6 +71,14 @@ pub enum MirrorProgramError {
     SelfInvocationRefused = 23,
     /// The action payload exceeds the maximum a spend record can carry.
     PayloadTooLarge = 24,
+    /// Two records in one settlement carried different relay fees.
+    ///
+    /// A member is paid `denomination - relay_fee`, and that payout is public.
+    /// A batch whose members paid different fees settles into visibly different
+    /// amounts, so an observer partitions it by value without breaking anything
+    /// — which costs the members the exact property the batch exists to give
+    /// them. Refused rather than documented.
+    FeeNotUniform = 25,
 }
 
 impl From<MirrorProgramError> for ProgramError {

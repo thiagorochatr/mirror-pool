@@ -41,7 +41,7 @@ Then:
 
 ```
 git clone https://github.com/solanabr/mirror-pool && cd mirror-pool
-make verify               # fmt, clippy -D warnings, build-sbf, 256 tests
+make verify               # fmt, clippy -D warnings, build-sbf, 258 tests
 ```
 
 Nothing in that command needs a network, an API key or an account with anybody,
@@ -126,7 +126,7 @@ not say. There is a section below of things we deliberately do not claim.
 | `crates/mirror-provenance` | The funding-provenance measurement. |
 | `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle`, `disclose`, `disclose-verify` for members; `setup`, `verify-setup`, `soak`, `crowd`, `close-table` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
 
-**256 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**258 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.

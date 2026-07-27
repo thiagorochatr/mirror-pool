@@ -232,6 +232,68 @@ fn spend_ix(
 }
 
 /// Produces a proof for note `index`, bound to `beneficiary`.
+/// A proof and a `submit_spend` for note `index` at an arbitrary relay fee.
+///
+/// The fee is bound into the proof, so a differing fee is a differing statement
+/// rather than a field a test can edit afterwards — which is why this exists
+/// separately from the fixed-fee helpers.
+#[allow(clippy::too_many_arguments)]
+fn spend_ix_at_fee(
+    env: &Env,
+    keys: &Keys,
+    tree: &MerkleTree,
+    notes: &[Note],
+    index: usize,
+    beneficiary: &Pubkey,
+    relay: &Pubkey,
+    relay_fee: u64,
+) -> ([u8; 32], Instruction) {
+    use ark_std::rand::SeedableRng;
+    let merkle_proof = tree.proof(index as u64).unwrap();
+    let binding = mirror_core::action_binding(
+        SELECTOR,
+        &[0u8; 32],
+        &beneficiary.to_bytes(),
+        relay_fee,
+        0,
+        &[],
+    );
+    let witness = Witness {
+        note: notes[index],
+        merkle_proof: &merkle_proof,
+        root: tree.root().unwrap(),
+        action_binding: binding,
+    };
+    let mut rng = ark_std::rand::rngs::StdRng::from_seed([index as u8; 32]);
+    let proof = prove(keys, &witness, &mut rng).expect("proving");
+    let nullifier = proof.public_inputs[1];
+    let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+    let ix = Instruction::new_with_bytes(
+        env.program_id,
+        &MirrorIx::SubmitSpend {
+            proof_a: proof.proof_a,
+            proof_b: proof.proof_b,
+            proof_c: proof.proof_c,
+            root: proof.public_inputs[0],
+            nullifier,
+            selector: SELECTOR,
+            target_program: [0u8; 32],
+            beneficiary: beneficiary.to_bytes(),
+            relay_fee,
+            action_accounts: 0,
+            payload: Vec::new(),
+        }
+        .pack(),
+        vec![
+            AccountMeta::new(*relay, true),
+            AccountMeta::new(env.pool, false),
+            AccountMeta::new(spend_pda, false),
+            AccountMeta::new_readonly(solana_system_interface::program::ID, false),
+        ],
+    );
+    (nullifier, ix)
+}
+
 fn proof_for(
     keys: &Keys,
     tree: &MerkleTree,
@@ -1880,4 +1942,110 @@ fn squatting_a_pool_pda_does_not_prevent_the_pool() {
     let pool = Pool::load(&mut data).unwrap();
     assert_eq!(pool.denomination(), DENOMINATION);
     assert_eq!(pool.k_floor(), K_FLOOR);
+}
+
+/// A batch whose members paid different relay fees settles into visibly
+/// different payouts, and that is an anonymity set an observer can partition by
+/// reading balances — no proof broken, no secret learned.
+///
+/// The crowd rule, the single settling signature and the shared timestamp all
+/// exist to prevent exactly that partition, so a mixed-fee batch is refused
+/// rather than documented. It is a property of the batch and not of any record,
+/// which is why the check lives in settlement: a member may agree any fee with
+/// their relay, and settles with the members who agreed the same one.
+#[test]
+fn a_batch_whose_members_paid_different_fees_is_refused() {
+    let (mut env, tree, notes, keys) = seeded_pool(5);
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+
+    // Four members — the pool's floor — identical in every respect except what
+    // the last one's relay charged.
+    let fees = [RELAY_FEE, RELAY_FEE, RELAY_FEE, RELAY_FEE + 1];
+    let mut batch = Vec::new();
+    for (i, fee) in fees.iter().enumerate() {
+        let beneficiary = Pubkey::new_unique();
+        let relay = Keypair::new();
+        env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+        let (nullifier, ix) = spend_ix_at_fee(
+            &env,
+            &keys,
+            &tree,
+            &notes,
+            i,
+            &beneficiary,
+            &relay.pubkey(),
+            *fee,
+        );
+        env.send(ix, &relay).expect("submitting at an agreed fee");
+        let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+        batch.push((spend_pda, beneficiary, relay));
+    }
+
+    let err = env
+        .send(settle_ix(&env, &batch, &settler.pubkey()), &settler)
+        .expect_err("a mixed-fee batch must not settle");
+    assert!(
+        err.contains("Custom(25)"),
+        "expected FeeNotUniform, got {err}"
+    );
+
+    // Refused, not partially applied: neither member was paid and neither record
+    // was consumed, so both can still settle with somebody who paid what they did.
+    for (spend, beneficiary, _) in &batch {
+        let mut data = env.svm.get_account(spend).unwrap().data;
+        assert_eq!(Spend::load(&mut data).unwrap().status(), STATUS_PENDING);
+        // The beneficiary was never funded, so the account does not exist at
+        // all — which is the strongest form of "nothing was paid".
+        assert_eq!(
+            env.svm
+                .get_account(beneficiary)
+                .map(|a| a.lamports)
+                .unwrap_or(0),
+            0
+        );
+    }
+}
+
+/// The same two members, once their fees agree, settle normally — so the check
+/// above rejects the mixture and not the members.
+#[test]
+fn the_same_members_settle_once_their_fees_agree() {
+    let (mut env, tree, notes, keys) = seeded_pool(5);
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+
+    let odd_fee = RELAY_FEE + 1;
+    let mut batch = Vec::new();
+    for i in 0..4 {
+        let beneficiary = Pubkey::new_unique();
+        let relay = Keypair::new();
+        env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
+        let (nullifier, ix) = spend_ix_at_fee(
+            &env,
+            &keys,
+            &tree,
+            &notes,
+            i,
+            &beneficiary,
+            &relay.pubkey(),
+            odd_fee,
+        );
+        env.send(ix, &relay).expect("submitting");
+        let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
+        batch.push((spend_pda, beneficiary, relay));
+    }
+
+    env.send(settle_ix(&env, &batch, &settler.pubkey()), &settler)
+        .expect("a uniform batch settles whatever the fee is");
+
+    // Equal payouts is the property, and it is the thing to assert.
+    let paid: Vec<u64> = batch
+        .iter()
+        .map(|(_, b, _)| env.svm.get_account(b).unwrap().lamports)
+        .collect();
+    assert!(
+        paid.iter().all(|p| *p == DENOMINATION - odd_fee),
+        "members were paid different amounts: {paid:?}"
+    );
 }

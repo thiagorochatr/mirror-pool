@@ -151,6 +151,13 @@ wait for anyone else to.
 The relay fee comes *out of* the denomination, never in addition to it, and a fee
 at or above the denomination is refused on-chain.
 
+**Pay what everyone else pays.** You receive `denomination − relay_fee`, and that
+number is public. A batch whose members paid different fees settles into visibly
+different amounts, so an observer partitions it by value without breaking
+anything — which is why the program refuses a mixed batch outright and `settle`
+groups pending spends by fee. A fee nobody else pays is a crowd of one, and no
+rule in the program can fix that for you.
+
 ### Doing something other than paying
 
 The interesting case is not moving lamports. `--invoke` calls any program with

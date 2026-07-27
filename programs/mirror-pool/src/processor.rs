@@ -545,6 +545,23 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
     let now = solana_program::clock::Clock::get()?.unix_timestamp;
     let crowd_satisfied = count as u32 >= k_floor;
 
+    // Every member in a batch must be paid the same amount, and the fee is the
+    // only thing that can make them differ.
+    //
+    // A member receives `denomination - relay_fee`, and that lamport figure is
+    // public the moment settlement lands. A batch whose members paid different
+    // fees therefore settles into visibly different payouts, and an observer
+    // partitions it by value — without breaking a proof, without knowing a
+    // secret, by reading the balances. The crowd rule, the shared timestamp and
+    // the single settling signature all exist to stop exactly that partition,
+    // and a fee that varies hands it back.
+    //
+    // Enforced here rather than at submission because it is a property of the
+    // *batch*, not of any one record: a member is free to pay whatever fee they
+    // agreed with their relay, and they settle with the members who agreed the
+    // same. Nothing stops a settler grouping by fee; this stops them mixing.
+    let mut batch_fee: Option<u64> = None;
+
     // Each spend brings its record, its beneficiary and its relay.
     let mut pending: Vec<Pending> = Vec::with_capacity(count as usize);
     for _ in 0..count {
@@ -592,6 +609,14 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
                 record.action_accounts(),
             )
         };
+
+        match batch_fee {
+            None => batch_fee = Some(relay_fee),
+            Some(first) if first != relay_fee => {
+                return Err(MirrorProgramError::FeeNotUniform.into())
+            }
+            Some(_) => {}
+        }
 
         let (target, action_infos) = match selector {
             SELECTOR_TRANSFER => {

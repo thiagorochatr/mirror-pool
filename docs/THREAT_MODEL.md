@@ -239,6 +239,31 @@ in which the table exists and cannot yet be closed; nothing shortens it.
 Legacy settlement publishes no table at all, which is why it stays the default
 for any batch that fits without one.
 
+### The relay fee is a payout amount, and a mixed batch is a partitioned one
+
+The denomination is uniform by construction, but a member receives
+`denomination - relay_fee`, and that figure lands in a public account balance. So
+the fee is not a private arrangement between a member and their relay: it is a
+number an observer reads off the settlement.
+
+A batch whose members paid different fees settles into visibly different payouts,
+and an observer partitions it by value. No proof is broken and no secret is
+learned — the balances are simply different, and the crowd rule, the shared
+timestamp and the single settling signature are all defeated by arithmetic.
+
+**The program refuses such a batch** (`FeeNotUniform`, code 25). The check is in
+settlement rather than submission because it is a property of the batch and not
+of any record: a member may agree any fee with their relay, and settles with the
+members who agreed the same one. `mirror settle` groups pending spends by fee and
+settles the largest group.
+
+What this does *not* fix: a fee that is unusual is still a small crowd. A member
+who negotiates a fee nobody else pays settles alone, or with the few who match —
+and a batch of one is not an anonymity set whatever the program allows. The
+uniform-fee rule turns a silent partition into a visible one; choosing a common
+fee is still the member's job, and a pool whose members all pay the tool's
+default is better off than one where they do not.
+
 ### Amounts are public
 
 Fixed denominations mean the amount is a pool constant rather than a secret. A
