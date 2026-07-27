@@ -1072,6 +1072,48 @@ fn report(outcome: &Outcome) -> String {
          cluster rather than against this file.\n\n"
     ));
 
+    md.push_str("## What this run's own anonymity was, by our own metric\n\n");
+    md.push_str(
+        "It would be easy to publish this section's numbers and let a reader take them \
+         for a privacy result. They are not one, and the honest way to show that is to \
+         run the measurement this repository is built around against *this run* rather \
+         than only against somebody else's pool.\n\n",
+    );
+    // Every note here was deposited by one wallet, so the funding-provenance
+    // partition has exactly one class. Computed by the same code that produces
+    // the published headline rather than asserted, because the point of the
+    // section is that the number comes out *good* and means nothing.
+    let own = mirror_provenance::Anonymity::from_class_sizes(&[members as u64]);
+    if let Some(a) = own {
+        md.push_str(&format!(
+            "| quantity | this run |\n|---|---|\n\
+             | nominal k | {} |\n\
+             | provenance classes | {} |\n\
+             | ρ, the loss factor | {:.4} |\n\
+             | effective k (Shannon) | {:.2} |\n\
+             | effective k (min-entropy) | {:.2} |\n\n",
+            a.nominal_k, a.classes, a.loss_factor, a.eff_k_shannon, a.eff_k_min_entropy
+        ));
+        md.push_str(&format!(
+            "**ρ = {:.4} is the best value the metric can return, and it is meaningless \
+             here.** Every note in this pool was deposited by the same wallet, so the \
+             partition has one class holding all {} members; an adversary who learns a \
+             member's funding class learns nothing, and the metric correctly reports no \
+             loss *through that channel*. What it cannot report is that the single class \
+             is the operator, who funded every deposit and every relay and therefore knows \
+             which member is which. Against that adversary the anonymity set is **one**, \
+             and no funding-provenance number will ever say so, because provenance is not \
+             the channel that failed.\n\n\
+             This is the shape of the tautology `PROVENANCE_METHOD.md` §9.0 warns about, \
+             met head-on: a metric applied to a population constructed by the person \
+             reading it returns whatever that construction implies. The published headline \
+             in `README.md` avoids it by pointing at a pool this project does not control \
+             and did not fund — which is the only reason that number means anything and \
+             this one does not.\n\n",
+            a.loss_factor, a.nominal_k
+        ));
+    }
+
     md.push_str("## Scope\n\n");
     md.push_str(
         "Devnet, and one operator. This is a functional and quantitative result, not an \

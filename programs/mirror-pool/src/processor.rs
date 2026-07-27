@@ -516,6 +516,15 @@ pub const SETTLE_TIMEOUT_SECONDS: i64 = 3_600;
 /// requirement would make "synchronised" a word rather than a property. This is
 /// the honest middle: synchronised when there is traffic, still liquid when
 /// there is not.
+///
+/// **The timeout side has no floor, and a batch of one settles.** Settlement is
+/// permissionless, so an adversary may be the settler and may compose the batch;
+/// a spend becomes settleable alone an hour after it was submitted, whatever
+/// else is pending. `k_floor` bounds a batch that settles by crowd and bounds
+/// nothing about one that settles by clock. That is a deliberate trade of
+/// anonymity for solvency — the alternative freezes a quiet pool's escrow with
+/// no authority able to release it — and `docs/THREAT_MODEL.md` argues it rather
+/// than leaving it to be discovered.
 fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> ProgramResult {
     if count == 0 {
         return Err(MirrorProgramError::MalformedInstruction.into());

@@ -113,6 +113,13 @@ So this project claims exactly two things:
    itself refused to publish a headline from and the one whose pre-registered
    prediction turned out wrong.
 
+   **And the metric is turned on this project too.** `docs/CROWD.md` runs it
+   against our own devnet crowd, where it returns ρ = 1.0000 — the best value it
+   can produce — and then says why that number is worthless: every note in that
+   pool was funded by one wallet, so the partition has one class and the class is
+   us. A measurement that only ever points outward is a measurement nobody has
+   tested.
+
 Anything we cannot support with a measurement whose method is published, we do
 not say. There is a section below of things we deliberately do not claim.
 

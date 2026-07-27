@@ -84,6 +84,22 @@ Every value above was written by the run that produced it, and the run recorded 
 
 Every address and signature here is on devnet and can be checked against the cluster rather than against this file.
 
+## What this run's own anonymity was, by our own metric
+
+It would be easy to publish this section's numbers and let a reader take them for a privacy result. They are not one, and the honest way to show that is to run the measurement this repository is built around against *this run* rather than only against somebody else's pool.
+
+| quantity | this run |
+|---|---|
+| nominal k | 6 |
+| provenance classes | 1 |
+| ρ, the loss factor | 1.0000 |
+| effective k (Shannon) | 6.00 |
+| effective k (min-entropy) | 6.00 |
+
+**ρ = 1.0000 is the best value the metric can return, and it is meaningless here.** Every note in this pool was deposited by the same wallet, so the partition has one class holding all 6 members; an adversary who learns a member's funding class learns nothing, and the metric correctly reports no loss *through that channel*. What it cannot report is that the single class is the operator, who funded every deposit and every relay and therefore knows which member is which. Against that adversary the anonymity set is **one**, and no funding-provenance number will ever say so, because provenance is not the channel that failed.
+
+This is the shape of the tautology `PROVENANCE_METHOD.md` §9.0 warns about, met head-on: a metric applied to a population constructed by the person reading it returns whatever that construction implies. The published headline in `README.md` avoids it by pointing at a pool this project does not control and did not fund — which is the only reason that number means anything and this one does not.
+
 ## Scope
 
 Devnet, and one operator. This is a functional and quantitative result, not an anonymity claim about a live crowd: the relays here were funded from the same wallet that made the deposits, which is exactly the linkage `USAGE.md` tells a real member to avoid. What the run establishes is that a batch of *divergent* actions settles as one, that every member reached the validator they chose, and what such a batch costs in packet space.

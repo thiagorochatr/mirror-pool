@@ -270,6 +270,52 @@ Fixed denominations mean the amount is a pool constant rather than a secret. A
 member who needs an unusual amount is identifiable by the pool they chose. There
 is no confidential-value layer here.
 
+### The crowd rule is threshold-or-timeout, and the timeout side has no floor
+
+A batch settles if it carries `k_floor` spends **or** if every spend in it has
+waited out `SETTLE_TIMEOUT_SECONDS` (an hour). The second clause has no minimum
+size. **A batch of one settles, and executes.**
+
+This is the standard trade in mix design, and the standard analysis of it is
+Serjantov, Dingledine and Syverson, *From a Trickle to a Flood: Active Attacks on
+Several Mix Batching Strategies* (Information Hiding 2002), which examines
+threshold, timed, and threshold-or-timed batching and finds the disjunction
+inherits the weakness of its weaker half. The argument for our case does not need
+the paper, though — it follows from the code:
+
+- **Settlement is permissionless**, so an adversary may be the settler. They
+  choose the moment and the composition of every batch they send.
+- A spend submitted at `t` becomes settleable **alone** at `t + 3600`,
+  regardless of what else is pending.
+- So for any member whose spend outlives the timeout without company, an
+  adversary can settle it by itself, and that member's anonymity set is one.
+
+They do not even have to be adversarial. On a quiet pool this is simply what
+happens, and nothing in the program prevents it: `k_floor` bounds a batch that
+settles *by crowd* and bounds nothing about a batch that settles by clock.
+
+**Why it is still the right trade.** The alternative is an unconditional floor,
+and an unconditional floor means a member's escrow is held hostage to the arrival
+of strangers. A pool that never reaches `k_floor` again would freeze every note
+in it, permanently, with no authority able to release them — the program has no
+such authority by design. Given the choice between "your action may be
+attributable" and "your money may be unrecoverable", this design takes the first
+and says so, rather than advertising a floor it would have to break to keep
+anyone solvent.
+
+**What a member can do about it.** The protection is traffic, not the program.
+Submitting into a pool that already has spends pending is what buys a crowd;
+submitting into an empty one and waiting is what does not. The tool reports the
+pending count before it settles and says plainly when a batch is below the floor,
+because a member who is about to settle alone should know that is what they are
+doing. What the tool cannot do is manufacture other members.
+
+**What would fix it properly**, and is not built: a batch that fails to reach the
+floor could *refund* the member rather than execute — the escape hatch would then
+cost the member their action instead of their anonymity. That is a different
+protocol, with a different nullifier lifecycle, and it is named here because it
+is the honest answer to this section rather than left for a reader to think of.
+
 ### Small crowds
 
 `k_floor` is enforced against notes in the tree, and a pool whose deposits are

@@ -611,6 +611,29 @@ pub fn settle(
             println!("  hold a member's funds waiting for a crowd that never arrives.");
             return Ok(());
         }
+
+        // Past the timeout the program will accept this batch whatever its size,
+        // and a settler about to publish an under-floor batch should be told what
+        // it buys the members in it — which, at one member, is nothing. The
+        // timeout is a solvency guarantee and it is not an anonymity one.
+        println!();
+        println!(
+            "  WARNING: this batch carries {} spend(s), below the pool's floor of {}.",
+            ready.len(),
+            state.k_floor
+        );
+        println!("  It settles because every spend in it has waited out the {timeout}s timeout,");
+        println!("  which is a solvency guarantee and not an anonymity one. The members in");
+        if ready.len() == 1 {
+            println!("  this batch get an anonymity set of exactly one: the action will be");
+            println!("  attributable to whoever submitted it. Wait for company if you can.");
+        } else {
+            println!(
+                "  this batch get an anonymity set of {}, not {}.",
+                ready.len(),
+                state.k_floor
+            );
+        }
     }
 
     let ix = Instruction::new_with_bytes(
