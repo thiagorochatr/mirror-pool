@@ -35,6 +35,19 @@ pub const PROGRAM: &str = "AddressLookupTab1e1111111111111111111111111";
 /// fitting. Extending in chunks is the normal way to fill a table.
 pub const ADDRESSES_PER_EXTEND: usize = 20;
 
+/// How many distinct accounts one transaction may lock.
+///
+/// **Measured against devnet, not read out of the SDK.** `solana-transaction`
+/// exports `MAX_TX_ACCOUNT_LOCKS = 128`, and that is the raised limit, live only
+/// where the feature gate for it is active. A settlement naming 77 accounts was
+/// refused by devnet with `TooManyAccountLocks`, so the number a client must
+/// plan against is the older one until it can see otherwise.
+///
+/// This is what actually bounds a settlement once a lookup table has taken the
+/// packet out of the way. Twenty-four members through a table weigh 356 bytes of
+/// 1232 — nowhere near the wire — and are refused for locking 77 accounts.
+pub const MAX_ACCOUNT_LOCKS: usize = 64;
+
 /// Slots a table must sit deactivated before it can be closed.
 ///
 /// The cooldown exists because a transaction already in flight may still resolve
@@ -150,6 +163,20 @@ pub fn close(table: &Pubkey, authority: &Pubkey, recipient: &Pubkey) -> Result<I
 /// Getting either wrong produces a transaction that compiles and is then
 /// rejected by the cluster, so the filtering happens here, once, rather than at
 /// each call site.
+/// How many distinct accounts a transaction would lock for `metas`.
+///
+/// The fee payer and the invoked program are locked too, so they count even
+/// though neither can be served from a table.
+pub fn locks_for(metas: &[AccountMeta], program: &Pubkey, payer: &Pubkey) -> usize {
+    let mut seen: Vec<Pubkey> = vec![*program, *payer];
+    for m in metas {
+        if !seen.contains(&m.pubkey) {
+            seen.push(m.pubkey);
+        }
+    }
+    seen.len()
+}
+
 pub fn addresses_for(metas: &[AccountMeta], program: &Pubkey) -> Vec<Pubkey> {
     let mut out: Vec<Pubkey> = Vec::new();
     for m in metas {

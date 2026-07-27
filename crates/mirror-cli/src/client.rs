@@ -88,6 +88,27 @@ pub fn init_pool(
         println!("nothing to do — one pool per denomination is the whole point");
         return Ok(());
     }
+    // A floor above what one settlement can carry is a floor no crowd can ever
+    // satisfy. Settlement locks three accounts per member plus three for the
+    // pool itself, so the largest batch a transaction can hold is fixed by the
+    // runtime and not by this program — and a pool asking for more than that can
+    // only ever settle through the liveness timeout, an hour at a time, which is
+    // the opposite of what a high floor is chosen for.
+    //
+    // Refused rather than warned about: a pool's floor is fixed at creation, so
+    // by the time anyone notices, the fix is a different pool.
+    let settleable = (lookup::MAX_ACCOUNT_LOCKS - 3) / 3;
+    if k_floor as usize > settleable {
+        return Err(anyhow!(
+            "a floor of {k_floor} is higher than one settlement can carry. A transaction \
+             may lock {} accounts and each member costs three, so at most {settleable} \
+             members settle together — a pool with this floor would never meet it by \
+             crowd, and could only ever settle on the {}s timeout. Choose {settleable} \
+             or fewer.",
+            lookup::MAX_ACCOUNT_LOCKS,
+            mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS,
+        ));
+    }
     let ix = Instruction::new_with_bytes(
         *program_id,
         &MirrorIx::InitPool {
@@ -481,8 +502,54 @@ pub fn settle(
         return Ok(());
     }
 
-    // The crowd rule, checked here so a caller learns why rather than reading a
-    // custom error code off a failed transaction.
+    // A lookup table takes the packet out of the way, and what takes over is the
+    // number of accounts a transaction may lock. Members are added while the
+    // batch still fits under it, so a settler is never handed a transaction the
+    // cluster will refuse — and never has to know the limit exists.
+    let base = vec![
+        AccountMeta::new(settler.pubkey(), true),
+        AccountMeta::new(state.pool, false),
+        AccountMeta::new(state.vault, false),
+    ];
+    let mut metas = base.clone();
+    let mut taken = 0usize;
+    for (spend, beneficiary, relay, _) in &ready {
+        let mut next = metas.clone();
+        next.push(AccountMeta::new(*spend, false));
+        next.push(AccountMeta::new(*beneficiary, false));
+        next.push(AccountMeta::new(*relay, false));
+        if lookup::locks_for(&next, program_id, &settler.pubkey()) > lookup::MAX_ACCOUNT_LOCKS {
+            break;
+        }
+        metas = next;
+        taken += 1;
+    }
+    if taken == 0 {
+        return Err(anyhow!(
+            "a single spend already locks more than the {} accounts a transaction may hold",
+            lookup::MAX_ACCOUNT_LOCKS
+        ));
+    }
+    let deferred = ready.len() - taken;
+    if deferred > 0 {
+        println!();
+        println!(
+            "  {} spend(s) pending; settling {taken} of them, which is what fits under the",
+            ready.len()
+        );
+        println!(
+            "  {}-account lock limit. Run this again for the rest — the cost is a",
+            lookup::MAX_ACCOUNT_LOCKS
+        );
+        println!("  second timestamp, which is a real cost to the anonymity of both halves.");
+    }
+    ready.truncate(taken);
+
+    // The crowd rule, checked against the batch actually being sent rather than
+    // against everything pending. Those differ whenever the lock limit truncates
+    // a batch, and checking the wrong one builds a transaction the program then
+    // refuses with a bare error code — which is exactly what this check exists
+    // to spare a caller.
     let crowd = ready.len() as u32 >= state.k_floor;
     let timeout = mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS;
     if !crowd {
@@ -491,10 +558,17 @@ pub fn settle(
         if waited < timeout {
             println!();
             println!(
-                "  {} spend(s) pending, and this pool's floor is {}.",
+                "  this batch carries {} spend(s) and the pool's floor is {}.",
                 ready.len(),
                 state.k_floor
             );
+            if deferred > 0 {
+                println!(
+                    "  {} more are pending but cannot join: the floor is above what one",
+                    deferred
+                );
+                println!("  transaction can settle, so this pool can only settle on the timeout.");
+            }
             println!(
                 "  A batch below the floor may settle once every spend in it has waited {timeout}s;"
             );
@@ -509,16 +583,6 @@ pub fn settle(
         }
     }
 
-    let mut metas = vec![
-        AccountMeta::new(settler.pubkey(), true),
-        AccountMeta::new(state.pool, false),
-        AccountMeta::new(state.vault, false),
-    ];
-    for (spend, beneficiary, relay, _) in &ready {
-        metas.push(AccountMeta::new(*spend, false));
-        metas.push(AccountMeta::new(*beneficiary, false));
-        metas.push(AccountMeta::new(*relay, false));
-    }
     let ix = Instruction::new_with_bytes(
         *program_id,
         &MirrorIx::SettleEpoch {
@@ -600,7 +664,7 @@ fn settle_through_lookup_table(
     let authority = settler.pubkey();
     let addresses = lookup::addresses_for(&ix.accounts, &ix.program_id);
 
-    let recent_slot = chain.slot()?;
+    let recent_slot = chain.recent_slot()?;
     let (create_ix, table) = lookup::create(&authority, &authority, recent_slot)?;
     send(chain, create_ix, &[settler])?;
     println!("  lookup table {table}");
@@ -616,8 +680,8 @@ fn settle_through_lookup_table(
     // cluster to move on is not politeness, it is the difference between a
     // settlement that lands and one rejected for an address the table already
     // holds.
-    let extended_at = chain.slot()?;
-    while chain.slot()? <= extended_at {
+    let extended_at = chain.recent_slot()?;
+    while chain.recent_slot()? <= extended_at {
         std::thread::sleep(std::time::Duration::from_millis(400));
     }
 

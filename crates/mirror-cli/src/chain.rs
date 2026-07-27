@@ -143,15 +143,20 @@ impl Chain {
         Ok(sig)
     }
 
-    /// The cluster's current slot.
+    /// A slot recent enough to derive a lookup table's address from, and settled
+    /// enough that the address lookup table program will accept it.
     ///
-    /// Needed because a lookup table's address is derived from a *recent* slot,
-    /// and the runtime refuses one that is not. A slot read from anywhere but
-    /// the cluster about to receive the transaction is a guess.
-    pub fn slot(&self) -> Result<u64> {
+    /// **Finalized, deliberately.** A table's address is seeded with a slot, and
+    /// the program validates that slot against the `SlotHashes` sysvar — which
+    /// holds rooted slots only. A *confirmed* slot is routinely ahead of what is
+    /// rooted, so deriving from one produces a table address the program rejects
+    /// with `is not a recent slot`, an error that names the right cause and
+    /// sounds like the opposite of the problem: the slot was too new, not too
+    /// old.
+    pub fn recent_slot(&self) -> Result<u64> {
         let v = self.call(
             "getSlot",
-            serde_json::json!([{ "commitment": "confirmed" }]),
+            serde_json::json!([{ "commitment": "finalized" }]),
         )?;
         v.as_u64().ok_or_else(|| anyhow!("slot missing"))
     }
