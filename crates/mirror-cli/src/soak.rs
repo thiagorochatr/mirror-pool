@@ -47,23 +47,14 @@ const MEMO_PROGRAM: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 /// What the member asks the pool to say on their behalf.
 const MEMO_PAYLOAD: &[u8] = b"mirror-pool: signed by the pool, for a member";
 
-/// The native Stake program.
-const STAKE_PROGRAM: &str = "Stake11111111111111111111111111111111111111";
-/// Still in `DelegateStake`'s account list, deprecated but not removed.
-const STAKE_CONFIG: &str = "StakeConfig11111111111111111111111111111111";
-const SYSVAR_CLOCK: &str = "SysvarC1ock11111111111111111111111111111111";
-const SYSVAR_STAKE_HISTORY: &str = "SysvarStakeHistory1111111111111111111111111";
-const SYSVAR_RENT: &str = "SysvarRent111111111111111111111111111111111";
-
-/// `StakeInstruction::DelegateStake`, a bare u32 discriminant.
-const DELEGATE_STAKE: [u8; 4] = [2, 0, 0, 0];
-
 /// A devnet validator with a large active stake, so the delegation has somewhere
 /// real to go.
+///
+/// One validator is enough for the claim this run makes, which is that the pool
+/// can be a member's *authority*. Whether a batch survives its members choosing
+/// **different** validators is a separate claim with a separate cost, and
+/// `crowd.rs` measures it against the same cluster.
 const VOTE_ACCOUNT: &str = "2f9C9AU8nFRKUub8NHToNiZzcwmYiNeipVuP8akKgRVv";
-
-/// `StakeStateV2` is 200 bytes whatever variant it holds.
-const STAKE_ACCOUNT_LEN: usize = 200;
 
 /// What the operator puts into the stake account before the pool delegates it.
 ///
@@ -475,35 +466,13 @@ impl Soak {
     /// operator.
     pub fn create_stake_account(&mut self) -> Result<Pubkey> {
         let stake = Keypair::new();
-        let stake_program: Pubkey = STAKE_PROGRAM
-            .parse()
-            .map_err(|e| anyhow!("stake id: {e}"))?;
-        let rent_sysvar: Pubkey = SYSVAR_RENT.parse().map_err(|e| anyhow!("rent id: {e}"))?;
-
-        let create = solana_system_interface::instruction::create_account(
+        let [create, initialise] = crate::stake::create(
             &self.payer.pubkey(),
             &stake.pubkey(),
+            &self.vault,
+            &self.payer.pubkey(),
             STAKE_FUNDING,
-            STAKE_ACCOUNT_LEN as u64,
-            &stake_program,
-        );
-
-        // StakeInstruction::Initialize { Authorized, Lockup }, bincode: a u32
-        // discriminant then the two authorities and a zero lockup.
-        let mut data = 0u32.to_le_bytes().to_vec();
-        data.extend_from_slice(self.vault.as_ref()); // staker
-        data.extend_from_slice(&self.payer.pubkey().to_bytes()); // withdrawer
-        data.extend_from_slice(&0i64.to_le_bytes()); // lockup.unix_timestamp
-        data.extend_from_slice(&0u64.to_le_bytes()); // lockup.epoch
-        data.extend_from_slice(&[0u8; 32]); // lockup.custodian
-        let initialise = Instruction::new_with_bytes(
-            stake_program,
-            &data,
-            vec![
-                AccountMeta::new(stake.pubkey(), false),
-                AccountMeta::new_readonly(rent_sysvar, false),
-            ],
-        );
+        )?;
 
         let blockhash = self.client.latest_blockhash()?;
         let message =
@@ -522,23 +491,11 @@ impl Soak {
         Ok(stake.pubkey())
     }
 
-    /// The action list `DelegateStake` expects, in the callee's own order.
-    ///
-    /// Taken from what the `solana` CLI builds rather than from memory: the
-    /// authority sits in the last slot, and the deprecated config account is
-    /// still in the list. Getting this order wrong is not a compile error and
-    /// not a clear runtime one either — the stake program would read the config
-    /// account as the authority and report a missing signature.
     fn delegate_accounts(&self, stake: &Pubkey) -> Result<Vec<AccountMeta>> {
-        let parse = |s: &str| -> Result<Pubkey> { s.parse().map_err(|e| anyhow!("{s}: {e}")) };
-        Ok(vec![
-            AccountMeta::new(*stake, false),
-            AccountMeta::new_readonly(parse(VOTE_ACCOUNT)?, false),
-            AccountMeta::new_readonly(parse(SYSVAR_CLOCK)?, false),
-            AccountMeta::new_readonly(parse(SYSVAR_STAKE_HISTORY)?, false),
-            AccountMeta::new_readonly(parse(STAKE_CONFIG)?, false),
-            AccountMeta::new_readonly(self.vault, false),
-        ])
+        let vote: Pubkey = VOTE_ACCOUNT
+            .parse()
+            .map_err(|e| anyhow!("{VOTE_ACCOUNT}: {e}"))?;
+        crate::stake::delegate_accounts(stake, &vote, &self.vault)
     }
 
     /// Submits a spend whose action is a real stake delegation, authorised by
@@ -554,9 +511,7 @@ impl Soak {
         relay: &Keypair,
     ) -> Result<(Pubkey, [u8; 32])> {
         use ark_std::rand::SeedableRng;
-        let stake_program: Pubkey = STAKE_PROGRAM
-            .parse()
-            .map_err(|e| anyhow!("stake id: {e}"))?;
+        let stake_program = crate::stake::program_id()?;
         let merkle_proof = tree.proof(index as u64).map_err(|e| anyhow!("{e}"))?;
         // The stake account is the beneficiary, so the member's escrow lands in
         // the stake they authorised rather than beside it.
@@ -565,8 +520,8 @@ impl Soak {
             &stake_program.to_bytes(),
             &stake.to_bytes(),
             RELAY_FEE,
-            6,
-            &DELEGATE_STAKE,
+            crate::stake::DELEGATE_ACCOUNTS,
+            &crate::stake::DELEGATE_STAKE,
         );
         let witness = Witness {
             note: notes[index],
@@ -591,8 +546,8 @@ impl Soak {
                 target_program: stake_program.to_bytes(),
                 beneficiary: stake.to_bytes(),
                 relay_fee: RELAY_FEE,
-                action_accounts: 6,
-                payload: DELEGATE_STAKE.to_vec(),
+                action_accounts: crate::stake::DELEGATE_ACCOUNTS,
+                payload: crate::stake::DELEGATE_STAKE.to_vec(),
             }
             .pack(),
             vec![
@@ -611,37 +566,18 @@ impl Soak {
         Ok((spend_pda, nullifier))
     }
 
-    /// Reads the stake account back and reports which validator it now backs.
+    /// Reads the stake account back off the cluster and reports which validator
+    /// it now backs.
     ///
-    /// `StakeStateV2` is a bincode enum: a u32 discriminant, then `Meta` (8 bytes
-    /// of rent reserve, two 32-byte authorities, a 48-byte lockup), then
-    /// `Delegation`, whose first field is the vote account. Variant 2 is `Stake`,
-    /// which an account only reaches by being delegated — an initialised but
-    /// undelegated account is variant 1, so the discriminant alone distinguishes
-    /// "the instruction landed" from "the delegation took".
+    /// The read is the evidence, not the signature. A landed transaction says
+    /// the instruction executed; only the account state says the delegation took
+    /// — `crate::stake::delegated_voter` is where that distinction is drawn.
     pub fn confirm_delegated(&mut self, stake: &Pubkey) -> Result<()> {
         let data = self
             .client
             .account_data(stake)?
             .ok_or_else(|| anyhow!("the stake account {stake} vanished"))?;
-        if data.len() < 156 {
-            return Err(anyhow!(
-                "the stake account is {} bytes, too short to be a stake state",
-                data.len()
-            ));
-        }
-        let discriminant = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-        if discriminant != 2 {
-            return Err(anyhow!(
-                "the stake account is in state {discriminant}, not Stake(2): the \
-                 delegation did not take"
-            ));
-        }
-        let voter = Pubkey::new_from_array(
-            data[124..156]
-                .try_into()
-                .map_err(|_| anyhow!("reading the vote account"))?,
-        );
+        let voter = crate::stake::delegated_voter(&data)?;
         println!("  stake account delegated to {voter}");
         self.delegation = Some((*stake, voter));
         Ok(())
@@ -875,9 +811,7 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     // timestamp, one signer and a batch of actions, with nothing separating the
     // member who staked from the members who merely moved value.
     let memo: Pubkey = MEMO_PROGRAM.parse().map_err(|e| anyhow!("memo id: {e}"))?;
-    let stake_program: Pubkey = STAKE_PROGRAM
-        .parse()
-        .map_err(|e| anyhow!("stake id: {e}"))?;
+    let stake_program = crate::stake::program_id()?;
 
     // The stake account exists before any member asks for anything, and who
     // created it is public. What the pool supplies is the authority to delegate
@@ -1119,12 +1053,24 @@ fn write_proof(soak: &Soak, url: &str, out: &std::path::Path) -> Result<()> {
 
     if let Some(line) = &soak.signed_action {
         md.push_str("\n## The pool signed an action, and the callee said so\n\n");
-        md.push_str(
-            "The settlement above carried four spends, and one of them was not a transfer: \
-             the pool invoked SPL Memo as that member's **authority**, in the same \
-             transaction as the other three. That is the capability a stake delegation or a \
+        // Derived, not asserted. The batch size and the number of signed actions
+        // are both run parameters, and a sentence that hardcodes them goes stale
+        // the first time either changes -- which is exactly what happened when
+        // the stake delegation joined the batch.
+        let settled = soak
+            .accounting
+            .as_ref()
+            .map(|a| a.notes_settled)
+            .unwrap_or(0);
+        let signed = u64::from(soak.signed_action.is_some()) + u64::from(soak.delegation.is_some());
+        md.push_str(&format!(
+            "The settlement above carried {settled} spends, and {signed} of them {} not a \
+             transfer: the pool invoked SPL Memo as one member's **authority**, in the same \
+             transaction as the other {}. That is the capability a stake delegation or a \
              governance vote needs and a payment does not.\n\n",
-        );
+            if signed == 1 { "was" } else { "were" },
+            settled.saturating_sub(1),
+        ));
         md.push_str(
             "A signature only proves the transaction landed. It says nothing about who \
              signed the instruction the pool made *inside* it, so the evidence has to come \

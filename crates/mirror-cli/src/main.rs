@@ -7,9 +7,11 @@ use std::path::PathBuf;
 
 mod chain;
 mod client;
+mod crowd;
 mod history;
 mod note;
 mod soak;
+mod stake;
 
 /// The public devnet cluster, so the common case needs no flag.
 const DEFAULT_URL: &str = "https://api.devnet.solana.com";
@@ -192,6 +194,29 @@ enum Command {
         /// Where to write the evidence.
         #[arg(long, default_value = "docs/PROOF.md")]
         out: PathBuf,
+    },
+    /// Settles a batch of stake delegations to *different* validators, and
+    /// measures what that divergence costs in packet space.
+    ///
+    /// The claim `Soak` makes is that the pool can be a member's authority. This
+    /// one asks the harder question: whether a crowd survives its members
+    /// wanting different things.
+    Crowd {
+        #[arg(long)]
+        program: String,
+        #[arg(long, default_value = "https://api.devnet.solana.com")]
+        url: String,
+        /// Payer and settler keypair.
+        #[arg(long, default_value = "~/.config/solana/id.json")]
+        keypair: String,
+        /// Where to write the evidence.
+        #[arg(long, default_value = "docs/CROWD.md")]
+        out: PathBuf,
+        /// Re-render the report from the last run's recorded results, without
+        /// touching the cluster. For fixing the prose around numbers that were
+        /// already measured.
+        #[arg(long)]
+        render_only: bool,
     },
     /// Recomputes the verifying key from a seed and reports its digest.
     ///
@@ -958,6 +983,19 @@ fn main() -> Result<()> {
             keypair,
             out,
         } => soak::run(&program, &url, &keypair, &out),
+        Command::Crowd {
+            program,
+            url,
+            keypair,
+            out,
+            render_only,
+        } => {
+            if render_only {
+                crowd::render_only(&out)
+            } else {
+                crowd::run(&program, &url, &keypair, &out)
+            }
+        }
 
         Command::InitPool {
             program,

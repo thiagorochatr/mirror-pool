@@ -79,9 +79,9 @@ not say. There is a section below of things we deliberately do not claim.
 | `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain. |
 | `crates/mirror-circuit` | R1CS gadget, membership circuit, prover, key export. |
 | `crates/mirror-provenance` | The funding-provenance measurement. |
-| `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle` for members; `setup`, `verify-setup`, `soak` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
+| `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle` for members; `setup`, `verify-setup`, `soak`, `crowd` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
 
-**209 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**216 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -123,7 +123,14 @@ and why rather than returning an error code.
 
 ### How large a crowd fits in one settlement
 
-Ten. Measured, not estimated:
+It depends on what the crowd is doing, and the answer is measured in every case
+rather than estimated:
+
+| the batch | members per settlement | bytes | taken |
+|---|---|---|---|
+| plain payments | **10** | 1228 | settled in litesvm |
+| stake delegations, everyone to the same validator | **7** | 1140 | settled in litesvm |
+| stake delegations, a different validator each | **6** | 1194 | settled in litesvm **and on devnet** |
 
 ```
 settled 10 spends in one transaction: 1228 bytes (4 to spare), 19545 CU of 200000
@@ -131,21 +138,37 @@ settled 10 spends in one transaction: 1228 bytes (4 to spare), 19545 CU of 20000
 while the SVM settled the same batch in 24158 CU, so compute is not the constraint
 ```
 
-The **packet size** binds and compute is not close: a full ten-spend settlement
-uses under 10% of the default instruction budget. Each spend brings three
-accounts nobody else shares — its record, its beneficiary, its relay — so the
-transaction grows by about 99 bytes a member while the compute grows by about
-460 CU.
+The **packet size** binds in all three. Each spend brings accounts nobody else
+shares — its record, its beneficiary, its relay — so a payment costs about 99
+bytes a member, and a call costs more because it also names its callee and the
+callee's accounts.
+
+The interesting row is the last one. **Actions that diverge in content cost
+anonymity-set size**: a member who picks their own validator names a vote
+account nobody else in the batch names, one extra key per spend, and the batch
+loses a member. That is a real trade-off in the design, so it is measured from
+two sides that share no code path — `a_crowd_that_agrees_on_its_validator_carries_one_more_member`
+in litesvm and a live devnet run in [`docs/CROWD.md`](docs/CROWD.md) — and both
+land on 1194 bytes.
+
+Compute is not close for payments: ten settle in under 10% of the default
+instruction budget. It is much closer for delegations. On devnet the six-member
+divergent batch burned 142,856 of the 200,000 CU a single instruction gets, and
+`CROWD.md` reports where that leaves a settler: **at that ceiling both exits are
+shut**. Asking for a larger compute budget costs a second instruction, measured
+at 40 bytes against that very batch, and the batch has 38 to spare. Raising the
+budget means dropping a member.
 
 `ten_spends_fit_in_one_settlement_and_the_packet_is_what_stops_the_eleventh`
-pins both numbers and demonstrates the limit from both sides: it measures the
-eleventh batch at 1327 bytes *and* replays the identical batch into a second
-pool, where the SVM settles it without complaint. If compute ever became the
-binding constraint, that test fails rather than quietly reporting the wrong
-reason.
+demonstrates the payment limit from both sides: it measures the eleventh batch
+at 1327 bytes *and* replays the identical batch into a second pool, where the
+SVM settles it without complaint. If compute ever became the binding constraint,
+that test fails rather than quietly reporting the wrong reason.
+`every_account_an_action_names_costs_the_batch_a_member` does the same for the
+two delegation rows, against the real Stake program.
 
-That ten is a worst case, and the test says so: a batch whose members shared a
-relay would name fewer distinct keys and fit more. It is also a ceiling per
+Every figure is a worst case, and the tests say so: a batch whose members shared
+a relay would name fewer distinct keys and fit more. They are also ceilings per
 transaction, not per epoch — settlement is permissionless and a busy pool
 settles in several batches, at the cost of several timestamps rather than one.
 
@@ -540,5 +563,6 @@ that keeps only its successful runs is selecting rather than reporting.
 | `docs/MEASUREMENT_LOG.md` | Every run. |
 | `docs/THREAT_MODEL.md` | The adversary, what holds, and every place it stops. |
 | `docs/PROOF.md` | Devnet signatures for every flow, and the rejections. |
+| `docs/CROWD.md` | Six members delegating to six different validators in one devnet transaction, and what divergence costs. |
 | `docs/USAGE.md` | Every command, with real output. |
 | `docs/PLAN.md` | The design as decided, and where the shipped protocol departs from it. |

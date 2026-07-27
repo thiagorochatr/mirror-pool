@@ -293,4 +293,61 @@ impl Chain {
         v.as_u64()
             .ok_or_else(|| anyhow!("rent-exempt minimum missing"))
     }
+
+    /// Vote accounts of validators the cluster currently counts as active,
+    /// ordered by stake, largest first.
+    ///
+    /// Only the `current` list is read. A delinquent validator's vote account
+    /// still exists and `DelegateStake` would still accept it, so a run that
+    /// drew from `delinquent` would succeed and prove the same thing — but the
+    /// claim being made is about members choosing between *real* validators, and
+    /// a reader checking the run against the cluster should find the ones they
+    /// would have chosen from too.
+    ///
+    /// The order is the cluster's, made deterministic by sorting on stake and
+    /// then on the key, so two runs against the same epoch pick the same
+    /// validators and a reader can reproduce the selection instead of taking the
+    /// list on trust.
+    pub fn active_vote_accounts(&self) -> Result<Vec<Pubkey>> {
+        let v = self.call(
+            "getVoteAccounts",
+            serde_json::json!([{ "commitment": "confirmed" }]),
+        )?;
+        let current = v
+            .get("current")
+            .and_then(|c| c.as_array())
+            .ok_or_else(|| anyhow!("getVoteAccounts: no current validators"))?;
+        let mut ranked: Vec<(u64, String)> = current
+            .iter()
+            .filter_map(|entry| {
+                let key = entry.get("votePubkey")?.as_str()?.to_string();
+                let stake = entry.get("activatedStake")?.as_u64()?;
+                Some((stake, key))
+            })
+            .collect();
+        ranked.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        ranked
+            .into_iter()
+            .map(|(_, key)| key.parse().map_err(|e| anyhow!("vote account {key}: {e}")))
+            .collect()
+    }
+
+    /// What a landed transaction actually cost in compute.
+    ///
+    /// Read back from the cluster rather than simulated. A simulation runs
+    /// against a different slot with different account states, and the number
+    /// this is used for — how close a full settlement comes to the budget — is
+    /// only interesting if it is the number the validator metered.
+    pub fn compute_units(&self, signature: &str) -> Result<u64> {
+        let v = self.call(
+            "getTransaction",
+            serde_json::json!([
+                signature,
+                { "commitment": "confirmed", "maxSupportedTransactionVersion": 0 }
+            ]),
+        )?;
+        v.pointer("/meta/computeUnitsConsumed")
+            .and_then(|c| c.as_u64())
+            .ok_or_else(|| anyhow!("getTransaction: {signature} reports no compute units"))
+    }
 }

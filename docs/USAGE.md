@@ -169,6 +169,15 @@ pool acts as your authority rather than only as your funder. That is what a stak
 delegation or a governance vote needs and a payment does not; `PROOF.md` has a
 real stake delegation done this way on devnet.
 
+A word on what the proof does and does not promise here. It binds the selector,
+the target program, the beneficiary, the fee, the payload and the **number** of
+accounts — not which accounts fill the slots. For `DelegateStake` the validator
+lives in an account slot rather than in the payload, so *the settler chooses your
+validator*, and nothing on chain records which one you asked for. Check the
+result: read the stake account back and see who it backs. `CROWD.md` is a devnet
+run of six members delegating to six different validators that does exactly
+that, for every member.
+
 ## 6. Settle
 
 Permissionless. Anyone can settle, so no operator's absence can strand you, and
@@ -213,21 +222,40 @@ never *which*, so no tool can infer the account list its callee expects.
 
 ## How many members settle together
 
-Ten spends fit in one settlement transaction. The limit is the 1232-byte packet,
-not compute: ten uses 1228 bytes and 19,545 of the 200,000 compute units a single
-instruction gets by default.
+It depends on what the members are doing:
 
-Each spend brings three accounts nobody else shares — its record, its beneficiary
-and its relay — so the transaction grows about 99 bytes per member. A batch whose
-members shared a relay names fewer distinct keys and fits more.
+| the batch | members per settlement |
+|---|---|
+| plain payments | 10 |
+| stake delegations, everyone to the same validator | 7 |
+| stake delegations, a different validator each | 6 |
 
-This is a ceiling per *transaction*, not per epoch. Settlement is permissionless,
-so a pool with thirty pending spends settles in three batches; the cost is three
-timestamps rather than one, which is a real cost to the anonymity and the reason
-the number is worth knowing.
+The limit is the 1232-byte packet in every row. Each spend brings accounts
+nobody else shares — its record, its beneficiary, its relay — so a payment costs
+about 99 bytes per member, and a call costs more because it also names its
+callee and the callee's accounts.
 
-`ten_spends_fit_in_one_settlement_and_the_packet_is_what_stops_the_eleventh`
-pins it.
+**What you ask for changes how many people you can hide among.** A member who
+delegates to their own choice of validator adds a vote account nobody else in
+the batch names, and the batch loses a member. That is worth knowing before you
+choose: a crowd that converges on one validator is both larger and less
+distinguishable than a crowd that does not.
+
+For payments compute is nowhere near binding — ten settle in 19,545 of the
+200,000 compute units a single instruction gets. For delegations it is much
+closer: on devnet the six-member divergent batch used 142,856. And at that
+ceiling there is no way out, because the two limits shut together — asking for a
+larger compute budget costs a second instruction worth 40 bytes, and the batch
+has 38 to spare.
+
+These are ceilings per *transaction*, not per epoch. Settlement is
+permissionless, so a pool with thirty pending spends settles in three batches;
+the cost is three timestamps rather than one, which is a real cost to the
+anonymity and the reason the numbers are worth knowing.
+
+`ten_spends_fit_in_one_settlement_and_the_packet_is_what_stops_the_eleventh` and
+`every_account_an_action_names_costs_the_batch_a_member` pin them, and
+`CROWD.md` is a live devnet settlement of the six-member divergent case.
 
 ## Escaping without a relay
 

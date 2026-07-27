@@ -45,7 +45,7 @@ Paid out equals owed, and the vault came to rest on its floor with a remainder o
 
 ## The pool signed an action, and the callee said so
 
-The settlement above carried four spends, and one of them was not a transfer: the pool invoked SPL Memo as that member's **authority**, in the same transaction as the other three. That is the capability a stake delegation or a governance vote needs and a payment does not.
+The settlement above carried 5 spends, and 2 of them were not a transfer: the pool invoked SPL Memo as one member's **authority**, in the same transaction as the other 4. That is the capability a stake delegation or a governance vote needs and a payment does not.
 
 A signature only proves the transaction landed. It says nothing about who signed the instruction the pool made *inside* it, so the evidence has to come from the callee. SPL Memo refuses any account handed to it that has not signed, and names the ones that did:
 
