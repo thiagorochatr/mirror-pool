@@ -8,3 +8,10 @@ keys/
 *.keypair.json
 notes/
 sp4/
+
+# Live-run state, not deliverable. The note ledgers hold the secrets that
+# release a pool's escrow, and the plan files record which validator each
+# member of a run asked for. Both belong to one operator's run against one
+# cluster, and neither means anything to a reader of this repository.
+data/*-notes*.json
+data/crowd-plan-*.json
