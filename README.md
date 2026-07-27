@@ -212,7 +212,9 @@ produce one. Two things guard the member instead:
   paying it.
 
 Thirty-one tests cover it, one per tamper case, and each asserts *which* check
-failed rather than merely that verification did.
+failed rather than merely that verification did. `docs/USAGE.md` shows the real
+thing: a member proving, after the fact, that the **stake delegation** in
+`CROWD.md` was theirs — ten checks, all recomputed, against devnet.
 
 ### How large a crowd fits in one settlement
 
@@ -275,7 +277,8 @@ about to touch, published *before* the settlement lands. Leaving one behind per
 batch would turn a one-transaction event into a permanent on-chain index of the
 batch, which is a strange thing for a privacy pool to accumulate. So settlement
 deactivates it immediately and `mirror close-table` reclaims the rent and removes
-the list once the runtime's cooldown has passed.
+the list once the runtime's cooldown has passed — 15,084,280 lamports back, and
+the address list gone, on the table the settlement above used.
 
 Under legacy, the **packet size** binds in all three rows. Each spend brings accounts nobody else
 shares — its record, its beneficiary, its relay — so a payment costs about 99

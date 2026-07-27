@@ -234,19 +234,47 @@ mirror disclose --program <program-id> --note m1.json --out disclosure.json
 ```
 
 Give them the file. They check it against the chain, and nothing in it is taken
-on trust — the commitment and the nullifier are recomputed from your secrets, the
-record's address is derived from that recomputed nullifier, the accumulator is
-rebuilt from history and checked against the pool's own root, and the action is
-read out of the record:
+on trust:
 
 ```
-mirror disclose-verify --file disclosure.json
+$ mirror disclose-verify --file disclosure.json
+rebuilding the pool from chain history:
+  14 transactions touched this pool
+
+disclosure for leaf 0 of Cqg4gj4zwHZGfp1P2v6j6pB4dLbWgsL1vJB7YkjsFWAK
+  nullifier 25609bc4fe513e50fcc8874e1dbe8d7a556ff8b95724c606baa429aa6fdcaee2
+  record    4beEKJNuU4pHM3rUqLAm8ocVkf7kzRdLP2XMECCMwy77
+
+  the secrets recompute to the commitment    PASS
+      H3(k, r, denom_tag) = 13833afd2062da2c5a0217dd53b14c8118a10ded98d84f8af71853383509f2fd
+  the pool matches the denomination          PASS
+      Cqg4gj4zwHZGfp1P2v6j6pB4dLbWgsL1vJB7YkjsFWAK is the pool for 43000007 lamports
+  the commitment is the stated leaf          PASS
+      leaf 0 of 6 is 13833afd2062da2c5a0217dd53b14c8118a10ded98d84f8af71853383509f2fd
+  the rebuilt root matches the chain         PASS
+      6 leaves rebuild to 039bbb3012b6ff6554141437df6da9c12db6a5333c3c38e00146c85df87bfe08
+  the secrets recompute to the nullifier     PASS
+      H1(k) = 25609bc4fe513e50fcc8874e1dbe8d7a556ff8b95724c606baa429aa6fdcaee2
+  the record address is the nullifier's PDA  PASS
+      4beEKJNuU4pHM3rUqLAm8ocVkf7kzRdLP2XMECCMwy77 is the record for H1(k)
+  the spend record exists on chain           PASS
+  the spend record is settled                PASS
+      settled
+  the spend record belongs to this pool      PASS
+  the record matches the claimed action      PASS
+      selector 2 paid 5P9AHY2tGoQ9xedLeyvC5WsU4FXxxH8LgtC2kzRUMZtT, fee 200000, 4 payload byte(s)
+
+VERIFIED. Every value in this file was recomputed from the secrets or read off the
+cluster. The holder of this note is whoever asked the pool for the action above.
 ```
+
+That one is a real disclosure of a **stake delegation** — selector 2, the
+pool-signed action from `CROWD.md` — proved by its member after the fact.
 
 Every check is reported separately and a check that cannot be completed is a
 failure, never a silence. A file whose stated nullifier disagrees with what your
 secrets produce fails on that check while the rest still pass, which tells the
-verifier exactly what was tampered with.
+verifier exactly what was tampered with rather than merely that something was.
 
 **It only works after settlement, and the tool refuses before it.** The disclosure
 carries the note's secrets, and before the note is spent those secrets *are* the
@@ -327,6 +355,13 @@ cluster refuses.
 it is while it exists: a public, durable account listing every address the
 settlement touched, published before the settlement landed. Leaving one behind
 per batch builds a permanent on-chain index of who settled together.
+
+```
+$ mirror close-table --table ia9oUXMgArZhGPWyETroygf6bvULHQWBodgpwB43gQ8
+closed ia9oUXMgArZhGPWyETroygf6bvULHQWBodgpwB43gQ8
+  signature 1x3Uv5k8j8MnfWsD6rTksUkV9Mcgwvg6PjfTDJXFHgQ9J6CQ7wih51ANeBtaNXCDktstjBvupR2b5aHZPnoYuFp
+  reclaimed 15084280 lamports, and the published address list is gone
+```
 
 **Do not set a crowd floor above what one settlement can carry.** `init-pool`
 refuses it now, because a pool whose floor exceeds the per-transaction ceiling
