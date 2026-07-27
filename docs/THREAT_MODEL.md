@@ -173,12 +173,44 @@ Binding an account-list commitment into the proof would close this. It is not
 implemented, and the claim elsewhere that "a relay cannot redirect an action" is
 about the selector, target, fee and payload, not about the account list.
 
-### Timing at submission
+### The submission phase is public, and it is the weaker half
 
-Settlement batches payouts, but `submit_spend` is a transaction at a time of the
-relay's choosing. A relay that submits immediately on request leaks the member's
-timing. This is relay policy, not a protocol guarantee, and we do not claim
-otherwise.
+Settlement is one transaction, one signer and one timestamp, and that is the
+property the design is built around. It is also only half of what an observer
+sees, and the other half deserves stating plainly rather than being left implicit
+in a claim carefully scoped to the settled transaction.
+
+`submit_spend` is **one transaction per member**, at a moment of the relay's
+choosing, and it publishes in cleartext the beneficiary, the selector, the target
+program, the payload and the fee — everything about the action except who asked
+for it. Three things follow, and all three are real:
+
+- **Timing.** A relay that submits immediately on request leaks when the member
+  asked. This is relay policy, not a protocol guarantee.
+- **Ordering.** Settlement executes the batch in the order the settler passes the
+  records, and nothing shuffles them. A settler who preserves submission order
+  makes position in the settled batch a restatement of submission order, and
+  arrival order is public.
+- **The signer.** The relay signs, so `accountKeys[0]` of a `submit_spend` is the
+  relay. If a member relays for themselves — which the protocol permits, and
+  which `USAGE.md` documents as the escape hatch — that transaction names them
+  beside the action they are about to take, and the settlement's anonymity is
+  worth nothing to them.
+
+The last one is the sharpest, because it is not a subtle statistical channel: it
+is one public transaction that ends the question. **The tool refuses the version
+of this mistake it can detect** — a relay key that has also deposited into the
+pool — and cannot detect the rest, because nothing on chain distinguishes a
+member's own fresh key from a genuine third-party relay. Funding is where it
+usually goes wrong: a relay topped up from the depositing wallet leads back in
+one hop.
+
+So the honest statement of what the pool provides is narrower than "one signer,
+therefore anonymous". It is: **given that the member never signs and never funds
+their own relay, the settled action cannot be attributed to them.** The first
+clause is a discipline the member keeps, not a property the program enforces, and
+a threat model that omits it is describing a smaller adversary than the one that
+exists.
 
 ### Amounts are public
 

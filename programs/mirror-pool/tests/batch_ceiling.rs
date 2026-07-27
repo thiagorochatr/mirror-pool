@@ -12,6 +12,16 @@
 //! a smaller batch: the ceiling is found by settling real spends against the real
 //! `.so` in litesvm, and both limits are reported at the answer.
 //!
+//! **This measures a *legacy* transaction, and that scoping is the whole
+//! meaning of the number.** A legacy message names every account by its full 32
+//! bytes, which is what makes a member cost ~99 bytes and what puts the wall at
+//! ten. A v0 message may instead resolve accounts through an address lookup
+//! table published on chain, at one byte per account — the packet then stops
+//! binding entirely, and something else takes over. `crates/mirror-cli/src/
+//! lookup.rs` is that path, and `mirror settle` takes it automatically for any
+//! batch this test would refuse. Ten is the floor a settler gets with no setup
+//! at all, not the most the program can do.
+//!
 //! Requires `make build-sbf` first, like the end-to-end suite. This is a
 //! measurement of the deployed artefact, not of the host crate, so a missing
 //! artefact says so rather than quietly measuring nothing.

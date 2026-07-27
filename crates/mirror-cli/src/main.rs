@@ -8,7 +8,9 @@ use std::path::PathBuf;
 mod chain;
 mod client;
 mod crowd;
+mod disclose;
 mod history;
+mod lookup;
 mod note;
 mod soak;
 mod stake;
@@ -217,6 +219,56 @@ enum Command {
         /// already measured.
         #[arg(long)]
         render_only: bool,
+    },
+    /// Proves to a verifier of your choosing that a settled action was yours.
+    ///
+    /// Nothing on chain changes and nobody else learns anything: a disclosure is
+    /// a file handed to one counterparty, not a key anybody holds. It carries
+    /// the note's secrets, which authorise nothing once the nullifier is burnt —
+    /// and which would hand over the deposit if the note were still unspent,
+    /// which is why this refuses to write one for a note that has not settled.
+    Disclose {
+        #[arg(long)]
+        program: String,
+        #[arg(long)]
+        note: PathBuf,
+        /// Where to write the disclosure. Overwrites: unlike a note, it can be
+        /// regenerated from the note at any time.
+        #[arg(long, default_value = "disclosure.json")]
+        out: PathBuf,
+        /// Disclose even though doing so leaves the pool's remaining settled
+        /// actions below its floor. The cover that costs is the other members',
+        /// and they are neither asked nor told.
+        #[arg(long)]
+        i_accept_the_cost_to_others: bool,
+        #[arg(long, default_value = DEFAULT_URL)]
+        url: String,
+    },
+    /// Checks a disclosure against the chain, recomputing every value in it.
+    ///
+    /// Nothing in the file is taken on trust. The commitment and the nullifier
+    /// are rederived from the secrets, the spend record's address is derived
+    /// from that nullifier, the accumulator is rebuilt from history and checked
+    /// against the pool's own root, and the action is read out of the record.
+    /// Every check is reported separately, and any check that cannot be
+    /// completed is a failure rather than a silence.
+    DiscloseVerify {
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long, default_value = DEFAULT_URL)]
+        url: String,
+    },
+    /// Reclaims a settlement's lookup table once its cooldown has passed.
+    ///
+    /// A large settlement publishes a table naming every account it touches.
+    /// This returns the rent and removes that list.
+    CloseTable {
+        #[arg(long)]
+        table: String,
+        #[arg(long, default_value = "https://api.devnet.solana.com")]
+        url: String,
+        #[arg(long, default_value = "~/.config/solana/id.json")]
+        keypair: String,
     },
     /// Recomputes the verifying key from a seed and reports its digest.
     ///
@@ -983,6 +1035,37 @@ fn main() -> Result<()> {
             keypair,
             out,
         } => soak::run(&program, &url, &keypair, &out),
+        Command::Disclose {
+            program,
+            note,
+            out,
+            i_accept_the_cost_to_others,
+            url,
+        } => {
+            let chain = chain::Chain::new(&url);
+            disclose::create(
+                &chain,
+                &parse_program(&program)?,
+                &note,
+                &out,
+                i_accept_the_cost_to_others,
+            )
+        }
+        Command::DiscloseVerify { file, url } => {
+            let chain = chain::Chain::new(&url);
+            disclose::check(&chain, &file)
+        }
+        Command::CloseTable {
+            table,
+            url,
+            keypair,
+        } => {
+            let authority = soak::read_keypair(&keypair)?;
+            let table: solana_program::pubkey::Pubkey = table
+                .parse()
+                .map_err(|e| anyhow::anyhow!("bad table address: {e}"))?;
+            client::close_table(&chain::Chain::new(&url), &table, &authority)
+        }
         Command::Crowd {
             program,
             url,

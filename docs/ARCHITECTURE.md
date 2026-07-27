@@ -14,8 +14,9 @@ mirror-core        field, Poseidon, Merkle accumulator, notes   (linked on-chain
 mirror-circuit     R1CS gadget, membership circuit, prover      (host only)
 mirror-pool        the on-chain program
 mirror-provenance  funding-provenance measurement               (host only)
-mirror-cli         members:  init-pool, note-new, deposit, tree, spend, settle
-                   operators: setup, verify-setup, soak, crowd
+mirror-cli         members:  init-pool, note-new, deposit, tree, spend, settle,
+                             disclose, disclose-verify
+                   operators: setup, verify-setup, soak, crowd, close-table
                    measuring: check-endpoint, seeds, collect, analyze,
                               compare, selection
 ```

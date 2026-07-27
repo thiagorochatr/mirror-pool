@@ -41,8 +41,15 @@ Then:
 
 ```
 git clone https://github.com/solanabr/mirror-pool && cd mirror-pool
-make verify               # fmt, clippy -D warnings, build-sbf, 216 tests
+make verify               # fmt, clippy -D warnings, build-sbf, 256 tests
 ```
+
+Nothing in that command needs a network, an API key or an account with anybody,
+and it is the whole check — there is no second suite, no optional extra, and no
+step that only works on one CPU architecture. If you would rather look than
+build, the program is live on devnet at
+[`8H3cYoiAA9LM36c…`](https://explorer.solana.com/address/8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa?cluster=devnet)
+and every claim below links to the transaction that backs it.
 
 `make verify` is the whole check, and it is the same command CI runs — see
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml), which invokes `make
@@ -117,9 +124,9 @@ not say. There is a section below of things we deliberately do not claim.
 | `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain. |
 | `crates/mirror-circuit` | R1CS gadget, membership circuit, prover, key export. |
 | `crates/mirror-provenance` | The funding-provenance measurement. |
-| `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle` for members; `setup`, `verify-setup`, `soak`, `crowd` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
+| `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle`, `disclose`, `disclose-verify` for members; `setup`, `verify-setup`, `soak`, `crowd`, `close-table` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
 
-**216 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**256 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -166,12 +173,53 @@ The relay signs and the member never does, so no member key appears on chain
 after the deposit. Below the crowd floor, `settle` says what it is waiting for
 and why rather than returning an error code.
 
+### Giving up your anonymity, on purpose, to one person
+
+Anonymity you cannot surrender deliberately is a liability rather than a feature:
+at some point a member has to show an exchange or an accountant that a particular
+action was theirs. The usual answer is a viewing key or an auditor role, and both
+are standing capabilities somebody else holds — a compel path that exists is a
+compel path that can be used.
+
+There is none here. `mirror disclose` writes a file the member hands to **one
+verifier they chose**, and `mirror disclose-verify` checks it by recomputing
+every value in it: the commitment and the nullifier from the member's secrets,
+the record's address from that recomputed nullifier, the accumulator from chain
+history checked against the pool's own root, and the action read out of the
+record. Ten checks, each reported separately, and one that cannot be completed is
+a failure rather than a silence. A file whose stated nullifier disagrees with
+what the secrets produce fails on that check while the others still pass, which
+tells the verifier what was tampered with rather than merely that something was.
+
+No on-chain component, no auditor key, no protocol path that can be made to
+produce one. Two things guard the member instead:
+
+- **It refuses before settlement.** The disclosure carries the note's secrets,
+  and before the nullifier is burnt those secrets *are* the deposit — anyone
+  holding them can prove membership and redirect the payout. After settlement
+  they authorise nothing and only demonstrate the link, which is the thing being
+  disclosed on purpose.
+- **It refuses when it would cost the others too much.** Naming one action as
+  yours removes you as a candidate for every other action in the pool. If that
+  leaves the remaining set below the pool's floor, the command stops and says
+  what it would cost, and the override is a flag the member has to type out. The
+  gate is advisory — nobody can be stopped from disclosing out of band — and it
+  exists so the cost is visible at the moment it is paid, by the person not
+  paying it.
+
+Thirty-one tests cover it, one per tamper case, and each asserts *which* check
+failed rather than merely that verification did.
+
 ### How large a crowd fits in one settlement
 
-It depends on what the crowd is doing, and the answer is measured in every case
-rather than estimated:
+Two answers, and the difference between them is a transaction format rather than
+anything about the program.
 
-| the batch | members per settlement | bytes | taken |
+**With no setup at all**, settlement is a legacy transaction that names every
+account by its full 32 bytes, and the 1232-byte packet is what stops it. That
+floor is measured for each shape of action, not estimated:
+
+| the batch | members | bytes | taken |
 |---|---|---|---|
 | plain payments | **10** | 1228 | settled in litesvm |
 | stake delegations, everyone to the same validator | **7** | 1140 | settled in litesvm |
@@ -183,7 +231,28 @@ settled 10 spends in one transaction: 1228 bytes (4 to spare), 19545 CU of 20000
 while the SVM settled the same batch in 24158 CU, so compute is not the constraint
 ```
 
-The **packet size** binds in all three. Each spend brings accounts nobody else
+**With an address lookup table**, the same accounts are named by one byte each
+and the packet stops being the thing in the way at all. `mirror settle` publishes
+a table automatically for any batch that will not fit legacy, and
+`a_lookup_table_takes_the_packet_out_of_the_way` pins the arithmetic against the
+executed 1228-byte figure above so the two cannot drift apart: sixty members
+still fit inside a packet, six times what legacy allows and nowhere near a limit.
+
+Nothing in the program changes for this. `settle_epoch` requires a signature from
+the settler and from nobody else, and a lookup table can serve any account that
+is not a signer — so the ceiling was always a property of what the client chose
+to build, and ten is the floor rather than the maximum.
+
+**The table is not free, and it is taken back down.** It costs four extra
+transactions, a slot of latency, and rent — and, more to the point, while it
+exists it is a public durable account listing every address the settlement is
+about to touch, published *before* the settlement lands. Leaving one behind per
+batch would turn a one-transaction event into a permanent on-chain index of the
+batch, which is a strange thing for a privacy pool to accumulate. So settlement
+deactivates it immediately and `mirror close-table` reclaims the rent and removes
+the list once the runtime's cooldown has passed.
+
+Under legacy, the **packet size** binds in all three rows. Each spend brings accounts nobody else
 shares — its record, its beneficiary, its relay — so a payment costs about 99
 bytes a member, and a call costs more because it also names its callee and the
 callee's accounts.
@@ -348,6 +417,17 @@ expensive failure here, because nothing catches it until proving time and the
 symptom — proofs that verify nowhere — points at everything except the hash.
 
 ## The measurement
+
+**Every input is somebody else's chain data.** Nothing here is simulated, and
+that distinction is load-bearing rather than stylistic: an anonymity number
+computed from a protocol's own parameters is a statement about arithmetic — it
+comes out however the formula says it must, and a hostile reviewer can derive it
+without running anything. The interesting question is what a real funding graph
+does to a real anonymity set, and the only way to answer it is to go and read
+one. So `mirror collect` is the one networked command, it points at pools this
+project does not control, and the artifacts it produced are committed so the
+analysis can be rerun offline against exactly the bytes that produced the
+headline.
 
 Four commands, two passes, and the split is the point:
 
@@ -536,7 +616,10 @@ being measured.
 
 ## Deployment
 
-Live on **devnet** at `8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa`. The whole
+Live on **devnet** at
+[`8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa`](https://explorer.solana.com/address/8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa?cluster=devnet).
+Every signature below is a link — the claims in this section are meant to be
+read off the cluster rather than off this page. The whole
 lifecycle ran there against a real validator — pool creation, deposits, spends
 each carrying a Groth16 proof verified by the deployed program's own syscall, and
 a settlement that closed the vault to its rent-exempt minimum to the lamport.
@@ -629,5 +712,5 @@ reporting.
 | `docs/THREAT_MODEL.md` | The adversary, what holds, and every place it stops. |
 | `docs/PROOF.md` | Devnet signatures for every flow, and the rejections. |
 | `docs/CROWD.md` | Six members delegating to six different validators in one devnet transaction, and what divergence costs. |
-| `docs/USAGE.md` | The six member-facing commands, end to end, with real devnet output. |
+| `docs/USAGE.md` | The member-facing commands, end to end, with real devnet output. |
 | `docs/PLAN.md` | The design as decided, and where the shipped protocol departs from it. |

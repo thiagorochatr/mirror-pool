@@ -8,6 +8,7 @@
 
 use crate::chain::Chain;
 use crate::history::{self, History};
+use crate::lookup;
 use crate::note::StoredNote;
 use anyhow::{anyhow, Context, Result};
 use ark_std::rand::SeedableRng;
@@ -526,7 +527,36 @@ pub fn settle(
         .pack(),
         metas,
     );
-    let sig = send(chain, ix, &[settler])?;
+
+    // A legacy transaction names every account by its full 32 bytes, so a batch
+    // outgrows the 1232-byte packet at ten members. Rather than settle ten and
+    // leave the rest, a batch that does not fit is settled through a lookup
+    // table, which names the same accounts by one byte each.
+    //
+    // Legacy stays the default for batches that fit, and that is deliberate: a
+    // table costs four extra transactions, a slot of latency and rent, and none
+    // of it buys anything for a batch already inside the packet.
+    let sig = match legacy_settlement_bytes(&ix, &settler.pubkey()) {
+        bytes if bytes <= PACKET_DATA_SIZE => {
+            println!();
+            println!(
+                "settling {} spends in one legacy transaction, {bytes} bytes",
+                ready.len()
+            );
+            send(chain, ix, &[settler])?
+        }
+        bytes => {
+            println!();
+            println!(
+                "  {} spends do not fit a legacy transaction: {bytes} bytes, {} over the \
+                 {PACKET_DATA_SIZE}-byte packet.",
+                ready.len(),
+                bytes - PACKET_DATA_SIZE
+            );
+            println!("  Settling through a lookup table instead.");
+            settle_through_lookup_table(chain, ix, settler)?
+        }
+    };
     println!();
     println!("settled {} spends in one transaction", ready.len());
     println!("  signature {sig}");
@@ -534,6 +564,122 @@ pub fn settle(
     println!("Every payout in that batch shares one timestamp and one ordering, which");
     println!("is what stops arrival time from telling the members apart.");
     Ok(())
+}
+
+/// The 1280-byte IPv6 minimum MTU, less a 40-byte IPv6 header and an 8-byte
+/// fragment header.
+const PACKET_DATA_SIZE: usize = 1280 - 40 - 8;
+
+/// What this instruction would weigh as a legacy transaction signed by one key.
+fn legacy_settlement_bytes(ix: &Instruction, payer: &Pubkey) -> usize {
+    let message = solana_message::Message::new(std::slice::from_ref(ix), Some(payer));
+    1 + 64 + message.serialize().len()
+}
+
+/// Publishes a lookup table, settles through it, and then takes it back down.
+///
+/// The table is the interesting part of the cost, and not only because of the
+/// rent. While it exists it is a public, durable account listing every address
+/// the settlement is about to touch — published *before* the settlement lands,
+/// signed by the settler. Leaving it there would turn a one-transaction event
+/// into a permanent on-chain index of the batch, which is a strange thing for a
+/// privacy pool to leave behind.
+///
+/// So it is deactivated immediately, and closing it — which returns the rent and
+/// removes the list — is reported as the errand it is: the runtime enforces a
+/// cooldown of roughly `DEACTIVATION_COOLDOWN_SLOTS` slots first, because a
+/// transaction already in flight may still be resolving against the table.
+fn settle_through_lookup_table(
+    chain: &Chain,
+    ix: Instruction,
+    settler: &Keypair,
+) -> Result<String> {
+    use solana_message::{v0, AddressLookupTableAccount, VersionedMessage};
+    use solana_transaction::versioned::VersionedTransaction;
+
+    let authority = settler.pubkey();
+    let addresses = lookup::addresses_for(&ix.accounts, &ix.program_id);
+
+    let recent_slot = chain.slot()?;
+    let (create_ix, table) = lookup::create(&authority, &authority, recent_slot)?;
+    send(chain, create_ix, &[settler])?;
+    println!("  lookup table {table}");
+
+    for chunk in addresses.chunks(lookup::ADDRESSES_PER_EXTEND) {
+        let extend_ix = lookup::extend(&table, &authority, &authority, chunk)?;
+        send(chain, extend_ix, &[settler])?;
+    }
+    println!("  {} addresses published", addresses.len());
+
+    // A table cannot be used in the slot it was extended in: the runtime resolves
+    // it against a slot strictly later than the last write. Waiting for the
+    // cluster to move on is not politeness, it is the difference between a
+    // settlement that lands and one rejected for an address the table already
+    // holds.
+    let extended_at = chain.slot()?;
+    while chain.slot()? <= extended_at {
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    }
+
+    let alt = AddressLookupTableAccount {
+        key: table,
+        addresses,
+    };
+    let message = v0::Message::try_compile(&authority, &[ix], &[alt], chain.latest_blockhash()?)
+        .map_err(|e| anyhow!("compiling the settlement against the lookup table: {e}"))?;
+    let tx = VersionedTransaction::try_new(VersionedMessage::V0(message), &[settler])
+        .map_err(|e| anyhow!("signing the settlement: {e}"))?;
+    let bytes = bincode::serialize(&tx)?.len();
+    println!("  settlement is {bytes} bytes of {PACKET_DATA_SIZE}, one signature");
+    let sig = chain.send_versioned(&tx)?;
+
+    send(chain, lookup::deactivate(&table, &authority)?, &[settler])?;
+    println!(
+        "  table deactivated. Close it after ~{} slots to reclaim the rent and remove",
+        lookup::DEACTIVATION_COOLDOWN_SLOTS
+    );
+    println!("  the published address list:");
+    println!("    mirror close-table --table {table}");
+    Ok(sig)
+}
+
+/// Takes a lookup table back down, returning its rent and removing the address
+/// list it published.
+///
+/// Separate from settling because the runtime will not allow it to be the same
+/// errand: a table must sit deactivated for a cooldown before it can close, so
+/// that a transaction already in flight cannot have the table pulled out from
+/// under it. Deactivation happens at settlement; this is the second half.
+///
+/// Running it is optional in the sense that nothing breaks if nobody does, and
+/// not optional in the sense that skipping it leaves rent stranded and, more to
+/// the point, leaves a permanent public list of every address that settlement
+/// touched.
+pub fn close_table(chain: &Chain, table: &Pubkey, authority: &Keypair) -> Result<()> {
+    let before = chain.balance(&authority.pubkey())?;
+    let ix = lookup::close(table, &authority.pubkey(), &authority.pubkey())?;
+    match send(chain, ix, &[authority]) {
+        Ok(sig) => {
+            let reclaimed = chain.balance(&authority.pubkey())?.saturating_sub(before);
+            println!("closed {table}");
+            println!("  signature {sig}");
+            println!("  reclaimed {reclaimed} lamports, and the published address list is gone");
+            Ok(())
+        }
+        Err(e) => {
+            let message = e.to_string();
+            if message.contains("not been deactivated") || message.contains("still in use") {
+                Err(anyhow!(
+                    "{table} is not closable yet. A deactivated table waits about {} slots \
+                     before it can be closed, because a transaction already in flight may \
+                     still be resolving against it. Try again shortly.",
+                    lookup::DEACTIVATION_COOLDOWN_SLOTS
+                ))
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 /// Creates a note and writes it, printing what to do next.

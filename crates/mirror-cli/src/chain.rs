@@ -104,6 +104,47 @@ impl Chain {
         Ok(sig)
     }
 
+    /// Sends a versioned transaction, which is the only kind that can resolve
+    /// accounts through a lookup table.
+    ///
+    /// Separate from `send` rather than generic over both, because the wire
+    /// encodings differ and a legacy transaction silently serialized as
+    /// versioned — or the reverse — produces a signature verification failure
+    /// with nothing in it that points at the encoding.
+    pub fn send_versioned(
+        &self,
+        tx: &solana_transaction::versioned::VersionedTransaction,
+    ) -> Result<String> {
+        let wire = bincode::serialize(tx)?;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(&wire);
+        let sig = self.call(
+            "sendTransaction",
+            serde_json::json!([
+                encoded,
+                { "encoding": "base64", "preflightCommitment": "confirmed" }
+            ]),
+        )?;
+        let sig = sig
+            .as_str()
+            .ok_or_else(|| anyhow!("signature missing"))?
+            .to_string();
+        self.confirm(&sig)?;
+        Ok(sig)
+    }
+
+    /// The cluster's current slot.
+    ///
+    /// Needed because a lookup table's address is derived from a *recent* slot,
+    /// and the runtime refuses one that is not. A slot read from anywhere but
+    /// the cluster about to receive the transaction is a guess.
+    pub fn slot(&self) -> Result<u64> {
+        let v = self.call(
+            "getSlot",
+            serde_json::json!([{ "commitment": "confirmed" }]),
+        )?;
+        v.as_u64().ok_or_else(|| anyhow!("slot missing"))
+    }
+
     fn confirm(&self, signature: &str) -> Result<()> {
         for _ in 0..40 {
             let v = self.call(

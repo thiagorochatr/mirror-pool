@@ -220,6 +220,62 @@ transaction, at one timestamp.
 and reported, because the record binds *how many* accounts the call takes and
 never *which*, so no tool can infer the account list its callee expects.
 
+## 7. Proving it was you — to one person, later, if you want to
+
+Anonymity that cannot be given up on purpose is a liability. At some point a
+member may need to show an exchange, an accountant or a counterparty that a
+particular action was theirs — and the usual answer to that is a viewing key or
+an auditor, which means a standing capability somebody else holds.
+
+There is none here. A disclosure is a **file you hand to one person you chose**:
+
+```
+mirror disclose --program <program-id> --note m1.json --out disclosure.json
+```
+
+Give them the file. They check it against the chain, and nothing in it is taken
+on trust — the commitment and the nullifier are recomputed from your secrets, the
+record's address is derived from that recomputed nullifier, the accumulator is
+rebuilt from history and checked against the pool's own root, and the action is
+read out of the record:
+
+```
+mirror disclose-verify --file disclosure.json
+```
+
+Every check is reported separately and a check that cannot be completed is a
+failure, never a silence. A file whose stated nullifier disagrees with what your
+secrets produce fails on that check while the rest still pass, which tells the
+verifier exactly what was tampered with.
+
+**It only works after settlement, and the tool refuses before it.** The disclosure
+carries the note's secrets, and before the note is spent those secrets *are* the
+money — anyone holding them can prove membership and send the payout wherever
+they like. After the nullifier is burnt they authorise nothing, and all that is
+left in them is the ability to demonstrate the link. That is the whole difference
+between a disclosure and handing over a deposit.
+
+**Disclosing costs the other members, and the tool says so before you do it.**
+Proving one action was yours removes you as a candidate for every other action in
+the pool. If that would leave the remaining set below the pool's floor, the
+command refuses and tells you what it would cost:
+
+```
+Error: REFUSING: this pool has settled 6 spend(s) and its floor is 6. Naming one
+of them as yours leaves 5 unattributed, which is below the floor.
+
+The people that costs are not you. Every settled action is a candidate for every
+member; removing one narrows the guess for all the rest, and they did not agree
+to it and will not be told.
+
+If you have weighed that and still want to, pass --i-accept-the-cost-to-others.
+Nothing here can stop you disclosing out-of-band anyway — the secrets are yours.
+This exists so the cost is visible at the moment it is paid.
+```
+
+The gate is advisory by construction, and the message says so rather than
+pretending otherwise.
+
 ## How many members settle together
 
 It depends on what the members are doing:
