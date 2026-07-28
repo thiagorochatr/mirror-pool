@@ -909,7 +909,7 @@ without them being true.
 
 That file has every signature *and* the lamports, because "closed to the
 rent-exempt minimum" is the interesting part of that sentence and a list of
-signatures does not show it: 100,000,095 owed against 100,000,095 paid out, and a
+signatures does not show it: 100,000,115 owed against 100,000,115 paid out, and a
 vault resting on its floor with a remainder of zero. The soak asserts both and
 fails the run otherwise, so that table cannot record a discrepancy and still
 exit successfully.

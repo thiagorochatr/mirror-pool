@@ -82,8 +82,8 @@ credited to it, and pool creation refuses a nonzero entry fee, so there is no
 second category of lamports anywhere that could be mistaken for backing for an
 unspent note.
 
-`docs/PROOF.md` carries the devnet numbers: five notes settled, 100,000,095
-lamports owed and 100,000,095 paid, and a vault that came to rest on its
+`docs/PROOF.md` carries the devnet numbers: five notes settled, 100,000,115
+lamports owed and 100,000,115 paid, and a vault that came to rest on its
 rent-exempt floor with a remainder of zero. The soak asserts that rather than
 printing it, so a run that disagreed would fail instead of publishing.
 
