@@ -26,6 +26,7 @@
 //! cluster.
 
 use crate::chain::Chain;
+use crate::lookup::MAX_ACCOUNT_LOCKS as MAX_LOCKS;
 use crate::note::StoredNote;
 use crate::soak::{keys, read_keypair, Settlement, Step};
 use crate::stake;
@@ -100,6 +101,29 @@ pub struct Ceiling {
     /// compute budget is the obvious answer to a settlement that runs out of it,
     /// and it is paid for in the one currency a full batch has none of.
     pub budget_bytes: usize,
+
+    /// The same two ceilings when the packet is taken out of the way by a lookup
+    /// table, so what binds is the 64-account lock limit instead of 1232 bytes.
+    ///
+    /// A table names an account with one byte instead of thirty-two, which ends
+    /// the byte argument and starts a different one. These are the answer to the
+    /// question the earlier version of this report left open rather than
+    /// guessed at.
+    ///
+    /// Both figures assume the `SetComputeUnitLimit` instruction is present,
+    /// because for this shape it has to be: a batch large enough to be worth a
+    /// table costs more compute than the 200,000 a transaction is given by
+    /// default. That instruction brings its own program, and a program is an
+    /// account — so raising the budget still costs a member, just in locks now
+    /// rather than in bytes.
+    #[serde(default)]
+    pub divergent_through_table: usize,
+    #[serde(default)]
+    pub uniform_through_table: usize,
+    /// Locks held by a full divergent settlement through a table, against the 64
+    /// a transaction may hold.
+    #[serde(default)]
+    pub locks_at_divergent_table: usize,
 }
 
 /// Everything the report is rendered from.
@@ -646,18 +670,56 @@ impl Crowd {
                 .rfind(|n| self.settlement_bytes(&shape(*n, share_vote)) <= PACKET_DATA_SIZE)
                 .unwrap_or(0)
         };
+        let largest_through_table = |share_vote: bool| -> usize {
+            (1..=64)
+                .rfind(|n| self.settlement_locks_with_budget(&shape(*n, share_vote)) <= MAX_LOCKS)
+                .unwrap_or(0)
+        };
         let divergent = largest(false);
         let uniform = largest(true);
         let full = shape(divergent, false);
         let divergent_bytes = self.settlement_bytes(&full);
+        let divergent_through_table = largest_through_table(false);
         Ceiling {
             divergent,
             uniform,
             divergent_bytes,
             over_bytes: self.settlement_bytes(&shape(divergent + 1, false)),
             budget_bytes: self.settlement_bytes_with_budget(&full) - divergent_bytes,
+            divergent_through_table,
+            uniform_through_table: largest_through_table(true),
+            locks_at_divergent_table: self
+                .settlement_locks_with_budget(&shape(divergent_through_table, false)),
         }
     }
+
+    /// How many accounts a settlement would lock, with the compute-budget
+    /// instruction counted.
+    ///
+    /// This is the limit that takes over once a lookup table ends the byte
+    /// argument, and it is a different kind of limit: bytes are spent per
+    /// account *name*, locks are held per *distinct* account. That is the whole
+    /// reason a crowd agreeing on one validator fits more members — the shared
+    /// vote account is named once and locked once, where divergent members each
+    /// bring one nobody else in the batch holds.
+    ///
+    /// The compute-budget program is included because it is an account like any
+    /// other. A batch this size cannot execute inside the default 200,000 CU, so
+    /// the instruction is not optional here, and neither is the lock it costs.
+    pub fn settlement_locks_with_budget(&self, batch: &[Settlement]) -> usize {
+        let ix = self.settle_ix(batch);
+        let mut metas = ix.accounts.clone();
+        metas.push(AccountMeta::new_readonly(compute_budget_program(), false));
+        crate::lookup::locks_for(&metas, &ix.program_id, &self.payer.pubkey())
+    }
+}
+
+/// The compute-budget program, which a settlement large enough to need a lookup
+/// table also needs.
+fn compute_budget_program() -> Pubkey {
+    "ComputeBudget111111111111111111111111111111"
+        .parse()
+        .expect("the compute budget program id is a const")
 }
 
 pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Result<()> {
@@ -877,7 +939,30 @@ pub fn render_only(out: &std::path::Path) -> Result<()> {
     let text = std::fs::read_to_string(&result_path).with_context(|| {
         format!("{result_path} does not exist — there is no recorded run to render")
     })?;
-    let outcome: Outcome = serde_json::from_str(&text)?;
+    let mut outcome: Outcome = serde_json::from_str(&text)?;
+
+    // The through-a-table ceilings are a property of the instruction's shape and
+    // not of the run, so they are recomputed here rather than trusted from the
+    // file. A record written before these fields existed deserializes them as
+    // zero, and rendering a zero into a published table is worse than any
+    // staleness this is meant to avoid: it would read as a measured result.
+    //
+    // Nothing about this touches a cluster. It builds the same instruction the
+    // settlement builds and counts what it names, which is what the packet
+    // ceilings in the same struct already are.
+    let derived = Crowd::new(
+        "http://127.0.0.1:1",
+        outcome
+            .pool
+            .parse()
+            .unwrap_or_else(|_| solana_program::pubkey::Pubkey::new_unique()),
+        Keypair::new(),
+    )
+    .measure_ceiling();
+    outcome.ceiling.divergent_through_table = derived.divergent_through_table;
+    outcome.ceiling.uniform_through_table = derived.uniform_through_table;
+    outcome.ceiling.locks_at_divergent_table = derived.locks_at_divergent_table;
+
     write_report(&outcome, out)?;
     println!("rendered {} from {result_path}", out.display());
     Ok(())
@@ -1036,18 +1121,48 @@ fn report(outcome: &Outcome) -> String {
          instruction. Measured against this very batch, that instruction costs **{} \
          bytes**, and a full legacy settlement has {} to spare. In a legacy transaction, \
          raising the budget means dropping a member.\n\n\
-         **A lookup table lifts that, and this run did not measure how far.** Naming \
-         accounts by one byte each takes the packet out of the way — `mirror settle` does \
-         it automatically, and a batch of twenty plain transfers settled that way on devnet \
-         at 332 bytes of 1232. What then binds a batch of *delegations* is some combination \
-         of the 64-account lock limit and the compute this table already shows to be \
-         expensive, and neither has been measured for this shape. The honest statement is \
-         that {} is the legacy ceiling for divergent delegations and the ceiling through a \
-         table is unmeasured — not that it is the same number.\n\n",
+         **A lookup table lifts that, and here is how far.** Naming accounts by one \
+         byte each takes the packet out of the way — `mirror settle` does it \
+         automatically, and a batch of twenty plain transfers settled that way on devnet \
+         at 332 bytes of 1232. What takes over for *delegations* is the 64-account lock \
+         limit, and it is a different kind of limit: bytes are spent naming an account, \
+         locks are held per **distinct** account.\n\n\
+         | batch | legacy packet | through a lookup table |\n|---|---|---|\n\
+         | all delegating to the same validator | {} | **{}** |\n\
+         | each delegating to a different one | {} | **{}** |\n\n\
+         A full divergent batch through a table holds {} of the 64 locks a transaction \
+         may take. Both ceilings roughly double, and the gap between them widens from one \
+         member to {} — because a shared vote account is named once either way but locked \
+         only once too, so agreeing on a validator is worth more here than it was in the \
+         packet.\n\n\
+         **The compute budget instruction is counted in those two figures, because at \
+         this size it is not optional.** A batch of {} delegations costs on the order of \
+         {} CU at the per-member rate this run measured, well past the 200,000 a \
+         transaction is given by default. Asking for more brings the compute-budget \
+         program along, and a program is an account — so raising the budget still costs a \
+         member. In the legacy packet that cost was {} bytes; through a table it is one \
+         lock. The escape from one limit is paid out of the other in both regimes, which \
+         is the finding rather than the inconvenience.\n\n\
+         **What kind of number these two are.** They are computed the same way the packet \
+         ceilings above are — by building the real instruction and counting what it \
+         names — and not by settling a batch of that size. The 64-account limit itself is \
+         not a guess: it was found on devnet, where 77 accounts returned \
+         `TooManyAccountLocks`, and the twenty-transfer settlement cited above landed at \
+         exactly 64. What has not been done is a delegation batch of {} settled through a \
+         table on a live cluster, and this document does not claim one.\n\n",
         ceiling.divergent,
         ceiling.budget_bytes,
         PACKET_DATA_SIZE - ceiling.divergent_bytes,
+        ceiling.uniform,
+        ceiling.uniform_through_table,
         ceiling.divergent,
+        ceiling.divergent_through_table,
+        ceiling.locks_at_divergent_table,
+        ceiling.uniform_through_table - ceiling.divergent_through_table,
+        ceiling.divergent_through_table,
+        ceiling.divergent_through_table * 23_800,
+        ceiling.budget_bytes,
+        ceiling.divergent_through_table,
     ));
 
     md.push_str("## Every step\n\n");
@@ -1130,4 +1245,63 @@ fn report(outcome: &Outcome) -> String {
          not. That is `THREAT_MODEL.md` applied rather than repeated.\n",
     );
     md
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `Crowd` with no cluster behind it.
+    ///
+    /// `measure_ceiling` never touches the network — it serializes instructions
+    /// and counts accounts — so the ceilings are testable without devnet, which
+    /// is what makes them a pinned result rather than something re-derived on
+    /// each run and believed.
+    fn offline() -> Crowd {
+        Crowd::new("http://127.0.0.1:1", Pubkey::new_unique(), Keypair::new())
+    }
+
+    /// The four ceilings, pinned.
+    ///
+    /// Legacy and through-a-table are different regimes and the numbers say so.
+    /// A change to the account shape of `settle_epoch` moves these, and moving
+    /// them silently is how a document comes to describe a settlement nobody can
+    /// send.
+    #[test]
+    fn the_table_lifts_the_delegation_ceiling_and_locks_take_over() {
+        let c = offline().measure_ceiling();
+
+        // Legacy: the 1232-byte packet binds, and divergence costs a member.
+        assert_eq!(c.uniform, 7, "legacy, one validator");
+        assert_eq!(c.divergent, 6, "legacy, a validator each");
+
+        // Through a table: the packet stops mattering and the 64-account lock
+        // limit takes over. Both shapes roughly double.
+        assert_eq!(c.uniform_through_table, 18, "table, one validator");
+        assert_eq!(c.divergent_through_table, 13, "table, a validator each");
+
+        assert!(
+            c.locks_at_divergent_table <= MAX_LOCKS,
+            "a full divergent batch holds {} locks, over the {MAX_LOCKS} limit",
+            c.locks_at_divergent_table
+        );
+    }
+
+    /// Divergence costs more under locks than under bytes, and the reason is
+    /// structural rather than incidental.
+    ///
+    /// Bytes are spent naming an account; locks are held per *distinct*
+    /// account. A shared vote account is named once either way, so agreeing on a
+    /// validator buys one member in a legacy packet and five through a table.
+    #[test]
+    fn agreeing_on_a_validator_buys_more_members_through_a_table_than_without() {
+        let c = offline().measure_ceiling();
+        let legacy_gain = c.uniform - c.divergent;
+        let table_gain = c.uniform_through_table - c.divergent_through_table;
+        assert!(
+            table_gain > legacy_gain,
+            "divergence cost {legacy_gain} member(s) legacy and {table_gain} through a table; \
+             the table was supposed to make the shared account matter more, not less"
+        );
+    }
 }

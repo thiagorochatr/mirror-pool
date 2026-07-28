@@ -319,6 +319,33 @@ settler is never handed a transaction the cluster will refuse, and `init-pool`
 refuses a crowd floor higher than one settlement can carry rather than letting a
 pool be created that can only ever settle on its timeout.
 
+**A delegation batch moves too, and by more.** Counting locks instead of bytes
+for the two stake shapes gives:
+
+| the batch | legacy packet | through a table |
+|---|---|---|
+| stake delegations, everyone to the same validator | 7 | **18** |
+| stake delegations, a different validator each | 6 | **13** |
+
+Both roughly double, and the gap between them widens from one member to five —
+because a shared vote account is named once either way but *locked* once too, so
+agreeing on a validator buys more under locks than it did under bytes.
+
+Those two figures include the `SetComputeUnitLimit` instruction, because at this
+size it is not optional: thirteen delegations cost on the order of 309,000 CU at
+the per-member rate `docs/CROWD.md` measured, well past the 200,000 a transaction
+is given by default. Asking for more brings the compute-budget program along, and
+a program is an account — so raising the budget still costs a member, forty bytes
+in a legacy packet and one lock through a table. **The escape from one limit is
+paid for out of the other in both regimes**, which is the result rather than the
+inconvenience.
+
+These two are computed the way the packet ceilings are — by building the real
+instruction and counting what it names — and the 64-account limit they are
+measured against was itself taken from devnet. A thirteen-member delegation batch
+settled through a table on a live cluster is *not* something this repository
+claims, and `docs/CROWD.md` says so in the same words.
+
 **The table is not free, and it is taken back down.** It costs four extra
 transactions, a slot of latency, and rent — and, more to the point, while it
 exists it is a public durable account listing every address the settlement is

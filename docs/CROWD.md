@@ -51,7 +51,18 @@ Each member's Groth16 proof was verified earlier, in their own `submit_spend`, w
 
 The packet binds first — 6 members is where the bytes run out, and the budget is not exhausted there — but for a **legacy** transaction the two limits are barely independent, and that is worth stating plainly. The usual answer to a settlement that runs out of compute is to ask for more with a `SetComputeUnitLimit` instruction. Measured against this very batch, that instruction costs **40 bytes**, and a full legacy settlement has 38 to spare. In a legacy transaction, raising the budget means dropping a member.
 
-**A lookup table lifts that, and this run did not measure how far.** Naming accounts by one byte each takes the packet out of the way — `mirror settle` does it automatically, and a batch of twenty plain transfers settled that way on devnet at 332 bytes of 1232. What then binds a batch of *delegations* is some combination of the 64-account lock limit and the compute this table already shows to be expensive, and neither has been measured for this shape. The honest statement is that 6 is the legacy ceiling for divergent delegations and the ceiling through a table is unmeasured — not that it is the same number.
+**A lookup table lifts that, and here is how far.** Naming accounts by one byte each takes the packet out of the way — `mirror settle` does it automatically, and a batch of twenty plain transfers settled that way on devnet at 332 bytes of 1232. What takes over for *delegations* is the 64-account lock limit, and it is a different kind of limit: bytes are spent naming an account, locks are held per **distinct** account.
+
+| batch | legacy packet | through a lookup table |
+|---|---|---|
+| all delegating to the same validator | 7 | **18** |
+| each delegating to a different one | 6 | **13** |
+
+A full divergent batch through a table holds 61 of the 64 locks a transaction may take. Both ceilings roughly double, and the gap between them widens from one member to 5 — because a shared vote account is named once either way but locked only once too, so agreeing on a validator is worth more here than it was in the packet.
+
+**The compute budget instruction is counted in those two figures, because at this size it is not optional.** A batch of 13 delegations costs on the order of 309400 CU at the per-member rate this run measured, well past the 200,000 a transaction is given by default. Asking for more brings the compute-budget program along, and a program is an account — so raising the budget still costs a member. In the legacy packet that cost was 40 bytes; through a table it is one lock. The escape from one limit is paid out of the other in both regimes, which is the finding rather than the inconvenience.
+
+**What kind of number these two are.** They are computed the same way the packet ceilings above are — by building the real instruction and counting what it names — and not by settling a batch of that size. The 64-account limit itself is not a guess: it was found on devnet, where 77 accounts returned `TooManyAccountLocks`, and the twenty-transfer settlement cited above landed at exactly 64. What has not been done is a delegation batch of 13 settled through a table on a live cluster, and this document does not claim one.
 
 ## Every step
 
