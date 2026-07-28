@@ -237,9 +237,12 @@ So this project claims exactly two things:
    rather than in the observed ones. There is no budget at which this
    distribution becomes well-observed.
 
-   `docs/MEASUREMENT_LOG.md` has all eight runs, including the three the tool
-   itself refused to publish a headline from and the one whose pre-registered
-   prediction turned out wrong.
+   `docs/MEASUREMENT_LOG.md` has all eight runs, and **six of the eight end
+   without a publishable figure** — one that resolved nothing, one refused by the
+   failure gate, three refused by the informativeness gate, and one invalidated
+   by a defect we found in our own tracer. The two that produced a figure are
+   there too, including the earlier one this work superseded and the
+   pre-registered prediction that turned out wrong.
 
    **And the metric is turned on this project too.** `docs/CROWD.md` runs it
    against our own devnet crowd, where it returns ρ = 1.0000 — the best value it
@@ -454,7 +457,9 @@ to build, and ten is the floor rather than the maximum.
 hard way: a batch of 24 was refused by devnet with `TooManyAccountLocks` at 77
 accounts. `solana-transaction` exports `MAX_TX_ACCOUNT_LOCKS = 128`, but that is
 the raised limit and it is not live here, so a client must plan against 64 until
-it can see otherwise. Three accounts per member plus three for the pool puts
+it can see otherwise. Three accounts per member, three for the settler, pool and vault, and one for
+the program itself — which no lookup table can resolve, because a top-level
+instruction names its program in the static section — puts
 twenty members at exactly 64 locks — the transaction above sits on the limit.
 
 Settlement adds members while the batch still fits and defers the rest, so a

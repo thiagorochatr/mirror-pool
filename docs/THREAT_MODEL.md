@@ -315,7 +315,7 @@ size. **A batch of one settles, and executes.**
 
 This is the standard trade in mix design, and the standard analysis of it is
 Serjantov, Dingledine and Syverson, *From a Trickle to a Flood: Active Attacks on
-Several Mix Batching Strategies* (Information Hiding 2002), which examines
+Several Mix Types* (Information Hiding 2002), which examines
 threshold, timed, and threshold-or-timed batching and finds the disjunction
 inherits the weakness of its weaker half. The argument for our case does not need
 the paper, though — it follows from the code:

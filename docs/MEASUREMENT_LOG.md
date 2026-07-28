@@ -167,8 +167,12 @@ extrapolate upward.
 **What this run does establish.** The pipeline works end to end against live
 mainnet with a clean census; the member-weighted frame resolves a near-majority
 where the transaction-weighted one resolved nothing; and the honesty machinery is
-load-bearing rather than decorative — it refused three consecutive runs, twice on
-the failure gate and once on the bracket, and each refusal was correct.
+load-bearing rather than decorative. Three consecutive runs produced no headline
+and each for its own reason: Run 1 resolved nothing at all, with zero RPC
+failures, so there was no figure to refuse; Run 2 was refused by the failure gate
+at 14.94%; and Run 3 was refused by the informativeness gate, 40 resolved against
+a threshold of 42. Six of the eight runs in this document end without a published
+figure, and the two that do not are Runs 4 and 6.
 
 **What a publishable ρ would need.** More resolution, not more members: 39 of the
 44 unresolved are budget outcomes, chains that ran out of depth or paging before
