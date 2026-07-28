@@ -20,6 +20,59 @@ delegation or a governance vote needs and what a transfer cannot do.
 Rust end to end. MIT. No Anchor, no Circom, no JavaScript anywhere in the
 proving path.
 
+## Meeting the brief
+
+Every row is checkable in this repository, and the right-hand column says where.
+
+| what is asked | how this meets it | check it |
+|---|---|---|
+| **Rust, end to end** | **Zero** files of any other language are tracked here. No Circom, no snarkjs, no `ethers`, no TypeScript build step, no shell scripts doing real work. The circuit is an arkworks R1CS gadget in `crates/mirror-circuit`; the prover is Rust; the verifier is the on-chain program calling the `alt_bn128` syscall. | `git ls-files '*.js' '*.ts' '*.py' '*.sol' '*.circom'` returns nothing |
+| **Production-grade, tested, deployable** | 261 tests. The end-to-end suite loads the compiled `.so` into a real SVM and verifies real Groth16 proofs through the actual syscall. Negative cases assert the program's *own* error codes, not that something failed. `overflow-checks` on in release; `cargo-deny` over advisories, bans, licences and sources; CI actions pinned by commit SHA. | `make verify` |
+| **Deployed and running** | Live on devnet, with every claim in this file linking to the transaction behind it. The full lifecycle — pool, deposits, proofs, batched settlement, and four rejections — is recorded with signatures. | [`docs/PROOF.md`](docs/PROOF.md) |
+| **Scalable & customizable** | Adding a protocol requires no change to the on-chain program. Selector 1 invokes any program with any payload; selector 2 additionally makes the pool *sign* as the member's authority, which is what a stake delegation or a governance vote needs. A real `DelegateStake` runs through it on devnet. | [`docs/USAGE.md`](docs/USAGE.md) |
+| **Realistic** | The anonymity number is computed from live mainnet chain data, with the sample committed so the result reproduces without RPC access — and it is pointed at a pool this project neither controls nor funded, because measuring our own empty pool would be measuring nothing. | [`docs/MEASUREMENT_LOG.md`](docs/MEASUREMENT_LOG.md) |
+| **Well-documented** | Ten documents: install path, architecture, threat model, proof of life, measurement method, and the design as decided with every departure from it recorded. | [below](#documentation) |
+| **Open source, MIT** | MIT at the workspace root and on every crate. | [`LICENSE`](LICENSE) |
+
+## What is different here
+
+Six things, stated as facts about this repository rather than as comparisons.
+
+**Every number is taken, not modelled.** There is no simulated distribution
+anywhere in the measurement path. The provenance figures come from real mainnet
+funding chains; the packet and lock ceilings come from serializing the real
+instruction; the compute figures come from a real SVM and a real cluster. Where a
+number is derived rather than landed — the delegation ceiling through a lookup
+table is the one case — the document that publishes it says so in those words.
+
+**The trusted setup is reproducible, and a test enforces it.** The seed is
+committed in plain sight, the proving key is derived from it rather than
+gitignored, and `vk_drift.rs` compares the *whole* verifying key — `alpha_g1`,
+`beta_g2`, `gamma_g2`, `delta_g2` and every element of `gamma_abc_g1` — against
+what that seed produces, plus the digest this file publishes. A check that bound
+only `delta` would accept a key belonging to a different circuit.
+
+**The proof is verified by the chain, not by a stand-in.** `submit_spend` runs
+the pairing on-chain in about 101,000 CU — half the default budget for one
+instruction — through the program's own syscall. No committee, no multisig, and
+no off-chain verifier standing in for one.
+
+**A note pays out once, ever.** The nullifier set is global rather than scoped to
+an epoch, so no boundary can reopen a spend, and a test asserts the rejection
+rather than assuming it. The denomination is a constant of the pool rather than a
+field on the note, so the class of bug where the escrowed amount and the paid
+amount disagree is not expressible.
+
+**Every command these documents mention exists.** `make verify` exercises the
+tool the usage guide describes, and the walkthrough's output was produced by
+running it against devnet rather than written by hand.
+
+**The measurement is turned on this project too.** `docs/CROWD.md` runs the same
+metric against our own devnet crowd, where it returns the best value the metric
+can produce — and then says why that number is worthless: every note in that pool
+was funded by one wallet, so the partition has one class and the class is us. A
+measurement apparatus that only ever points outward is one nobody has tested.
+
 ## Getting it running
 
 Two prerequisites, and only two.
@@ -41,7 +94,7 @@ Then:
 
 ```
 git clone https://github.com/solanabr/mirror-pool && cd mirror-pool
-make verify               # fmt, clippy -D warnings, build-sbf, 259 tests
+make verify               # fmt, clippy -D warnings, build-sbf, 261 tests
 ```
 
 Nothing in that command needs a network, an API key or an account with anybody,
@@ -65,8 +118,51 @@ cargo build --release     # target/release/mirror
 
 [`docs/USAGE.md`](docs/USAGE.md) walks the whole journey from there — creating a
 note through to settling a batch — with real devnet output for every command.
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the design and why each
-decision is what it is.
+
+## The architecture, in one page
+
+Four instructions, two phases, four crates behind one program. `init_pool`
+creates a denomination's pool and is permissionless; the other three are the
+member's path:
+
+```
+  deposit                    submit_spend                 settle_epoch
+  ───────                    ────────────                 ────────────
+  member escrows D           relay signs, member          anyone signs
+  commitment enters          never does                   whole batch, one
+  the Merkle tree            Groth16 verified             transaction, one
+  no member key on           on chain, nullifier          timestamp, paid
+  chain after this           burned, nothing paid         from the vault PDA
+```
+
+**Why two phases and not one.** Verifying `n` proofs inside one settlement would
+cost `n × 101,000` CU and blow the budget at six members. Splitting them means the
+expensive step is per-member and parallel, and the step that must be atomic —
+the one that gives every member the same timestamp and the same ordering — is
+cheap. A batch of twenty payouts settles in 35,895 CU.
+
+**What the proof says.** Three public inputs: the Merkle root, the nullifier, and
+an action binding. The binding is a keccak digest over the selector, the target
+program, the beneficiary, the relay, the relay fee, the declared account count and
+the payload — recomputed on-chain from the action about to execute, never
+transmitted. A relay that alters any of them produces a different binding and the
+pairing fails.
+
+**Why the pool signs.** Actions execute from the pool's vault PDA, so the
+on-chain trace of an action is identical whoever asked for it. Under
+`SELECTOR_INVOKE_SIGNED` the vault is a signer of the inner call, which is how a
+member delegates stake without ever being the staker authority themselves.
+
+| crate | what it is |
+|---|---|
+| `programs/mirror-pool` | The on-chain program. Four instructions, no Anchor. |
+| `crates/mirror-core` | Field, Poseidon, Merkle accumulator, notes. Linked on-chain, so host and program cannot drift. |
+| `crates/mirror-circuit` | The R1CS gadget, the prover, and the verifying-key export. |
+| `crates/mirror-provenance` | The funding-provenance measurement, and its honesty checks. |
+| `crates/mirror-cli` | `mirror` — the member's tool and the operator's. |
+
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the long version, with the
+reason behind each decision and the alternative it was chosen over.
 
 ## The problem this takes as its subject
 
@@ -175,7 +271,7 @@ rather than half-present.
 | `crates/mirror-provenance` | The funding-provenance measurement. |
 | `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle`, `disclose`, `disclose-verify` for members; `setup`, `verify-setup`, `soak`, `crowd`, `close-table` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
 
-**259 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**261 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
