@@ -20,6 +20,13 @@ delegation or a governance vote needs and what a transfer cannot do.
 Rust end to end. MIT. No Anchor, no Circom, no JavaScript anywhere in the
 proving path.
 
+**The whole work is also written up as a paper**, if you would rather read the
+argument than the code:
+[**A Behavioural Anonymity Set for Solana**](docs/a-behavioural-anonymity-set-for-solana.pdf)
+— 39 pages, 26 references, with the protocol and the measurement argued as one
+claim and every figure in it traceable to a test or a transaction in this
+repository.
+
 ## Meeting the brief
 
 Every row is checkable in this repository, and the right-hand column says where.
@@ -31,7 +38,7 @@ Every row is checkable in this repository, and the right-hand column says where.
 | **Deployed and running** | Live on devnet, with every claim in this file linking to the transaction behind it. The full lifecycle — pool, deposits, proofs, batched settlement, and four rejections — is recorded with signatures. | [`docs/PROOF.md`](docs/PROOF.md) |
 | **Scalable & customizable** | Adding a protocol requires no change to the on-chain program — no redeploy, no new circuit, no governance. Selector 1 invokes any program with any payload; selector 2 additionally makes the pool *sign* as the member's authority, which is what a stake delegation or a governance vote needs. The whole procedure is four steps with a worked `DelegateStake` that runs on devnet. | [`docs/INTEGRATING.md`](docs/INTEGRATING.md) |
 | **Realistic** | The anonymity number is computed from live mainnet chain data, with the sample committed so the result reproduces without RPC access — and it is pointed at a pool this project neither controls nor funded, because measuring our own empty pool would be measuring nothing. | [`docs/MEASUREMENT_LOG.md`](docs/MEASUREMENT_LOG.md) |
-| **Well-documented** | Eleven documents: install path, architecture, threat model, proof of life, measurement method, and the design as decided with every departure from it recorded. | [below](#documentation) |
+| **Well-documented** | Eleven documents plus a 39-page paper: install path, architecture, threat model, proof of life, measurement method, and the design as decided with every departure from it recorded. | [below](#documentation) |
 | **Open source, MIT** | MIT at the workspace root and on every crate. | [`LICENSE`](LICENSE) |
 
 ## What is different here
@@ -972,6 +979,7 @@ reporting.
 | `docs/THREAT_MODEL.md` | The adversary, what holds, and every place it stops. |
 | `docs/INCENTIVES.md` | What keeps a member in the pool, enforced by the program — and the one reward that is deliberately absent. |
 | `docs/INTEGRATING.md` | Adding a protocol: the three action shapes, a worked stake delegation, and what the proof does and does not promise. |
+| [`docs/a-behavioural-anonymity-set-for-solana.pdf`](docs/a-behavioural-anonymity-set-for-solana.pdf) | **The paper.** The protocol and the measurement as one argument, with the related work, the method in full, and the eight runs. |
 | `docs/PROOF.md` | Devnet signatures for every flow, and the rejections. |
 | `docs/CROWD.md` | Six members delegating to six different validators in one devnet transaction, and what divergence costs. |
 | `docs/USAGE.md` | The member-facing commands, end to end, with real devnet output. |
