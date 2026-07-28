@@ -161,6 +161,12 @@ without a crowd gate is not an incentive, it is a refund with extra steps.
 > **Shipped instead:** none of this. The dwell mechanism was cut, and once it
 > was, the fee funding it had no recipient — so the fee was cut as well, by
 > refusing any nonzero value at pool creation. See *What actually got cut*.
+>
+> What did ship is four incentives the program enforces rather than pays for, and
+> the reason the monetary one is harder than it looks: a reward has to name an
+> address, and naming a member's address is the one thing this design spends
+> everything else avoiding. `INCENTIVES.md` has all four, the gap, and the
+> second-nullifier design that would close it.
 
 ### Provenance measurement
 

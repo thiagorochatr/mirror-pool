@@ -123,6 +123,48 @@ So this project claims exactly two things:
 Anything we cannot support with a measurement whose method is published, we do
 not say. There is a section below of things we deliberately do not claim.
 
+## The three parts, and where each one stands
+
+A mirror-pool is asked for three things: a **coordination layer**, a **privacy
+set**, and the **incentives that keep people in it**. Taking them one at a time,
+including the one where the answer is partly no.
+
+**The coordination layer is the two-phase epoch.** `submit_spend` verifies a
+proof and burns a nullifier, paying out nothing; `settle_epoch` executes the
+whole batch in one transaction, so every member's action lands at one timestamp,
+in one ordering, under one signature. Arrival time cannot tell the members apart,
+because there is only one arrival. A settlement of **20 actions with a single
+required signature** is on devnet, at the 64-account lock ceiling, and every
+account in it is named through a lookup table the settler publishes and then
+closes.
+
+**The privacy set is the note tree, and its honest size is measured rather than
+asserted.** A member proves in zero knowledge that they own *some* note, never
+which. What that hides on the action side is closed — actions execute from the
+pool's vault, so their funding trace leads to the pool and is identical for
+everyone. What it does not close is where each member's *deposit* came from, and
+that channel is measured against live mainnet data with the method published
+beside the number. Nominal `k` is the tree; effective `k` is smaller; this
+repository publishes both and never quotes the first alone.
+
+**The incentives are structural, and one of them is missing.** Four are enforced
+by the program rather than recommended: you cannot act until a crowd exists
+(`k_floor`), waiting is never a hostage situation (the one-hour timeout), a relay
+is paid out of the denomination to sign so that you never do, and a batch whose
+members paid different fees is refused outright — so converging on a common fee
+is a rule, not advice.
+
+What is **not** here is a reward for dwell — for holding a note longer than you
+needed to. It was designed, and it was cut with the entry fee that would have
+funded it, because a fee with no payout path is a fund trap rather than a
+half-built feature. The deeper reason it stayed cut is that a reward must be paid
+to somebody, and naming a member's address on chain costs that member all of
+their anonymity at the exact moment they are being rewarded for protecting
+everyone else's. The anonymity-preserving version — a second nullifier, claimed
+under the same floor, paid to a fresh address — is specified in
+[`docs/INCENTIVES.md`](docs/INCENTIVES.md) rather than sketched, and is absent
+rather than half-present.
+
 ## What is here
 
 | | |
@@ -753,6 +795,7 @@ reporting.
 | `docs/GROTH16_INTEGRATION.md` | The arkworks-to-Solana byte layout, verified by execution. |
 | `docs/MEASUREMENT_LOG.md` | Every run. |
 | `docs/THREAT_MODEL.md` | The adversary, what holds, and every place it stops. |
+| `docs/INCENTIVES.md` | What keeps a member in the pool, enforced by the program — and the one reward that is deliberately absent. |
 | `docs/PROOF.md` | Devnet signatures for every flow, and the rejections. |
 | `docs/CROWD.md` | Six members delegating to six different validators in one devnet transaction, and what divergence costs. |
 | `docs/USAGE.md` | The member-facing commands, end to end, with real devnet output. |
