@@ -382,6 +382,7 @@ pub fn spend(
         action.selector(),
         &action.target(),
         &beneficiary.to_bytes(),
+        &relay.pubkey().to_bytes(),
         relay_fee,
         action.accounts(),
         action.payload(),

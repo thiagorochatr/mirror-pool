@@ -58,7 +58,7 @@ itself a domain separator and a free one:
 
 The action binding is not in this table. Its payload is variable length and
 Poseidon is a fixed-arity compression, so the binding is a keccak digest under
-the domain tag `mirror-pool:action:v1`, masked into the field.
+the domain tag `mirror-pool:action:v2`, masked into the field.
 
 An integer tag was the first design and it was wrong: with a small tag constant,
 a Merkle node whose left child equals the tag collides with a nullifier.
@@ -153,10 +153,15 @@ transaction history.
 records the authorised action. Pays out nothing.
 
 The action binding is never transmitted. It is recomputed on-chain from the
-selector, the target program, the beneficiary, the relay fee, the declared
-account count and the payload, and used as the third public input,
+selector, the target program, the beneficiary, the relay, the relay fee, the
+declared account count and the payload, and used as the third public input,
 so a relay that alters any of them produces a different binding and the pairing
 fails. There is no separate field that could be checked incorrectly.
+
+The relay is taken from the account that signed, never from anything the caller
+states. A proof is therefore spendable only by the relay the member made it for,
+which is what stops a bystander from lifting it out of an unlanded transaction
+and landing it first under their own key.
 
 The relay signs, never the member. A member paying their own fee would sign with
 their own wallet and destroy their own anonymity, so no member key appears on

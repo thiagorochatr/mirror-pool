@@ -26,7 +26,7 @@ use solana_transaction::Transaction;
 // pool. Changing it starts a clean one, which is how the evidence run gets to
 // record its own `init_pool` rather than reusing a pool an earlier run created
 // and leaving the creation step undocumented.
-const DENOMINATION: u64 = 20_000_019; // 0.02 SOL
+const DENOMINATION: u64 = 20_000_023; // 0.02 SOL
 const ENTRY_FEE: u64 = 0;
 const K_FLOOR: u32 = 4;
 /// Members in the evidence batch. Above `K_FLOOR` so the crowd rule is satisfied
@@ -341,6 +341,7 @@ impl Soak {
             SELECTOR_TRANSFER,
             &[0u8; 32],
             &beneficiary.to_bytes(),
+            &relay.pubkey().to_bytes(),
             RELAY_FEE,
             0,
             &[],
@@ -408,6 +409,7 @@ impl Soak {
             SELECTOR_INVOKE_SIGNED,
             &target.to_bytes(),
             &beneficiary.to_bytes(),
+            &relay.pubkey().to_bytes(),
             RELAY_FEE,
             1,
             MEMO_PAYLOAD,
@@ -519,6 +521,7 @@ impl Soak {
             SELECTOR_INVOKE_SIGNED,
             &stake_program.to_bytes(),
             &stake.to_bytes(),
+            &relay.pubkey().to_bytes(),
             RELAY_FEE,
             crate::stake::DELEGATE_ACCOUNTS,
             &crate::stake::DELEGATE_STAKE,
@@ -750,6 +753,7 @@ fn proof_for_note(
     notes: &[Note],
     index: usize,
     beneficiary: &Pubkey,
+    relay: &Pubkey,
     relay_fee: u64,
 ) -> Result<mirror_circuit::SolanaProof> {
     use ark_std::rand::SeedableRng;
@@ -758,6 +762,7 @@ fn proof_for_note(
         SELECTOR_TRANSFER,
         &[0u8; 32],
         &beneficiary.to_bytes(),
+        &relay.to_bytes(),
         relay_fee,
         0,
         &[],
@@ -916,7 +921,15 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     // A replayed proof: honest in every respect, against a note already spent.
     {
         let beneficiary = Keypair::new().pubkey();
-        let proof = proof_for_note(&keys, &tree, &notes, first_fresh, &beneficiary, RELAY_FEE)?;
+        let proof = proof_for_note(
+            &keys,
+            &tree,
+            &notes,
+            first_fresh,
+            &beneficiary,
+            &payer.pubkey(),
+            RELAY_FEE,
+        )?;
         let ix = soak.spend_ix_for(
             proof.public_inputs[1],
             &proof,
@@ -939,7 +952,15 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     {
         let member_chose = Keypair::new().pubkey();
         let relay_prefers = Keypair::new().pubkey();
-        let proof = proof_for_note(&keys, &tree, &notes, spare, &member_chose, RELAY_FEE)?;
+        let proof = proof_for_note(
+            &keys,
+            &tree,
+            &notes,
+            spare,
+            &member_chose,
+            &payer.pubkey(),
+            RELAY_FEE,
+        )?;
         let ix = soak.spend_ix_for(
             proof.public_inputs[1],
             &proof,
@@ -960,7 +981,15 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
     // instruction declares.
     {
         let beneficiary = Keypair::new().pubkey();
-        let proof = proof_for_note(&keys, &tree, &notes, spare, &beneficiary, RELAY_FEE)?;
+        let proof = proof_for_note(
+            &keys,
+            &tree,
+            &notes,
+            spare,
+            &beneficiary,
+            &payer.pubkey(),
+            RELAY_FEE,
+        )?;
         let ix = soak.spend_ix_for(
             proof.public_inputs[1],
             &proof,
@@ -971,6 +1000,43 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
         soak.expect_rejection(
             "inflated relay fee",
             "a relay cannot re-price the work after the member authorised it",
+            ix,
+            &[&payer],
+        )?;
+    }
+
+    // The front-run. Everything the member authorised is left intact — same
+    // beneficiary, same fee, same genuine proof — and the only difference is who
+    // submits it.
+    //
+    // This is the one attack the other three do not cover, because the attacker
+    // alters nothing. They lift the proof out of a transaction they saw and land
+    // it first under their own key. The fee is bound to the relay the member
+    // named, so the binding recomputed from the signer is not the one inside the
+    // proof, and the pairing fails before the nullifier can burn.
+    {
+        let beneficiary = Keypair::new().pubkey();
+        let member_named = Keypair::new().pubkey();
+        let proof = proof_for_note(
+            &keys,
+            &tree,
+            &notes,
+            spare,
+            &beneficiary,
+            &member_named,
+            RELAY_FEE,
+        )?;
+        // `payer` signs, so `payer` is the relay the program sees.
+        let ix = soak.spend_ix_for(
+            proof.public_inputs[1],
+            &proof,
+            &beneficiary,
+            &payer.pubkey(),
+            RELAY_FEE,
+        );
+        soak.expect_rejection(
+            "front-run relay",
+            "a proof is spendable only by the relay the member made it for",
             ix,
             &[&payer],
         )?;
@@ -1130,13 +1196,24 @@ fn write_proof(soak: &Soak, url: &str, out: &std::path::Path) -> Result<()> {
     for (name, code, proves) in &soak.negatives {
         md.push_str(&format!("| {name} | `{code}` | {proves} |\n"));
     }
-    md.push_str(
-        "\nThe last two attack a note that is still live, deposited after settlement \
+    // Derived, not written by hand. Every negative but the replay case attacks a
+    // live note, so adding one silently turned "the last two" into a false
+    // sentence sitting under a correct table — the failure mode this file has
+    // already been bitten by once.
+    let live_note_cases = soak.negatives.len().saturating_sub(1);
+    let counted = match live_note_cases {
+        1 => "The last one attacks".to_string(),
+        2 => "The last two attack".to_string(),
+        3 => "The last three attack".to_string(),
+        n => format!("The last {n} attack"),
+    };
+    md.push_str(&format!(
+        "\n{counted} a note that is still live, deposited after settlement \
          precisely so that they would have to. Against an already-spent note the \
          replay guard fires first and the rejection would say nothing about the \
          check under test — which is how a negative case comes to pass for the \
-         wrong reason.\n",
-    );
+         wrong reason.\n"
+    ));
 
     md.push_str("\n## Scope\n\n");
     md.push_str(

@@ -26,9 +26,13 @@ pool's notes.
 settler-signed. A member's wallet never touches the protocol after depositing.
 
 **A relay cannot alter what was authorised.** The action binding covers the
-selector, the target program, the beneficiary, the relay fee, the declared
-account count and the payload, under a domain tag, and is recomputed on-chain
-rather than transmitted.
+selector, the target program, the beneficiary, the relay, the relay fee, the
+declared account count and the payload, under a domain tag, and is recomputed
+on-chain rather than transmitted.
+
+**A proof is spendable only by the relay it was made for.** The relay in that
+binding is read from the account that signed, so a proof cannot be carried by a
+key the member did not name.
 
 **Actions carry one caller.** Every action is invoked by the pool program on a
 member's behalf and funded out of the pool's vault, so the on-chain trace of a
@@ -211,6 +215,39 @@ their own relay, the settled action cannot be attributed to them.** The first
 clause is a discipline the member keeps, not a property the program enforces, and
 a threat model that omits it is describing a smaller adversary than the one that
 exists.
+
+### The relay market is attackable even though the relay's fee is not
+
+Everything in a `submit_spend` travels in clear text, which the section above
+treats as a disclosure problem. It is also a transferability problem, and that
+half is worth stating on its own because the fix is recent and the reasoning
+behind it is easy to get backwards.
+
+A bystander watching an unlanded `submit_spend` can copy the proof and every
+field around it. Until the relay joined the action binding, they could name
+themselves as the relay and land it first: the recomputed binding was unchanged,
+the pairing succeeded, and the fee settled to them. The member's payout was never
+reachable — the beneficiary and the amount have always been bound — so this was
+theft from the relay, not from the member.
+
+**It was never a profitable theft, and that is the part worth being precise
+about.** Whoever lands the transaction funds the spend record's rent, and that
+record is never closed, because it *is* the replay guard. At the fee levels this
+repository has actually used, an attacker sank roughly twenty times what they
+collected. Anyone presenting this as a drain would be overstating it.
+
+The reason to close it anyway is that **an attacker does not need to be paid to
+be effective**. Front-running every spend costs them rent each time and denies
+every relay their fee. A relay whose fee can be sniped at will is a relay nobody
+runs, and a pool with no relays is a pool where members submit from their own
+funded wallets — which is precisely the disclosure the section above calls the
+sharpest one available. The attack never touched the cryptography. It made the
+honest path uneconomic and let the members deanonymise themselves.
+
+So the relay is now read from the account that signed and folded into the
+binding, and a proof is spendable only by the relay it was made for. What remains
+open is unchanged and stated where it belongs: a member who relays for themselves
+still names themselves, and no binding can prevent that.
 
 ### A large settlement publishes its participant list early
 

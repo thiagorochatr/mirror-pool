@@ -254,6 +254,7 @@ fn spend_ix_at_fee(
         SELECTOR,
         &[0u8; 32],
         &beneficiary.to_bytes(),
+        &relay.to_bytes(),
         relay_fee,
         0,
         &[],
@@ -300,6 +301,7 @@ fn proof_for(
     notes: &[Note],
     index: usize,
     beneficiary: &Pubkey,
+    relay: &Pubkey,
 ) -> mirror_circuit::SolanaProof {
     use ark_std::rand::SeedableRng;
     let merkle_proof = tree.proof(index as u64).unwrap();
@@ -307,6 +309,7 @@ fn proof_for(
         SELECTOR,
         &[0u8; 32],
         &beneficiary.to_bytes(),
+        &relay.to_bytes(),
         RELAY_FEE,
         0,
         &[],
@@ -370,7 +373,7 @@ fn a_real_proof_verifies_on_chain_and_records_the_spend() {
     let relay = Keypair::new();
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
 
-    let proof = proof_for(&keys, &tree, &notes, 2, &beneficiary);
+    let proof = proof_for(&keys, &tree, &notes, 2, &beneficiary, &relay.pubkey());
     let nullifier = proof.public_inputs[1];
 
     let ix = spend_ix(&env, &proof, nullifier, &beneficiary, &relay.pubkey());
@@ -428,7 +431,7 @@ fn the_same_note_cannot_be_spent_twice() {
         .airdrop(&second_relay.pubkey(), 10_000_000_000)
         .unwrap();
 
-    let proof = proof_for(&keys, &tree, &notes, 1, &beneficiary);
+    let proof = proof_for(&keys, &tree, &notes, 1, &beneficiary, &first_relay.pubkey());
     let nullifier = proof.public_inputs[1];
 
     let ix = spend_ix(&env, &proof, nullifier, &beneficiary, &first_relay.pubkey());
@@ -436,11 +439,17 @@ fn the_same_note_cannot_be_spent_twice() {
 
     // The replay goes through a *different* relay, so the transaction is not
     // byte-identical and the runtime's duplicate-signature check cannot be what
-    // rejects it. The relay identity is not part of the action binding, so the
-    // proof itself is still entirely valid — the only thing standing in the way
-    // is the nullifier record. An earlier version of this test reused the first
-    // relay and passed for the wrong reason: it was rejected as AlreadyProcessed
-    // before the program ran at all.
+    // rejects it. An earlier version of this test reused the first relay and
+    // passed for the wrong reason: it was rejected as AlreadyProcessed before
+    // the program ran at all.
+    //
+    // Since the relay joined the action binding, this proof would *also* fail
+    // the pairing under the second relay — which is exactly why the assertion
+    // below is on `Custom(15)` and not merely on "rejected". The nullifier guard
+    // is checked before the binding is recomputed, so a spent note costs a
+    // replayer ~11k CU instead of the ~95k a pairing would. Getting
+    // ProofVerificationFailed here would mean that ordering had silently
+    // inverted, and the cheap guard had stopped being the first thing to run.
     let replay = spend_ix(
         &env,
         &proof,
@@ -469,7 +478,14 @@ fn a_relay_cannot_redirect_the_payout() {
     let relay = Keypair::new();
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
 
-    let proof = proof_for(&keys, &tree, &notes, 0, &honest_beneficiary);
+    let proof = proof_for(
+        &keys,
+        &tree,
+        &notes,
+        0,
+        &honest_beneficiary,
+        &relay.pubkey(),
+    );
     let nullifier = proof.public_inputs[1];
 
     // The relay swaps in its own address after the member proved.
@@ -492,7 +508,7 @@ fn a_relay_cannot_inflate_its_own_fee() {
     let relay = Keypair::new();
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
 
-    let proof = proof_for(&keys, &tree, &notes, 3, &beneficiary);
+    let proof = proof_for(&keys, &tree, &notes, 3, &beneficiary, &relay.pubkey());
     let nullifier = proof.public_inputs[1];
     let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
 
@@ -536,7 +552,7 @@ fn a_proof_against_an_unknown_root_is_rejected() {
     let relay = Keypair::new();
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
 
-    let mut proof = proof_for(&keys, &tree, &notes, 4, &beneficiary);
+    let mut proof = proof_for(&keys, &tree, &notes, 4, &beneficiary, &relay.pubkey());
     let nullifier = proof.public_inputs[1];
     // A root the pool has never held. Flip a low bit so the value stays a
     // canonical scalar and the rejection comes from the history check.
@@ -559,7 +575,7 @@ fn a_pool_below_its_anonymity_floor_refuses_to_act() {
     let relay = Keypair::new();
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
 
-    let proof = proof_for(&keys, &tree, &notes, 0, &beneficiary);
+    let proof = proof_for(&keys, &tree, &notes, 0, &beneficiary, &relay.pubkey());
     let nullifier = proof.public_inputs[1];
     let ix = spend_ix(&env, &proof, nullifier, &beneficiary, &relay.pubkey());
     let err = env
@@ -579,7 +595,7 @@ fn a_forged_proof_is_rejected() {
     let relay = Keypair::new();
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
 
-    let mut proof = proof_for(&keys, &tree, &notes, 2, &beneficiary);
+    let mut proof = proof_for(&keys, &tree, &notes, 2, &beneficiary, &relay.pubkey());
     let nullifier = proof.public_inputs[1];
     // Corrupt the proof itself.
     proof.proof_a[63] ^= 1;
@@ -612,7 +628,7 @@ fn submit_batch(
         let beneficiary = Pubkey::new_unique();
         let relay = Keypair::new();
         env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
-        let proof = proof_for(keys, tree, notes, i, &beneficiary);
+        let proof = proof_for(keys, tree, notes, i, &beneficiary, &relay.pubkey());
         let nullifier = proof.public_inputs[1];
         let ix = spend_ix(env, &proof, nullifier, &beneficiary, &relay.pubkey());
         env.send(ix, &relay)
@@ -871,8 +887,15 @@ fn a_member_can_always_exit_without_any_relay() {
     let beneficiary = member.pubkey();
 
     let merkle_proof = tree.proof(0).unwrap();
-    let binding =
-        mirror_core::action_binding(SELECTOR, &[0u8; 32], &beneficiary.to_bytes(), 0, 0, &[]);
+    let binding = mirror_core::action_binding(
+        SELECTOR,
+        &[0u8; 32],
+        &beneficiary.to_bytes(),
+        &member.pubkey().to_bytes(),
+        0,
+        0,
+        &[],
+    );
     let witness = Witness {
         note: notes[0],
         merkle_proof: &merkle_proof,
@@ -1037,6 +1060,7 @@ fn action_ix_sel(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn action_proof(
     keys: &Keys,
     tree: &MerkleTree,
@@ -1044,9 +1068,20 @@ fn action_proof(
     index: usize,
     target: &Pubkey,
     beneficiary: &Pubkey,
+    relay: &Pubkey,
     payload: &[u8],
 ) -> mirror_circuit::SolanaProof {
-    action_proof_n(keys, tree, notes, index, target, beneficiary, 0, payload)
+    action_proof_n(
+        keys,
+        tree,
+        notes,
+        index,
+        target,
+        beneficiary,
+        relay,
+        0,
+        payload,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1057,6 +1092,7 @@ fn action_proof_n(
     index: usize,
     target: &Pubkey,
     beneficiary: &Pubkey,
+    relay: &Pubkey,
     action_accounts: u8,
     payload: &[u8],
 ) -> mirror_circuit::SolanaProof {
@@ -1067,6 +1103,7 @@ fn action_proof_n(
         index,
         target,
         beneficiary,
+        relay,
         action_accounts,
         payload,
         INVOKE,
@@ -1081,6 +1118,7 @@ fn action_proof_sel(
     index: usize,
     target: &Pubkey,
     beneficiary: &Pubkey,
+    relay: &Pubkey,
     action_accounts: u8,
     payload: &[u8],
     selector: u64,
@@ -1091,6 +1129,7 @@ fn action_proof_sel(
         selector,
         &target.to_bytes(),
         &beneficiary.to_bytes(),
+        &relay.to_bytes(),
         RELAY_FEE,
         action_accounts,
         payload,
@@ -1129,7 +1168,16 @@ fn a_crowd_of_members_perform_a_real_protocol_action_together() {
         // Every member sends the identical payload, which is what makes the
         // crowd a crowd: the actions are indistinguishable by content.
         let payload = b"mirror-pool".as_slice();
-        let proof = action_proof(&keys, &tree, &notes, i, &memo, &beneficiary, payload);
+        let proof = action_proof(
+            &keys,
+            &tree,
+            &notes,
+            i,
+            &memo,
+            &beneficiary,
+            &relay.pubkey(),
+            payload,
+        );
         let nullifier = proof.public_inputs[1];
         let ix = action_ix(
             &env,
@@ -1199,7 +1247,17 @@ fn an_action_runs_with_a_non_empty_account_list() {
     let payload = b"signed by the pool".as_slice();
 
     // One action account, declared in the proof and therefore bound.
-    let proof = action_proof_n(&keys, &tree, &notes, 0, &memo, &beneficiary, 1, payload);
+    let proof = action_proof_n(
+        &keys,
+        &tree,
+        &notes,
+        0,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        1,
+        payload,
+    );
     let nullifier = proof.public_inputs[1];
     let ix = action_ix_n(
         &env,
@@ -1255,7 +1313,17 @@ fn a_settler_cannot_change_how_many_accounts_an_action_gets() {
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
     let payload = b"one account".as_slice();
 
-    let proof = action_proof_n(&keys, &tree, &notes, 1, &memo, &beneficiary, 1, payload);
+    let proof = action_proof_n(
+        &keys,
+        &tree,
+        &notes,
+        1,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        1,
+        payload,
+    );
     let nullifier = proof.public_inputs[1];
     let ix = action_ix_n(
         &env,
@@ -1314,7 +1382,17 @@ fn a_settler_cannot_place_the_vault_in_an_action_account_list() {
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
     let payload = b"vault please".as_slice();
 
-    let proof = action_proof_n(&keys, &tree, &notes, 2, &memo, &beneficiary, 1, payload);
+    let proof = action_proof_n(
+        &keys,
+        &tree,
+        &notes,
+        2,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        1,
+        payload,
+    );
     let nullifier = proof.public_inputs[1];
     let ix = action_ix_n(
         &env,
@@ -1386,6 +1464,7 @@ fn the_pool_signs_an_action_as_its_own_authority() {
         0,
         &memo,
         &beneficiary,
+        &relay.pubkey(),
         1,
         payload,
         INVOKE_SIGNED,
@@ -1494,6 +1573,7 @@ fn a_signed_action_settles_inside_a_batch_of_plain_transfers() {
         3,
         &memo,
         &signer_beneficiary,
+        &relay.pubkey(),
         1,
         payload,
         INVOKE_SIGNED,
@@ -1587,6 +1667,7 @@ fn the_pools_signature_cannot_be_turned_against_its_own_vault() {
         1,
         &system,
         &beneficiary,
+        &relay.pubkey(),
         2,
         &payload,
         INVOKE_SIGNED,
@@ -1650,7 +1731,16 @@ fn a_relay_cannot_swap_the_target_program() {
     let relay = Keypair::new();
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
     let payload = b"hello".as_slice();
-    let proof = action_proof(&keys, &tree, &notes, 0, &memo, &beneficiary, payload);
+    let proof = action_proof(
+        &keys,
+        &tree,
+        &notes,
+        0,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        payload,
+    );
     let nullifier = proof.public_inputs[1];
 
     // Proved for the memo program; submitted for something else.
@@ -1680,7 +1770,16 @@ fn a_relay_cannot_alter_the_action_payload() {
     let beneficiary = Pubkey::new_unique();
     let relay = Keypair::new();
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
-    let proof = action_proof(&keys, &tree, &notes, 1, &memo, &beneficiary, b"stake 0.1");
+    let proof = action_proof(
+        &keys,
+        &tree,
+        &notes,
+        1,
+        &memo,
+        &beneficiary,
+        &relay.pubkey(),
+        b"stake 0.1",
+    );
     let nullifier = proof.public_inputs[1];
 
     let ix = action_ix(
@@ -1711,7 +1810,16 @@ fn an_action_cannot_re_enter_the_pool() {
 
     let self_target = env.program_id;
     let payload = b"reenter".as_slice();
-    let proof = action_proof(&keys, &tree, &notes, 2, &self_target, &beneficiary, payload);
+    let proof = action_proof(
+        &keys,
+        &tree,
+        &notes,
+        2,
+        &self_target,
+        &beneficiary,
+        &relay.pubkey(),
+        payload,
+    );
     let nullifier = proof.public_inputs[1];
     let ix = action_ix(
         &env,
@@ -1758,7 +1866,7 @@ fn a_relay_cannot_declare_an_account_count_the_member_did_not_authorise() {
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
 
     // Proved for a plain transfer, which takes no action accounts.
-    let proof = proof_for(&keys, &tree, &notes, 0, &beneficiary);
+    let proof = proof_for(&keys, &tree, &notes, 0, &beneficiary, &relay.pubkey());
     let nullifier = proof.public_inputs[1];
     let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
 
@@ -1813,8 +1921,15 @@ fn an_unknown_selector_is_refused_before_the_nullifier_burns() {
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
 
     let merkle_proof = tree.proof(1).unwrap();
-    let binding =
-        mirror_core::action_binding(99, &[0u8; 32], &beneficiary.to_bytes(), RELAY_FEE, 0, &[]);
+    let binding = mirror_core::action_binding(
+        99,
+        &[0u8; 32],
+        &beneficiary.to_bytes(),
+        &relay.pubkey().to_bytes(),
+        RELAY_FEE,
+        0,
+        &[],
+    );
     let witness = Witness {
         note: notes[1],
         merkle_proof: &merkle_proof,
@@ -1884,7 +1999,7 @@ fn squatting_a_spend_pda_does_not_brick_the_note() {
     let relay = Keypair::new();
     env.svm.airdrop(&relay.pubkey(), 10_000_000_000).unwrap();
 
-    let proof = proof_for(&keys, &tree, &notes, 0, &beneficiary);
+    let proof = proof_for(&keys, &tree, &notes, 0, &beneficiary, &relay.pubkey());
     let nullifier = proof.public_inputs[1];
     let (spend_pda, _) = spend_address(&env.program_id, &env.pool, &nullifier);
 

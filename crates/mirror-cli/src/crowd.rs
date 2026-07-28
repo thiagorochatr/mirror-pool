@@ -448,6 +448,7 @@ impl Crowd {
             SELECTOR_INVOKE_SIGNED,
             &stake_program.to_bytes(),
             &stake_account.to_bytes(),
+            &relay.pubkey().to_bytes(),
             RELAY_FEE,
             stake::DELEGATE_ACCOUNTS,
             &stake::DELEGATE_STAKE,

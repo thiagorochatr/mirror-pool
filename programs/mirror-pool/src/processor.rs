@@ -288,8 +288,10 @@ fn deposit(program_id: &Pubkey, accounts: &[AccountInfo], commitment: [u8; 32]) 
 ///
 /// The relay signs, not the member. A member who pays their own fee signs with
 /// their own wallet and destroys their own anonymity, so no member key appears
-/// on chain at any point in this path. Relaying is permissionless: any key may
-/// do it, and there is no authority whose absence freezes the pool.
+/// on chain at any point in this path. Relaying stays permissionless — there is
+/// no allowlist and no authority whose absence freezes the pool — but a given
+/// proof names the relay it was made for, so the choice is the member's rather
+/// than the winner of a race.
 ///
 /// Note the ordering. The proof is verified *before* the spend account is
 /// created, but the account's existence is what makes replay impossible, and
@@ -377,6 +379,12 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
     // beneficiary or its own fee, this binding differs from the one the prover
     // committed to and the pairing fails. There is no separate field that could
     // be checked incorrectly or forgotten.
+    //
+    // The relay's own key goes in too, taken from the account that signed rather
+    // than from anything the caller could state. That is what stops a bystander
+    // from lifting a proof out of an unlanded transaction, naming themselves as
+    // relay, and landing it first to collect the fee: the binding they would
+    // need is the member's, and the member never signed one naming them.
     if req.payload.len() > MAX_PAYLOAD {
         return Err(MirrorProgramError::PayloadTooLarge.into());
     }
@@ -397,6 +405,7 @@ fn submit_spend(program_id: &Pubkey, accounts: &[AccountInfo], req: SpendRequest
         req.selector,
         &req.target_program,
         &req.beneficiary,
+        &relay.key.to_bytes(),
         req.relay_fee,
         req.action_accounts,
         &req.payload,

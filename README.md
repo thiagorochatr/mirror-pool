@@ -41,7 +41,7 @@ Then:
 
 ```
 git clone https://github.com/solanabr/mirror-pool && cd mirror-pool
-make verify               # fmt, clippy -D warnings, build-sbf, 258 tests
+make verify               # fmt, clippy -D warnings, build-sbf, 259 tests
 ```
 
 Nothing in that command needs a network, an API key or an account with anybody,
@@ -133,7 +133,7 @@ not say. There is a section below of things we deliberately do not claim.
 | `crates/mirror-provenance` | The funding-provenance measurement. |
 | `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle`, `disclose`, `disclose-verify` for members; `setup`, `verify-setup`, `soak`, `crowd`, `close-table` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
 
-**258 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**259 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -424,12 +424,18 @@ amount to bind; and the nullifier set is global, so an epoch boundary cannot
 reopen a spend. Both are pinned by tests that assert the rejection rather than
 assuming it.
 
-**A relay cannot redirect or re-price an action.** The action binding is never
-transmitted — it is recomputed on-chain from the selector, the target program,
-the beneficiary, the relay fee, the declared account count and the payload, then
-used as the third public input, so altering any of them changes the binding and
-the pairing fails. The test tampers with that exact input and asserts the real
-verifier rejects it.
+**A relay cannot redirect, re-price, or steal an action.** The action binding is
+never transmitted — it is recomputed on-chain from the selector, the target
+program, the beneficiary, the relay, the relay fee, the declared account count
+and the payload, then used as the third public input, so altering any of them
+changes the binding and the pairing fails. The tests tamper with that exact
+input and assert the real verifier rejects it.
+
+The relay is in there because binding a fee without binding its recipient is
+half a binding: every other field travels in clear text, so a bystander watching
+an unlanded `submit_spend` could otherwise lift the proof, name themselves, and
+collect. Reading the relay from the signer rather than from the instruction is
+what closes it.
 
 It does **not** bind *which* accounts fill an action's slots, only how many.
 Settlement is permissionless, so a settler chooses them; for a target whose
@@ -667,7 +673,7 @@ was a memo the pool signed. The other was a **real stake delegation**:
 ```
 Delegated Stake:        1.09771712 SOL, activating
 Delegated Vote Account: 2f9C9AU8nFRKUub8NHToNiZzcwmYiNeipVuP8akKgRVv
-Stake Authority:        CWxsJdxBLm3LC6dEnBco68a6T4QNEF31N3qQRy95wN3Q   ← the pool's vault
+Stake Authority:        EwiXhCnLcg6jEaHMumo5H4tZnVyoCtBPHU5R6hE798R5   ← the pool's vault
 Withdraw Authority:     H9DRVAD42eiQqmXeYrX5AWwoYRr4wie4MzvJDC6Wkxmn   ← the operator
 ```
 

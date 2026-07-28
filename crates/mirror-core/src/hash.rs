@@ -85,7 +85,13 @@ pub fn nullifier(k: Field) -> Result<Field, MirrorError> {
 }
 
 /// Domain tag for the action binding preimage.
-pub const ACTION_DOMAIN: &[u8] = b"mirror-pool:action:v1";
+///
+/// Bumped to `v2` when `relay` joined the preimage. The digest would differ
+/// regardless — a new field guarantees that — but the version says *why* it
+/// differs. A prover left on the old shape produces a binding the program does
+/// not recompute, and the failure surfaces as a rejected pairing; the tag is
+/// what makes that a version mismatch rather than a mystery.
+pub const ACTION_DOMAIN: &[u8] = b"mirror-pool:action:v2";
 
 /// Reduces a 256-bit digest to a canonical BN254 scalar.
 ///
@@ -116,9 +122,27 @@ pub fn field_from_digest(digest: [u8; 32]) -> Field {
 /// | `selector` | run a different kind of action |
 /// | `target_program` | invoke a different program entirely |
 /// | `beneficiary` | redirect the outcome |
+/// | `relay` | collect another relay's fee |
 /// | `relay_fee` | inflate its own cut |
 /// | `payload` | change the action's parameters |
 /// | `action_accounts` | declare a count settlement cannot satisfy |
+///
+/// `relay` is here because binding the fee without binding its recipient is only
+/// half a binding. Every other field in this preimage travels in clear text in
+/// the instruction data, so anyone watching an unlanded `submit_spend` can lift
+/// the proof, substitute their own key as the relay, and land it first: the
+/// digest is unchanged, the pairing succeeds, the nullifier burns, and the fee
+/// settles to them. The member's payout is never at risk — `beneficiary` and the
+/// amount are bound — so this is theft from the relay, not from the member.
+///
+/// It is not a profitable theft. Whoever lands the transaction funds the spend
+/// record's rent, and that record is never closed because it *is* the replay
+/// guard, so the attacker sinks far more than any sane fee is worth. The reason
+/// to close it anyway is that an attacker need not be paid to be effective: a
+/// relay whose fee can be sniped at will is a relay nobody runs, and a pool with
+/// no relays is one where members submit from their own funded wallets. That
+/// undoes the anonymity this whole design exists to provide — not by breaking
+/// the pool, but by making the honest path uneconomic.
 ///
 /// `action_accounts` is here because leaving it out was a live griefing vector:
 /// it is relay-supplied, it is written verbatim into the spend record, and
@@ -137,6 +161,7 @@ pub fn action_binding(
     selector: u64,
     target_program: &[u8; 32],
     beneficiary: &[u8; 32],
+    relay: &[u8; 32],
     relay_fee: u64,
     action_accounts: u8,
     payload: &[u8],
@@ -146,6 +171,7 @@ pub fn action_binding(
         &selector.to_le_bytes(),
         target_program,
         beneficiary,
+        relay,
         &relay_fee.to_le_bytes(),
         &[action_accounts],
         payload,
@@ -210,12 +236,13 @@ mod tests {
     }
 
     const PROG: [u8; 32] = [3u8; 32];
+    const RELAY: [u8; 32] = [5u8; 32];
 
     #[test]
     fn the_action_binding_covers_every_field_a_relay_could_change() {
         let bob = [7u8; 32];
         let payload = b"stake 0.1".as_slice();
-        let base = action_binding(1, &PROG, &bob, 5_000, 0, payload);
+        let base = action_binding(1, &PROG, &bob, &RELAY, 5_000, 0, payload);
 
         let mut carol = [7u8; 32];
         carol[31] = 8;
@@ -224,35 +251,52 @@ mod tests {
 
         assert_ne!(
             base,
-            action_binding(2, &PROG, &bob, 5_000, 0, payload),
+            action_binding(2, &PROG, &bob, &RELAY, 5_000, 0, payload),
             "selector"
         );
         assert_ne!(
             base,
-            action_binding(1, &other_prog, &bob, 5_000, 0, payload),
+            action_binding(1, &other_prog, &bob, &RELAY, 5_000, 0, payload),
             "target program"
         );
         assert_ne!(
             base,
-            action_binding(1, &PROG, &carol, 5_000, 0, payload),
+            action_binding(1, &PROG, &carol, &RELAY, 5_000, 0, payload),
             "beneficiary"
         );
         assert_ne!(
             base,
-            action_binding(1, &PROG, &bob, 6_000, 0, payload),
+            action_binding(1, &PROG, &bob, &RELAY, 6_000, 0, payload),
             "relay fee"
         );
         assert_ne!(
             base,
-            action_binding(1, &PROG, &bob, 5_000, 0, b"stake 1.0"),
+            action_binding(1, &PROG, &bob, &RELAY, 5_000, 0, b"stake 1.0"),
             "payload"
+        );
+    }
+
+    /// The front-running case, stated on its own rather than as one row above.
+    ///
+    /// Every other field in the preimage is chosen by the member. This one is
+    /// whoever signs, so it is the only field an attacker can change *without*
+    /// altering what the member asked for — which is exactly why leaving it out
+    /// made the proof transferable to a different payee at no cost.
+    #[test]
+    fn two_relays_carrying_the_same_action_do_not_share_a_binding() {
+        let bob = [7u8; 32];
+        let thief = [6u8; 32];
+        assert_ne!(
+            action_binding(1, &PROG, &bob, &RELAY, 5_000, 0, b"stake 0.1"),
+            action_binding(1, &PROG, &bob, &thief, 5_000, 0, b"stake 0.1"),
+            "a proof must not verify for a relay the member did not name"
         );
     }
 
     #[test]
     fn the_binding_is_deterministic_and_lands_in_the_field() {
-        let a = action_binding(1, &PROG, &[9u8; 32], 1, 0, b"x");
-        let b = action_binding(1, &PROG, &[9u8; 32], 1, 0, b"x");
+        let a = action_binding(1, &PROG, &[9u8; 32], &RELAY, 1, 0, b"x");
+        let b = action_binding(1, &PROG, &[9u8; 32], &RELAY, 1, 0, b"x");
         assert_eq!(a, b);
         // Canonical by construction: the top byte is cleared.
         assert_eq!(a.to_bytes()[0], 0);
@@ -262,8 +306,8 @@ mod tests {
     #[test]
     fn an_empty_payload_is_a_distinct_action_from_a_zero_byte_one() {
         assert_ne!(
-            action_binding(1, &PROG, &[1u8; 32], 0, 0, b""),
-            action_binding(1, &PROG, &[1u8; 32], 0, 0, b"\0"),
+            action_binding(1, &PROG, &[1u8; 32], &RELAY, 0, 0, b""),
+            action_binding(1, &PROG, &[1u8; 32], &RELAY, 0, 0, b"\0"),
         );
     }
 
@@ -282,10 +326,11 @@ mod tests {
     fn the_domain_tag_separates_bindings_from_raw_hashes() {
         // Without the tag, a preimage assembled elsewhere could collide with a
         // binding. With it, an attacker must also control the tag.
-        let with_tag = action_binding(0, &[0u8; 32], &[0u8; 32], 0, 0, b"");
+        let with_tag = action_binding(0, &[0u8; 32], &[0u8; 32], &[0u8; 32], 0, 0, b"");
         let raw = field_from_digest(
             solana_keccak_hasher::hashv(&[
                 &0u64.to_le_bytes(),
+                &[0u8; 32],
                 &[0u8; 32],
                 &[0u8; 32],
                 &0u64.to_le_bytes(),

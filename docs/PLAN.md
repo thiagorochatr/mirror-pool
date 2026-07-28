@@ -101,8 +101,9 @@ Any further value we need to commit to gets folded into `action_binding` rather
 than added as a fourth input. See `GROTH16_INTEGRATION.md` for the verified
 conversion path and its pitfalls.
 
-The action binding covers the action selector, its parameters, the beneficiary
-and the relay fee, so every economically meaningful field is inside the proof.
+The action binding covers the action selector, its parameters, the beneficiary,
+the relay and the relay fee, so every economically meaningful field is inside
+the proof.
 
 ### Two-phase epochs — synchronization without a CU explosion
 
@@ -137,6 +138,14 @@ Two rules follow, and both are easy to lose by accident:
   seeds is the tempting shortcut, and it is a trap: seeds cannot be changed, so
   without a rotation instruction the authority is permanent and its loss is
   terminal.
+
+  > **Shipped narrower, and deliberately:** any key may relay, but a given proof
+  > names the relay it was made for, because the relay is part of the action
+  > binding. The property this rule was protecting — no authority whose absence
+  > freezes the pool — is untouched: there is still no allowlist and no
+  > registration. What changed is that the member chooses their relay instead of
+  > the choice going to whoever lands the transaction first. `THREAT_MODEL.md`
+  > has the attack that forced it.
 - **There is always an exit.** A member may always self-spend, paying their own
   fee and accepting the privacy loss, so funds are never hostage to a relay's
   liveness.

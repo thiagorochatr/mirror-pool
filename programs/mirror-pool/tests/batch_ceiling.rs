@@ -279,10 +279,14 @@ fn largest_batch_that_fits(env: &Env, settler: &Keypair) -> usize {
 
 /// A member's proof and the two addresses it was bound to.
 ///
-/// The binding covers the selector, the target, the beneficiary, the relay fee
-/// and the payload — not the pool and not the relay's identity. So one round of
-/// proving can be replayed into a second, identical pool, which is what lets this
-/// file run two independent settlement experiments for the price of one.
+/// The binding covers the selector, the target, the beneficiary, the relay, the
+/// relay fee and the payload — but *not* the pool. So one round of proving can be
+/// replayed into a second, identical pool, which is what lets this file run two
+/// independent settlement experiments for the price of one.
+///
+/// That the relay is bound is why it is carried here rather than minted at
+/// submission time: both runs must present the same relay, because a second
+/// relay would need a second proof.
 struct Ticket {
     proof: SolanaProof,
     beneficiary: Pubkey,
@@ -312,11 +316,15 @@ fn prove_tickets(keys: &Keys, tree: &MerkleTree, notes: &[Note]) -> Vec<Ticket> 
         .enumerate()
         .map(|(index, note)| {
             let beneficiary = Pubkey::new_unique();
+            // Minted before the binding, not after: the relay is part of the
+            // preimage now, so the proof has to know which key will carry it.
+            let relay = Keypair::new();
             let merkle_proof = tree.proof(index as u64).unwrap();
             let binding = mirror_core::action_binding(
                 SELECTOR,
                 &[0u8; 32],
                 &beneficiary.to_bytes(),
+                &relay.pubkey().to_bytes(),
                 RELAY_FEE,
                 0,
                 &[],
@@ -331,7 +339,7 @@ fn prove_tickets(keys: &Keys, tree: &MerkleTree, notes: &[Note]) -> Vec<Ticket> 
             Ticket {
                 proof: prove(keys, &witness, &mut rng).expect("proving"),
                 beneficiary,
-                relay: Keypair::new(),
+                relay,
             }
         })
         .collect()

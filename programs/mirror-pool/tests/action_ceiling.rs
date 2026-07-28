@@ -601,11 +601,15 @@ fn prove_delegations(keys: &Keys, tree: &MerkleTree, notes: &[Note]) -> Vec<Tick
         .enumerate()
         .map(|(index, note)| {
             let stake = Keypair::new();
+            // Minted before the binding, not after: the relay is part of the
+            // preimage now, so the proof has to know which key will carry it.
+            let relay = Keypair::new();
             let merkle_proof = tree.proof(index as u64).unwrap();
             let binding = mirror_core::action_binding(
                 INVOKE_SIGNED,
                 &key(STAKE_PROGRAM).to_bytes(),
                 &stake.pubkey().to_bytes(),
+                &relay.pubkey().to_bytes(),
                 RELAY_FEE,
                 6,
                 &DELEGATE_STAKE,
@@ -620,7 +624,7 @@ fn prove_delegations(keys: &Keys, tree: &MerkleTree, notes: &[Note]) -> Vec<Tick
             Ticket {
                 proof: prove(keys, &witness, &mut rng).expect("proving"),
                 stake,
-                relay: Keypair::new(),
+                relay,
             }
         })
         .collect()
