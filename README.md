@@ -29,9 +29,9 @@ Every row is checkable in this repository, and the right-hand column says where.
 | **Rust, end to end** | **Zero** files of any other language are tracked here. No Circom, no snarkjs, no `ethers`, no TypeScript build step, no shell scripts doing real work. The circuit is an arkworks R1CS gadget in `crates/mirror-circuit`; the prover is Rust; the verifier is the on-chain program calling the `alt_bn128` syscall. | `git ls-files '*.js' '*.ts' '*.py' '*.sol' '*.circom'` returns nothing |
 | **Production-grade, tested, deployable** | 261 tests. The end-to-end suite loads the compiled `.so` into a real SVM and verifies real Groth16 proofs through the actual syscall. Negative cases assert the program's *own* error codes, not that something failed. `overflow-checks` on in release; `cargo-deny` over advisories, bans, licences and sources; CI actions pinned by commit SHA. | `make verify` |
 | **Deployed and running** | Live on devnet, with every claim in this file linking to the transaction behind it. The full lifecycle — pool, deposits, proofs, batched settlement, and four rejections — is recorded with signatures. | [`docs/PROOF.md`](docs/PROOF.md) |
-| **Scalable & customizable** | Adding a protocol requires no change to the on-chain program. Selector 1 invokes any program with any payload; selector 2 additionally makes the pool *sign* as the member's authority, which is what a stake delegation or a governance vote needs. A real `DelegateStake` runs through it on devnet. | [`docs/USAGE.md`](docs/USAGE.md) |
+| **Scalable & customizable** | Adding a protocol requires no change to the on-chain program — no redeploy, no new circuit, no governance. Selector 1 invokes any program with any payload; selector 2 additionally makes the pool *sign* as the member's authority, which is what a stake delegation or a governance vote needs. The whole procedure is four steps with a worked `DelegateStake` that runs on devnet. | [`docs/INTEGRATING.md`](docs/INTEGRATING.md) |
 | **Realistic** | The anonymity number is computed from live mainnet chain data, with the sample committed so the result reproduces without RPC access — and it is pointed at a pool this project neither controls nor funded, because measuring our own empty pool would be measuring nothing. | [`docs/MEASUREMENT_LOG.md`](docs/MEASUREMENT_LOG.md) |
-| **Well-documented** | Ten documents: install path, architecture, threat model, proof of life, measurement method, and the design as decided with every departure from it recorded. | [below](#documentation) |
+| **Well-documented** | Eleven documents: install path, architecture, threat model, proof of life, measurement method, and the design as decided with every departure from it recorded. | [below](#documentation) |
 | **Open source, MIT** | MIT at the workspace root and on every crate. | [`LICENSE`](LICENSE) |
 
 ## What is different here
@@ -45,12 +45,30 @@ instruction; the compute figures come from a real SVM and a real cluster. Where 
 number is derived rather than landed — the delegation ceiling through a lookup
 table is the one case — the document that publishes it says so in those words.
 
-**The trusted setup is reproducible, and a test enforces it.** The seed is
-committed in plain sight, the proving key is derived from it rather than
-gitignored, and `vk_drift.rs` compares the *whole* verifying key — `alpha_g1`,
-`beta_g2`, `gamma_g2`, `delta_g2` and every element of `gamma_abc_g1` — against
-what that seed produces, plus the digest this file publishes. A check that bound
-only `delta` would accept a key belonging to a different circuit.
+**The trusted setup is reproducible, and you can check it in one command.** The
+seed is committed in plain sight and the proving key is derived from it rather
+than withheld, so anyone can regenerate the key the deployed program verifies
+against:
+
+```
+$ mirror verify-setup --expect b0165d5eac6fe8273b6564c78e8ba548c97e6050ae785e9142de63c81aa905b7
+
+vk sha256 (regenerated): b0165d5eac6fe8273b6564c78e8ba548c97e6050ae785e9142de63c81aa905b7
+MATCH — every element of the program's verifying key is reproduced by this seed
+and this circuit (4 IC points checked)
+and it matches the digest you supplied
+```
+
+It binds the **whole** key — `alpha_g1`, `beta_g2`, `gamma_g2`, `delta_g2` and
+every element of `gamma_abc_g1` — because a check that bound only `delta` would
+certify a key belonging to a different circuit. `vk_drift.rs` runs the same
+comparison inside `make verify`, so the compiled key and the published digest
+cannot drift apart without a test going red.
+
+This setup is reproducible rather than *secure*, and the difference is stated
+where it matters rather than here: the seed being public is exactly what makes
+proofs forgeable, which is why this is on devnet and not mainnet. See
+[what we do not claim](#what-we-do-not-claim).
 
 **The proof is verified by the chain, not by a stand-in.** `submit_spend` runs
 the pairing on-chain in about 101,000 CU — half the default budget for one
@@ -98,9 +116,12 @@ make verify               # fmt, clippy -D warnings, build-sbf, 261 tests
 ```
 
 Nothing in that command needs a network, an API key or an account with anybody,
-and it is the whole check — there is no second suite, no optional extra, and no
-step that only works on one CPU architecture. If you would rather look than
-build, the program is live on devnet at
+and it is the whole check — there is no second suite and no optional extra. The
+proving path is portable Rust with no assembly and no architecture-specific
+dependency: the same suite, real Groth16 proofs included, runs on `ubuntu-latest`
+x86_64 under [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and on arm64
+locally, from the same source and with no feature flags between them. If you
+would rather look than build, the program is live on devnet at
 [`8H3cYoiAA9LM36c…`](https://explorer.solana.com/address/8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa?cluster=devnet)
 and every claim below links to the transaction that backs it.
 
@@ -196,6 +217,17 @@ So this project claims exactly two things:
    infrastructure failures and **zero** members whose funding we claim not to
    exist — 54 of 83 reached a provenance class. Knowing a member's funding class
    costs that pool roughly an order of magnitude of its nominal anonymity.
+
+   **The bracket is not decoration, and a figure published without one is a
+   different kind of number.** Twenty-nine of those 83 members did not resolve to
+   a class. Counting them as one class each drives the loss factor to one end of
+   that range; counting them as members of the classes already seen drives it to
+   the other. Both are assumptions, neither is data, and the true value is
+   somewhere between — so the honest report is the interval. A bare `ρ` has
+   quietly picked one of those assumptions, which means it is partly a
+   measurement of how much of the graph the tracer could afford to walk rather
+   than of what the pool leaks. Run the tracer longer and the bare number moves;
+   the bracket is what stops that from looking like a finding.
 
    The sample's class distribution is heavy-tailed and most of it was never
    observed — Good–Turing coverage 0.65, with Chao1 estimating 108 classes
@@ -362,6 +394,21 @@ thing: a member proving, after the fact, that the **stake delegation** in
 `CROWD.md` was theirs — ten checks, all recomputed, against devnet.
 
 ### How large a crowd fits in one settlement
+
+**First, what this number is not.** It is not the size of the anonymity set. The
+set is the tree — every note the pool holds — and a member's proof says only that
+they own *some* leaf of it. The accumulator is 20 levels deep, so a pool holds up
+to **1,048,576 notes**, and a pool with a thousand members has an anonymity set of
+a thousand whatever its settlements look like. Proving membership costs the same
+at any occupancy: the Merkle path is 20 hashes whether the tree holds ten notes or
+a million.
+
+What a settlement bounds is something narrower — how many members share *one
+timestamp*. Batching is what stops arrival time from separating members the proof
+has already made indistinguishable, so a larger batch is better, and a pool with
+more members than one batch holds settles in several, paying for it in timestamps
+rather than in set size. The ceilings below are per transaction: not per pool, not
+per epoch, and not a bound on `k`.
 
 Two answers, and the difference between them is a transaction format rather than
 anything about the program.
@@ -919,6 +966,7 @@ reporting.
 | `docs/MEASUREMENT_LOG.md` | Every run. |
 | `docs/THREAT_MODEL.md` | The adversary, what holds, and every place it stops. |
 | `docs/INCENTIVES.md` | What keeps a member in the pool, enforced by the program — and the one reward that is deliberately absent. |
+| `docs/INTEGRATING.md` | Adding a protocol: the three action shapes, a worked stake delegation, and what the proof does and does not promise. |
 | `docs/PROOF.md` | Devnet signatures for every flow, and the rejections. |
 | `docs/CROWD.md` | Six members delegating to six different validators in one devnet transaction, and what divergence costs. |
 | `docs/USAGE.md` | The member-facing commands, end to end, with real devnet output. |
