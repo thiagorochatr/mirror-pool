@@ -310,8 +310,9 @@ is no confidential-value layer here.
 ### The crowd rule is threshold-or-timeout, and the timeout side has no floor
 
 A batch settles if it carries `k_floor` spends **or** if every spend in it has
-waited out `SETTLE_TIMEOUT_SECONDS` (an hour). The second clause has no minimum
-size. **A batch of one settles, and executes.**
+waited out the pool's settlement timeout — a value fixed at creation, defaulting
+to an hour. The second clause has no minimum size. **A batch of one settles, and
+executes.**
 
 This is the standard trade in mix design, and the standard analysis of it is
 Serjantov, Dingledine and Syverson, *From a Trickle to a Flood: Active Attacks on
@@ -322,7 +323,7 @@ the paper, though — it follows from the code:
 
 - **Settlement is permissionless**, so an adversary may be the settler. They
   choose the moment and the composition of every batch they send.
-- A spend submitted at `t` becomes settleable **alone** at `t + 3600`,
+- A spend submitted at `t` becomes settleable **alone** at `t + timeout`,
   regardless of what else is pending.
 - So for any member whose spend outlives the timeout without company, an
   adversary can settle it by itself, and that member's anonymity set is one.
@@ -346,6 +347,36 @@ submitting into an empty one and waiting is what does not. The tool reports the
 pending count before it settles and says plainly when a batch is below the floor,
 because a member who is about to settle alone should know that is what they are
 doing. What the tool cannot do is manufacture other members.
+
+**What the program does about it**, short of refusing the trade. Two things, and
+neither of them changes what is permitted:
+
+- **The settlement has to be asked for.** `SettleEpoch` carries an
+  `allow_below_floor` flag, and without it an under-floor batch is refused with
+  its own error code (`BelowFloorNotPermitted`, 26) rather than settled. The flag
+  is consent and not a bypass: the timeout still has to have run, and a batch
+  that has not waited it out is still refused with `CrowdTooSmall` (21). The two
+  codes are distinct so a rejection says which gate closed. `mirror settle`
+  requires `--allow-below-floor` for the same reason, and stops with an
+  explanation rather than warning and proceeding.
+- **The settlement leaves a mark.** A batch that lands below the floor logs the
+  count it carried, the floor it missed, and the timeout it settled on. Before
+  this, a solo timeout settlement and a full crowd were the same transaction
+  shape read two ways — an observer could count accounts, but the floor it fell
+  short of was not in the transaction at all. Now the members of that batch can
+  tell afterwards what crowd they actually got.
+
+Neither closes the hole. An adversarial settler will happily pass the flag, and
+the mark tells you about your anonymity after the fact rather than protecting it.
+What they buy is that the trade is now visible in the ledger and deliberate in
+the tooling, instead of a default that happens quietly to whoever waited longest.
+
+**The timeout is per pool.** It is set at creation alongside `k_floor`, immutable
+afterwards for the same reason, and bounded to between a minute and seven days —
+a timeout that never elapses would escrow deposits with no crowd and no clock
+able to release them, which is the griefing vector `MAX_K_FLOOR` already guards
+against from the other direction. Zero means the program's default of an hour,
+which is what every pool created before the parameter existed holds.
 
 **What would fix it properly**, and is not built: a batch that fails to reach the
 floor could *refund* the member rather than execute — the escape hatch would then

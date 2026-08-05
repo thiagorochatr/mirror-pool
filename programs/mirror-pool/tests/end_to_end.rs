@@ -110,6 +110,24 @@ impl Env {
         })
     }
 
+    /// Sends and hands back the metadata, for the tests whose subject is what
+    /// the program *said* rather than only whether it succeeded.
+    ///
+    /// A log line is program output like any other: asserting it from the
+    /// transaction's own metadata is what makes "settlement leaves a mark" a
+    /// checked claim rather than a sentence in a document.
+    fn send_meta(
+        &mut self,
+        ix: Instruction,
+        signer: &Keypair,
+    ) -> Result<litesvm::types::TransactionMetadata, String> {
+        let msg = Message::new(&[ix], Some(&signer.pubkey()));
+        let tx = Transaction::new(&[signer], msg, self.svm.latest_blockhash());
+        self.svm
+            .send_transaction(tx)
+            .map_err(|e| format!("{:?} | logs: {:#?}", e.err, e.meta.logs))
+    }
+
     fn send_expect_cu(&mut self, ix: Instruction, signer: &Keypair) -> u64 {
         let msg = Message::new(&[ix], Some(&signer.pubkey()));
         let tx = Transaction::new(&[signer], msg, self.svm.latest_blockhash());
@@ -119,13 +137,17 @@ impl Env {
         meta.compute_units_consumed
     }
 
-    fn init_pool(&mut self) {
+    /// Creates the pool. Zero takes the program's default timeout, which is
+    /// what every pool created before the field existed holds and what the rest
+    /// of this suite exercises.
+    fn init_pool_with_timeout(&mut self, settle_timeout_seconds: u32) {
         let ix = Instruction::new_with_bytes(
             self.program_id,
             &MirrorIx::InitPool {
                 denomination: DENOMINATION,
                 entry_fee: ENTRY_FEE,
                 k_floor: K_FLOOR,
+                settle_timeout_seconds,
             }
             .pack(),
             vec![
@@ -171,8 +193,12 @@ impl Env {
 /// Builds a pool with `count` deposits and returns the host-side tree plus the
 /// notes, so a proof can be produced for any of them.
 fn seeded_pool(count: u64) -> (Env, MerkleTree, Vec<Note>, Keys) {
+    seeded_pool_with_timeout(count, 0)
+}
+
+fn seeded_pool_with_timeout(count: u64, timeout: u32) -> (Env, MerkleTree, Vec<Note>, Keys) {
     let mut env = setup();
-    env.init_pool();
+    env.init_pool_with_timeout(timeout);
 
     let denom_tag = Field::from_u64(DENOMINATION);
     let mut tree = MerkleTree::new().unwrap();
@@ -327,7 +353,7 @@ fn proof_for(
 #[test]
 fn a_pool_initialises_with_an_empty_accumulator() {
     let mut env = setup();
-    env.init_pool();
+    env.init_pool_with_timeout(0);
 
     let mut data = env.pool_state();
     assert_eq!(data.len(), POOL_LEN);
@@ -639,8 +665,22 @@ fn submit_batch(
     out
 }
 
+/// Settlement that asks for the crowd, which is what an ordinary settler sends.
+///
+/// The below-floor flag is deliberately *not* a default anywhere in this suite:
+/// a test that settles under the floor has to say so, exactly as a settler does.
+/// That is what keeps the two paths from being confused for one another here.
 fn settle_ix(env: &Env, batch: &[(Pubkey, Pubkey, Keypair)], settler: &Pubkey) -> Instruction {
-    settle_ix_with_targets(env, batch, settler, &[])
+    settle_ix_with_targets(env, batch, settler, &[], false)
+}
+
+/// Settlement that consents to a batch below the pool's floor.
+fn settle_ix_below_floor(
+    env: &Env,
+    batch: &[(Pubkey, Pubkey, Keypair)],
+    settler: &Pubkey,
+) -> Instruction {
+    settle_ix_full(env, batch, settler, &[], &[], true)
 }
 
 /// Settlement where some spends invoke a program. `targets[i]`, when present,
@@ -651,8 +691,9 @@ fn settle_ix_with_targets(
     batch: &[(Pubkey, Pubkey, Keypair)],
     settler: &Pubkey,
     targets: &[Option<Pubkey>],
+    allow_below_floor: bool,
 ) -> Instruction {
-    settle_ix_full(env, batch, settler, targets, &[])
+    settle_ix_full(env, batch, settler, targets, &[], allow_below_floor)
 }
 
 /// Settlement carrying, per spend, an optional target program and that action's
@@ -663,6 +704,7 @@ fn settle_ix_full(
     settler: &Pubkey,
     targets: &[Option<Pubkey>],
     action_accounts: &[Vec<AccountMeta>],
+    allow_below_floor: bool,
 ) -> Instruction {
     let mut metas = vec![
         AccountMeta::new(*settler, true),
@@ -684,6 +726,7 @@ fn settle_ix_full(
         env.program_id,
         &MirrorIx::SettleEpoch {
             count: batch.len() as u8,
+            allow_below_floor,
         }
         .pack(),
         metas,
@@ -800,7 +843,10 @@ fn a_batch_below_the_crowd_size_must_wait() {
 
     let settler = Keypair::new();
     env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
-    let ix = settle_ix(&env, &batch, &settler.pubkey());
+    // Asking for the under-floor path explicitly, so that what this test
+    // measures is the clock and not the consent — the two refusals carry
+    // different codes and a test that accepted either would prove neither.
+    let ix = settle_ix_below_floor(&env, &batch, &settler.pubkey());
     let err = env
         .send(ix, &settler)
         .expect_err("a batch below the crowd size settled immediately");
@@ -808,6 +854,171 @@ fn a_batch_below_the_crowd_size_must_wait() {
     assert!(
         err.contains("Custom(21)"),
         "expected CrowdTooSmall (21), got: {err}"
+    );
+}
+
+/// Consent, and the fact that it is not a bypass.
+///
+/// The flag and the timeout are independent gates and this pins both: an
+/// under-floor batch without the flag is refused whatever the clock says, and
+/// the flag on its own does not buy a settlement the clock has not earned.
+#[test]
+fn an_under_floor_batch_is_refused_unless_the_settler_asked_for_it() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let batch = submit_batch(&mut env, &tree, &notes, &keys, K_FLOOR as usize - 1);
+
+    // A settler per attempt. Byte-identical transactions are deduplicated by
+    // the runtime before the program runs, and a negative case that never
+    // reached the program asserts nothing about it.
+    let early = Keypair::new();
+    let late = Keypair::new();
+    let consenting = Keypair::new();
+    for k in [&early, &late, &consenting] {
+        env.svm.airdrop(&k.pubkey(), 10_000_000_000).unwrap();
+    }
+
+    // No flag, before the timeout: refused for want of consent, and the code
+    // says which of the two gates closed.
+    let err = env
+        .send(settle_ix(&env, &batch, &early.pubkey()), &early)
+        .expect_err("an under-floor batch settled without the flag");
+    println!("under-floor batch without consent rejected: {err}");
+    assert!(
+        err.contains("Custom(26)"),
+        "expected BelowFloorNotPermitted (26), got: {err}"
+    );
+
+    // No flag, *after* the timeout: still refused. The clock does not imply
+    // consent, which is the whole point of asking for it.
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+    let err = env
+        .send(settle_ix(&env, &batch, &late.pubkey()), &late)
+        .expect_err("the timeout was read as consent");
+    assert!(
+        err.contains("Custom(26)"),
+        "expected BelowFloorNotPermitted (26) after the timeout, got: {err}"
+    );
+
+    // With the flag, now that the clock has run: settles.
+    env.send(
+        settle_ix_below_floor(&env, &batch, &consenting.pubkey()),
+        &consenting,
+    )
+    .expect("an under-floor batch with consent and an elapsed timeout");
+}
+
+/// A crowd-sized batch ignores the flag entirely.
+///
+/// Worth pinning because the alternative reading — that the flag is a mode the
+/// settler puts the instruction into — would make an ordinary settlement behave
+/// differently depending on a byte that should not matter to it.
+#[test]
+fn the_below_floor_flag_changes_nothing_for_a_batch_that_meets_the_floor() {
+    for asked in [false, true] {
+        let (mut env, tree, notes, keys) = seeded_pool(6);
+        let batch = submit_batch(&mut env, &tree, &notes, &keys, K_FLOOR as usize);
+        let settler = Keypair::new();
+        env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+
+        let ix = settle_ix_full(&env, &batch, &settler.pubkey(), &[], &[], asked);
+        let meta = env.send_meta(ix, &settler).unwrap_or_else(|e| {
+            panic!("a full crowd was refused with allow_below_floor={asked}: {e}")
+        });
+
+        // And no mark: this batch was the crowd it claimed to be.
+        assert!(
+            !meta.logs.iter().any(|l| l.contains("below the pool floor")),
+            "a full crowd logged the under-floor marker with allow_below_floor={asked}: {:#?}",
+            meta.logs
+        );
+    }
+}
+
+/// A pool settles on its own clock, not the program's.
+///
+/// The default is an hour; this pool asked for a minute. Both halves matter: the
+/// spend must not settle before its own timeout, and it must settle after it
+/// rather than waiting out an hour it never agreed to. A program that read the
+/// constant instead of the account would pass the first half and fail the
+/// second, which is the failure this pins.
+#[test]
+fn a_pool_settles_on_the_timeout_it_chose_rather_than_the_default() {
+    const CHOSEN: u32 = mirror_pool_program::state::MIN_SETTLE_TIMEOUT_SECONDS; // 60s
+    let (mut env, tree, notes, keys) = seeded_pool_with_timeout(6, CHOSEN);
+    let batch = submit_batch(&mut env, &tree, &notes, &keys, 1);
+
+    let early = Keypair::new();
+    let late = Keypair::new();
+    for k in [&early, &late] {
+        env.svm.airdrop(&k.pubkey(), 10_000_000_000).unwrap();
+    }
+
+    // A second before its own timeout: refused.
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += i64::from(CHOSEN) - 1;
+    env.svm.set_sysvar(&clock);
+    let err = env
+        .send(settle_ix_below_floor(&env, &batch, &early.pubkey()), &early)
+        .expect_err("settled before the pool's own timeout");
+    assert!(
+        err.contains("Custom(21)"),
+        "expected CrowdTooSmall (21) before the chosen timeout, got: {err}"
+    );
+
+    // A second after it, and still far short of the program's default hour.
+    clock.unix_timestamp += 2;
+    env.svm.set_sysvar(&clock);
+    let meta = env
+        .send_meta(settle_ix_below_floor(&env, &batch, &late.pubkey()), &late)
+        .expect("a lone spend after the pool's own timeout");
+
+    // And the mark names the pool's figure, not the default.
+    let mark = meta
+        .logs
+        .iter()
+        .find(|l| l.contains("below the pool floor"))
+        .unwrap_or_else(|| panic!("no under-floor mark: {:#?}", meta.logs));
+    assert!(
+        mark.contains(&format!("on the {CHOSEN}s timeout")),
+        "the mark quotes a timeout this pool did not choose: {mark}"
+    );
+}
+
+/// The mark R1 asks for: a settlement that lands below the floor says so on
+/// chain, so a crowd settlement and a solo timeout settlement are not the same
+/// transaction shape read two ways.
+#[test]
+fn a_settlement_below_the_floor_leaves_a_mark_naming_the_floor_it_missed() {
+    let (mut env, tree, notes, keys) = seeded_pool(6);
+    let batch = submit_batch(&mut env, &tree, &notes, &keys, 1);
+
+    let settler = Keypair::new();
+    env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
+    let mut clock = env.svm.get_sysvar::<solana_program::clock::Clock>();
+    clock.unix_timestamp += mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS + 1;
+    env.svm.set_sysvar(&clock);
+
+    let meta = env
+        .send_meta(
+            settle_ix_below_floor(&env, &batch, &settler.pubkey()),
+            &settler,
+        )
+        .expect("a lone spend after the timeout");
+
+    let mark = meta
+        .logs
+        .iter()
+        .find(|l| l.contains("below the pool floor"))
+        .unwrap_or_else(|| panic!("no under-floor mark in the logs: {:#?}", meta.logs));
+    println!("{mark}");
+    // Both numbers, because either alone is unreadable: a count with no floor
+    // does not say it fell short, and a floor with no count does not say by how
+    // much.
+    assert!(
+        mark.contains("settled 1 spend(s)") && mark.contains("floor of 4"),
+        "the mark does not carry both the count and the floor: {mark}"
     );
 }
 
@@ -824,7 +1035,7 @@ fn a_lone_spend_settles_once_the_timeout_has_passed() {
     env.svm.airdrop(&late.pubkey(), 10_000_000_000).unwrap();
 
     // Before the timeout: refused.
-    let ix = settle_ix(&env, &batch, &early.pubkey());
+    let ix = settle_ix_below_floor(&env, &batch, &early.pubkey());
     assert!(env.send(ix, &early).is_err(), "settled too early");
 
     // Advance the clock past the timeout.
@@ -837,7 +1048,7 @@ fn a_lone_spend_settles_once_the_timeout_has_passed() {
         .get_account(&batch[0].1)
         .map(|a| a.lamports)
         .unwrap_or(0);
-    let ix = settle_ix(&env, &batch, &late.pubkey());
+    let ix = settle_ix_below_floor(&env, &batch, &late.pubkey());
     env.send(ix, &late).expect("lone spend after timeout");
     let after = env.svm.get_account(&batch[0].1).unwrap().lamports;
     assert_eq!(after - before, DENOMINATION - RELAY_FEE);
@@ -943,7 +1154,7 @@ fn a_member_can_always_exit_without_any_relay() {
 
     let before = env.svm.get_account(&member.pubkey()).unwrap().lamports;
     let batch = vec![(spend_pda, beneficiary, member.insecure_clone())];
-    let settle = settle_ix(&env, &batch, &member.pubkey());
+    let settle = settle_ix_below_floor(&env, &batch, &member.pubkey());
     env.send(settle, &member)
         .expect("member settled their own spend");
 
@@ -1197,7 +1408,7 @@ fn a_crowd_of_members_perform_a_real_protocol_action_together() {
     let settler = Keypair::new();
     env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
     let targets: Vec<Option<Pubkey>> = batch.iter().map(|_| Some(memo)).collect();
-    let ix = settle_ix_with_targets(&env, &batch, &settler.pubkey(), &targets);
+    let ix = settle_ix_with_targets(&env, &batch, &settler.pubkey(), &targets, false);
     let cu = env.send_expect_cu(ix, &settler);
     println!(
         "settled {} real CPI actions in one transaction, {cu} CU",
@@ -1289,6 +1500,7 @@ fn an_action_runs_with_a_non_empty_account_list() {
         &settler.pubkey(),
         &[Some(memo)],
         &[vec![AccountMeta::new_readonly(settler.pubkey(), true)]],
+        true,
     );
     let cu = env.send_expect_cu(ix, &settler);
     println!("settled a signed CPI action, {cu} CU");
@@ -1348,7 +1560,14 @@ fn a_settler_cannot_change_how_many_accounts_an_action_gets() {
     // one account past this spend's own, so it consumes something that is not
     // there and fails rather than invoking with a truncated list.
     let batch = vec![(spend_pda, beneficiary, relay.insecure_clone())];
-    let ix = settle_ix_full(&env, &batch, &settler.pubkey(), &[Some(memo)], &[vec![]]);
+    let ix = settle_ix_full(
+        &env,
+        &batch,
+        &settler.pubkey(),
+        &[Some(memo)],
+        &[vec![]],
+        true,
+    );
     let err = env
         .send(ix, &settler)
         .expect_err("settlement invoked with fewer accounts than declared");
@@ -1420,6 +1639,7 @@ fn a_settler_cannot_place_the_vault_in_an_action_account_list() {
         &settler.pubkey(),
         &[Some(memo)],
         &[vec![AccountMeta::new(env.vault, false)]],
+        true,
     );
     let err = env
         .send(ix, &settler)
@@ -1498,6 +1718,7 @@ fn the_pool_signs_an_action_as_its_own_authority() {
         &settler.pubkey(),
         &[Some(memo)],
         &[vec![AccountMeta::new(env.vault, false)]],
+        true,
     );
     let msg = Message::new(&[ix], Some(&settler.pubkey()));
     let tx = Transaction::new(&[&settler], msg, env.svm.latest_blockhash());
@@ -1599,7 +1820,14 @@ fn a_signed_action_settles_inside_a_batch_of_plain_transfers() {
     let settler = Keypair::new();
     env.svm.airdrop(&settler.pubkey(), 10_000_000_000).unwrap();
     let vault_before = env.vault_lamports();
-    let ix = settle_ix_full(&env, &batch, &settler.pubkey(), &targets, &action_accounts);
+    let ix = settle_ix_full(
+        &env,
+        &batch,
+        &settler.pubkey(),
+        &targets,
+        &action_accounts,
+        false,
+    );
     let msg = Message::new(&[ix], Some(&settler.pubkey()));
     let tx = Transaction::new(&[&settler], msg, env.svm.latest_blockhash());
     let meta = env
@@ -1704,6 +1932,7 @@ fn the_pools_signature_cannot_be_turned_against_its_own_vault() {
             AccountMeta::new(env.vault, false),
             AccountMeta::new(attacker, false),
         ]],
+        true,
     );
     let err = env
         .send(ix, &settler)
@@ -1842,7 +2071,8 @@ fn an_action_cannot_re_enter_the_pool() {
     env.svm.set_sysvar(&clock);
 
     let batch = vec![(spend_pda, beneficiary, relay.insecure_clone())];
-    let ix = settle_ix_with_targets(&env, &batch, &settler.pubkey(), &[Some(self_target)]);
+    // Alone after the timeout, so the under-floor path has to be asked for.
+    let ix = settle_ix_with_targets(&env, &batch, &settler.pubkey(), &[Some(self_target)], true);
     let err = env.send(ix, &settler).expect_err("the pool invoked itself");
     println!("self-invocation rejected: {err}");
     assert!(
@@ -2052,7 +2282,7 @@ fn squatting_a_pool_pda_does_not_prevent_the_pool() {
         env.send(squat, &squatter).expect("squatting");
     }
 
-    env.init_pool();
+    env.init_pool_with_timeout(0);
     let mut data = env.pool_state();
     let pool = Pool::load(&mut data).unwrap();
     assert_eq!(pool.denomination(), DENOMINATION);

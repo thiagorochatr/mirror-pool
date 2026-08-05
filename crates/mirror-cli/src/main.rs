@@ -294,6 +294,12 @@ enum Command {
         /// Notes the pool must hold before it will act.
         #[arg(long, default_value_t = 2)]
         k_floor: u32,
+        /// How long a spend waits before it may settle below the floor.
+        ///
+        /// Fixed at creation and never changeable, like the floor itself. Zero
+        /// takes the program's default of one hour.
+        #[arg(long, default_value_t = 0)]
+        settle_timeout: u32,
         #[arg(long, default_value = DEFAULT_URL)]
         url: String,
         #[arg(long, default_value = DEFAULT_KEYPAIR)]
@@ -380,6 +386,15 @@ enum Command {
         program: String,
         #[arg(long)]
         denomination: u64,
+        /// Consent to settling a batch smaller than the pool's floor.
+        ///
+        /// Without it, a batch below the floor is reported and left alone. The
+        /// program refuses one that nobody asked for, and a settlement that
+        /// does land below the floor is marked as such on chain — the members
+        /// in it got a smaller crowd than the pool advertises, and that should
+        /// be somebody's decision rather than a default.
+        #[arg(long)]
+        allow_below_floor: bool,
         #[arg(long, default_value = DEFAULT_URL)]
         url: String,
         #[arg(long, default_value = DEFAULT_KEYPAIR)]
@@ -713,109 +728,72 @@ fn main() -> Result<()> {
                     println!("no member resolved to a class; nothing to report");
                 }
                 Some(a) => {
-                    println!("resolved members     {}", a.nominal_k);
-                    println!("provenance classes   {}", a.classes);
-                    println!();
-                    println!(
-                        "loss factor rho      {:.4}   <- headline, independent of k",
-                        a.loss_factor
-                    );
-                    println!("effective-k Shannon  {:.4}", a.eff_k_shannon);
-                    println!("effective-k min-ent  {:.4}", a.eff_k_min_entropy);
-                    println!("leakage Shannon      {:.4} bits", a.leakage_shannon_bits);
-                    println!(
-                        "leakage min-entropy  {:.4} bits",
-                        a.leakage_min_entropy_bits
-                    );
-                    println!("guessing entropy     {:.2}", a.guessing_entropy);
-                    println!("Good-Turing coverage {:.4}", a.good_turing_coverage);
-                    println!("Chao1 richness       {:.2}", a.chao1);
-                    println!(
-                        "worst-case class     {}{}",
-                        a.worst_case,
-                        if a.worst_case_is_informative() {
-                            ""
-                        } else {
-                            "   (not informative: under any heavy-tailed prior somebody is always alone)"
-                        }
-                    );
-                    println!();
-                    println!("class-size CCDF (share of members in a class of at most t):");
-                    for (t, share) in &a.class_size_ccdf {
-                        println!("  t={t:<4} {:.4}", share);
-                    }
-
-                    // Sampling error, which the bracket below does not cover.
-                    // These depositors are a draw from a larger population, and
-                    // without an interval over that draw a reader cannot tell a
-                    // real difference between two pools from a lucky sample.
-                    if let Some(i) = mirror_provenance::loss_factor_interval(
-                        &labels,
-                        mirror_provenance::bootstrap::DEFAULT_REPLICATES,
-                        mirror_provenance::bootstrap::DEFAULT_SEED,
-                    ) {
-                        println!();
-                        println!(
-                            "rho under resampling   {:.4} .. {:.4}   (2.5-97.5%, {} replicates)",
-                            i.lo, i.hi, i.replicates
-                        );
-                        println!(
-                            "  resampling bias      {:+.4}   (mean {:.4} against a point estimate \
-                             of {:.4})",
-                            i.resampling_bias(),
-                            i.mean,
-                            i.point
-                        );
-                        if !i.contains_point() {
-                            println!(
-                                "  The range does not contain the point estimate, and that is a \
-                                 property of this\n  population rather than an error. Resampling \
-                                 leaves about 37% of members unpicked,\n  so single-member classes \
-                                 vanish from most replicates; fewer classes means lower\n  H(C) \
-                                 and therefore higher rho. The size of that gap is a tail \
-                                 diagnostic."
-                            );
-                        }
-                        println!(
-                            "  This is the spread of the estimator, not its distance from the \
-                             truth. Plug-in\n  entropy is biased low at small n, so rho is biased \
-                             HIGH: the real loss factor is\n  plausibly below all of this, and \
-                             equally so for any population measured this way."
-                        );
-                    }
-
-                    // The bracket. A point estimate alone would not say whether
-                    // the number is driven by what was measured or by what was
-                    // not.
+                    // The bracket is built first and the report refuses without
+                    // it. A point estimate alone does not say whether the number
+                    // is driven by what was measured or by what was not, and a
+                    // reader who copies one line out of this output should not
+                    // be able to end up holding a bare effective-k.
                     let mut sizes: std::collections::BTreeMap<&str, u64> =
                         std::collections::BTreeMap::new();
                     for l in &labels {
                         *sizes.entry(l.as_str()).or_insert(0) += 1;
                     }
                     let resolved_sizes: Vec<u64> = sizes.into_values().collect();
-                    if let Some(b) = mirror_provenance::Bracket::new(&resolved_sizes, unresolved) {
-                        println!();
-                        println!(
-                            "unresolved bracket ({} resolved, {} unresolved):",
-                            b.resolved, b.unresolved
+                    let Some(bracket) =
+                        mirror_provenance::Bracket::new(&resolved_sizes, unresolved)
+                    else {
+                        eprintln!(
+                            "REFUSING to report: the resolved members do not form a partition \
+                             this can bracket, so any effective-k printed here would be a point \
+                             estimate with nothing to say how much of it is the pool and how \
+                             much is the tracer's budget."
                         );
-                        println!(
-                            "  rho             {:.4} .. {:.4}",
-                            b.lower.loss_factor, b.upper.loss_factor
-                        );
-                        println!(
-                            "  effective-k     {:.4} .. {:.4}",
-                            b.lower.eff_k_shannon, b.upper.eff_k_shannon
-                        );
-                        if !b.is_informative() {
+                        std::process::exit(3);
+                    };
+
+                    // Sampling error, which the bracket does not cover. These
+                    // depositors are a draw from a larger population, and
+                    // without an interval over that draw a reader cannot tell a
+                    // real difference between two pools from a lucky sample.
+                    let sampling = mirror_provenance::loss_factor_interval(
+                        &labels,
+                        mirror_provenance::bootstrap::DEFAULT_REPLICATES,
+                        mirror_provenance::bootstrap::DEFAULT_SEED,
+                    );
+
+                    // One renderer, and it is the only thing that can print an
+                    // effective-k.
+                    println!(
+                        "{}",
+                        mirror_provenance::Quotation::new(a.clone(), bracket)
+                            .with_sampling(sampling.clone())
+                    );
+
+                    println!();
+                    println!("class-size CCDF (share of members in a class of at most t):");
+                    for (t, share) in &a.class_size_ccdf {
+                        println!("  t={t:<4} {:.4}", share);
+                    }
+
+                    if let Some(i) = &sampling {
+                        if !i.contains_point() {
                             println!();
                             println!(
-                                "  NOT INFORMATIVE: fewer than half the members reached a class, so \
-                                 the two readings\n  diverge and either one quoted alone would \
-                                 describe the sampling budget rather than\n  the pool. The point \
-                                 estimate above is reported for completeness, not as a result."
+                                "  The resampling range does not contain the point estimate, and \
+                                 that is a\n  property of this population rather than an error. \
+                                 Resampling leaves about 37% of\n  members unpicked, so \
+                                 single-member classes vanish from most replicates; fewer\n  \
+                                 classes means lower H(C) and therefore higher rho. The size of \
+                                 that gap is a\n  tail diagnostic."
                             );
                         }
+                        println!();
+                        println!(
+                            "  Resampling is the spread of the estimator, not its distance from \
+                             the truth.\n  Plug-in entropy is biased low at small n, so rho is \
+                             biased HIGH: the real loss\n  factor is plausibly below all of this, \
+                             and equally so for any population measured\n  this way."
+                        );
                     }
 
                     if a.good_turing_coverage < 0.8 {
@@ -1084,6 +1062,7 @@ fn main() -> Result<()> {
             program,
             denomination,
             k_floor,
+            settle_timeout,
             url,
             keypair,
         } => {
@@ -1094,6 +1073,7 @@ fn main() -> Result<()> {
                 &parse_program(&program)?,
                 denomination,
                 k_floor,
+                settle_timeout,
                 &payer,
             )
         }
@@ -1163,6 +1143,7 @@ fn main() -> Result<()> {
         Command::Settle {
             program,
             denomination,
+            allow_below_floor,
             url,
             keypair,
         } => {
@@ -1175,6 +1156,7 @@ fn main() -> Result<()> {
                 denomination,
                 &settler,
                 now,
+                allow_below_floor,
             )
         }
         Command::VerifySetup { seed, expect } => {

@@ -162,6 +162,14 @@ pub struct StepRecord {
     pub name: String,
     pub signature: String,
     pub note: String,
+    /// The finalized slot, so a pruned transaction stays findable.
+    ///
+    /// `#[serde(default)]` because the committed result files predate this
+    /// field. `--render-only` has to keep rebuilding this document from the run
+    /// that produced it, and a schema change that made those files unreadable
+    /// would break the one property that makes the numbers checkable.
+    #[serde(default)]
+    pub slot: Option<u64>,
 }
 
 pub struct Crowd {
@@ -203,10 +211,15 @@ impl Crowd {
 
     fn record(&mut self, name: &'static str, signature: String, note: String) {
         println!("  {name:<28} {signature}");
+        // Read back from the cluster, for the same reason the soak does it:
+        // devnet prunes, and a signature with no slot beside it is not
+        // recoverable once `getTransaction` has forgotten the transaction.
+        let slot = self.client.slot(&signature).ok();
         self.steps.push(Step {
             name,
             signature,
             note,
+            slot,
         });
     }
 
@@ -266,6 +279,9 @@ impl Crowd {
                 denomination: DENOMINATION,
                 entry_fee: ENTRY_FEE,
                 k_floor,
+                // The program's default. A run that needed its own timeout
+                // would be measuring a pool nobody else would create.
+                settle_timeout_seconds: 0,
             }
             .pack(),
             self.pool_metas(),
@@ -542,6 +558,12 @@ impl Crowd {
             self.program_id,
             &MirrorIx::SettleEpoch {
                 count: batch.len() as u8,
+                // False, and that is an assertion rather than a default: these
+                // batches are supposed to meet the floor. If one ever does not,
+                // the program refuses it and the run stops — which is the
+                // failure we would want, instead of evidence quietly recording
+                // a crowd that was not there.
+                allow_below_floor: false,
             }
             .pack(),
             metas,
@@ -912,6 +934,7 @@ pub fn run(program: &str, url: &str, keypair: &str, out: &std::path::Path) -> Re
                 name: s.name.to_string(),
                 signature: s.signature.clone(),
                 note: s.note.clone(),
+                slot: s.slot,
             })
             .collect(),
     };
@@ -1166,16 +1189,24 @@ fn report(outcome: &Outcome) -> String {
     ));
 
     md.push_str("## Every step\n\n");
-    md.push_str("| step | signature | note |\n|---|---|---|\n");
+    md.push_str("| step | signature | slot | note |\n|---|---|---|---|\n");
     for step in steps {
         md.push_str(&format!(
-            "| {} | {} | {} |\n",
+            "| {} | {} | {} | {} |\n",
             step.name,
             explorer("tx", &step.signature),
+            step.slot.map_or_else(|| "—".to_string(), |n| n.to_string()),
             step.note
         ));
     }
     md.push('\n');
+    md.push_str(
+        "Devnet history is pruned, so a signature above may one day return null from \
+         `getTransaction` without having failed. The slot is what tells those two apart: \
+         `getSignatureStatuses` with `--search-transaction-history` still answers for a \
+         pruned transaction. A dash means this run could not read the slot back, and that \
+         row is the one to check by hand.\n\n",
+    );
 
     md.push_str("## Reproducing this document\n\n");
     md.push_str(&format!(
@@ -1200,15 +1231,38 @@ fn report(outcome: &Outcome) -> String {
     // the published headline rather than asserted, because the point of the
     // section is that the number comes out *good* and means nothing.
     let own = mirror_provenance::Anonymity::from_class_sizes(&[members as u64]);
-    if let Some(a) = own {
+    let own_bracket = mirror_provenance::Bracket::new(&[members as u64], 0);
+    if let (Some(a), Some(b)) = (own, own_bracket) {
+        // The bracket travels with the figure here too, even though this run
+        // resolved everybody and it therefore collapses onto the point. Showing
+        // the collapse is worth a column: it is the difference between "no
+        // unresolved members" and "unresolved members nobody accounted for",
+        // and a table that omits the bracket whenever it is narrow teaches a
+        // reader that the bracket is optional.
         md.push_str(&format!(
-            "| quantity | this run |\n|---|---|\n\
-             | nominal k | {} |\n\
-             | provenance classes | {} |\n\
-             | ρ, the loss factor | {:.4} |\n\
-             | effective k (Shannon) | {:.2} |\n\
-             | effective k (min-entropy) | {:.2} |\n\n",
-            a.nominal_k, a.classes, a.loss_factor, a.eff_k_shannon, a.eff_k_min_entropy
+            "| quantity | this run | unresolved bracket |\n|---|---|---|\n\
+             | nominal k | {} | — |\n\
+             | provenance classes | {} | — |\n\
+             | ρ, the loss factor | {:.4} | {:.4} … {:.4} |\n\
+             | effective k (Shannon) | {:.2} | {:.2} … {:.2} |\n\
+             | effective k (min-entropy) | {:.2} | {:.2} … {:.2} |\n\n",
+            a.nominal_k,
+            a.classes,
+            a.loss_factor,
+            b.lower.loss_factor,
+            b.upper.loss_factor,
+            a.eff_k_shannon,
+            b.lower.eff_k_shannon,
+            b.upper.eff_k_shannon,
+            a.eff_k_min_entropy,
+            b.lower.eff_k_min_entropy,
+            b.upper.eff_k_min_entropy,
+        ));
+        md.push_str(&format!(
+            "The bracket collapses onto the point because all {} members resolved and none \
+             were left over — not because the figure needs no bracket. Every ρ this \
+             repository publishes carries one.\n\n",
+            b.resolved
         ));
         md.push_str(&format!(
             "**ρ = {:.4} is the best value the metric can return, and it is meaningless \

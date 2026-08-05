@@ -76,7 +76,14 @@ const DEFAULT_COMPUTE_BUDGET: u64 = 200_000;
 const MAX_SPENDS_PER_SETTLEMENT: usize = 10;
 /// The wire size of that settlement. There is no room for an eleventh spend and
 /// not much room for anything else either.
-const BYTES_AT_MAX: usize = 1228;
+///
+/// It was 1228 until `settle_epoch` gained the below-floor flag, which costs one
+/// byte of instruction data. The *ceiling* did not move — a spend costs three
+/// account keys, ninety-six bytes, so one byte was never going to buy or lose a
+/// member — and that separation is why both numbers are pinned rather than one:
+/// this figure moving alone means the encoding changed, and the other moving
+/// means the crowd did.
+const BYTES_AT_MAX: usize = 1229;
 
 fn program_bytes() -> Vec<u8> {
     let path = concat!(
@@ -134,6 +141,7 @@ impl Env {
                 denomination: DENOMINATION,
                 entry_fee: ENTRY_FEE,
                 k_floor: K_FLOOR,
+                settle_timeout_seconds: 0,
             }
             .pack(),
             vec![
@@ -223,6 +231,11 @@ fn settle_ix(env: &Env, batch: &[Party], settler: &Pubkey) -> Instruction {
         env.program_id,
         &MirrorIx::SettleEpoch {
             count: batch.len() as u8,
+            // This file measures the wire and the lock limit, and the sweep
+            // starts below the pool's floor. Asking for the under-floor path
+            // keeps the crowd rule from being what stops a batch here, so the
+            // ceiling reported is the one the transaction imposes.
+            allow_below_floor: true,
         }
         .pack(),
         metas,

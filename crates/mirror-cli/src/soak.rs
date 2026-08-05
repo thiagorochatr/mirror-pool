@@ -82,6 +82,13 @@ pub struct Step {
     pub name: &'static str,
     pub signature: String,
     pub note: String,
+    /// The finalized slot, read back from the cluster after the fact.
+    ///
+    /// `None` when the lookup itself failed, which is recorded rather than
+    /// hidden: a missing slot in the published table is a reader's cue that this
+    /// row is the one to check by hand, and an em dash is more honest than a
+    /// zero.
+    pub slot: Option<u64>,
 }
 
 /// What the vault actually held, so the solvency claim is checkable from this
@@ -162,10 +169,16 @@ impl Soak {
 
     fn record(&mut self, name: &'static str, signature: String, note: String) {
         println!("  {name:<28} {signature}");
+        // Read back rather than inferred. A slot this run computed would prove
+        // nothing about where the transaction actually landed, and the whole
+        // reason to publish it is so a later reader can find a pruned
+        // transaction by it.
+        let slot = self.client.slot(&signature).ok();
         self.steps.push(Step {
             name,
             signature,
             note,
+            slot,
         });
     }
 
@@ -233,6 +246,9 @@ impl Soak {
                 denomination: DENOMINATION,
                 entry_fee: ENTRY_FEE,
                 k_floor: K_FLOOR,
+                // The program's default. A run that needed its own timeout
+                // would be measuring a pool nobody else would create.
+                settle_timeout_seconds: 0,
             }
             .pack(),
             self.account_meta_pool(),
@@ -658,6 +674,12 @@ impl Soak {
             self.program_id,
             &MirrorIx::SettleEpoch {
                 count: batch.len() as u8,
+                // False, and that is an assertion rather than a default: these
+                // batches are supposed to meet the floor. If one ever does not,
+                // the program refuses it and the run stops — which is the
+                // failure we would want, instead of evidence quietly recording
+                // a crowd that was not there.
+                allow_below_floor: false,
             }
             .pack(),
             metas,
@@ -1067,13 +1089,26 @@ fn write_proof(soak: &Soak, url: &str, out: &std::path::Path) -> Result<()> {
     md.push_str(&format!("- pool: `{}`\n", soak.pool()));
     md.push_str(&format!("- vault: `{}`\n\n", soak.vault()));
 
-    md.push_str("## Flows\n\n| step | signature | note |\n|---|---|---|\n");
+    md.push_str("## Flows\n\n| step | signature | slot | note |\n|---|---|---|---|\n");
     for s in &soak.steps {
         md.push_str(&format!(
-            "| {} | [`{}`](https://explorer.solana.com/tx/{}?cluster={cluster}) | {} |\n",
-            s.name, s.signature, s.signature, s.note
+            "| {} | [`{}`](https://explorer.solana.com/tx/{}?cluster={cluster}) | {} | {} |\n",
+            s.name,
+            s.signature,
+            s.signature,
+            s.slot.map_or_else(|| "—".to_string(), |n| n.to_string()),
+            s.note
         ));
     }
+    md.push_str(
+        "\nThe slots are there because **devnet history is pruned**. Every signature above \
+         resolved through `getTransaction` when this file was written, and a reader coming \
+         to it later may find that call returning null for a transaction that did land. \
+         That is the cluster forgetting, not the evidence being wrong, and the way to tell \
+         the difference is `getSignatureStatuses` with `--search-transaction-history`, \
+         which still answers for a pruned transaction — checked against the slot in this \
+         table.\n",
+    );
 
     if let Some(a) = &soak.accounting {
         md.push_str("\n## Vault accounting\n\n");
@@ -1214,6 +1249,30 @@ fn write_proof(soak: &Soak, url: &str, out: &std::path::Path) -> Result<()> {
          check under test — which is how a negative case comes to pass for the \
          wrong reason.\n"
     ));
+
+    md.push_str("\n## The key those proofs were checked against\n\n");
+    md.push_str(
+        "Every proof above was verified on chain against `programs/mirror-pool/src/vk.rs`, \
+         and that file is generated. A wrong byte in it is not a compile error, not a \
+         failure anywhere else in the suite, and not visible in a diff anyone reads \
+         carefully — so the binding between the committed circuit and the deployed key is \
+         asserted by a test rather than left to inspection.\n\n\
+         `programs/mirror-pool/tests/vk_drift.rs` regenerates the key from the committed \
+         seed under the committed `Cargo.lock` and compares it to the program's own \
+         constants **element by element**, then separately checks that the digest \
+         `README.md` publishes is the digest of that key. Two tests rather than one, \
+         because if both fail the key moved and if only the second fails the documentation \
+         is stale — and knowing which without reading any code is the point.\n\n\
+         The same check by hand, against the deployed program:\n\n\
+         ```\n\
+         mirror verify-setup --expect <the digest in README.md>\n\
+         ```\n\n\
+         What this establishes is *reproducibility*, not security. The seed is public, so \
+         the toxic waste is public, so proofs against this key are forgeable — which is \
+         why the program is on devnet and stays there. A real multi-party ceremony is the \
+         prerequisite for anything value-bearing, and `docs/THREAT_MODEL.md` says so \
+         rather than leaving it to be discovered.\n",
+    );
 
     md.push_str("\n## Scope\n\n");
     md.push_str(

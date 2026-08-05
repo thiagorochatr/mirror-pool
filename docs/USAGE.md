@@ -44,6 +44,12 @@ signature 3Tbf4zMGDHW89bi3F7yhaGMAB6RqveDi5WTJAYKEe3Zr2F8eTAeT8zSTp6V3B4kWE4ZSXm
 It bounds *program-visible* membership, which is all a program can check — see
 `THREAT_MODEL.md` for what it does not bound.
 
+`--settle-timeout` is how long a spend waits before it may settle below that
+floor, in seconds, between 60 and 604800. It defaults to 0, meaning the
+program's own hour. Like the floor, it is fixed at creation and cannot be
+changed afterwards, so a pool that wants something other than an hour has to say
+so here.
+
 ## 2. A note
 
 ```
@@ -223,6 +229,22 @@ is what stops arrival time from telling the members apart.
 Both beneficiaries received `31000001 − 100000 = 30900001` lamports, in one
 transaction, at one timestamp.
 
+### Settling below the floor
+
+Once the timeout has run, a batch smaller than the floor *may* settle — and the
+command will not do it on your say-so alone. It prints what the members of that
+batch would actually get and stops, and settling it takes `--allow-below-floor`.
+
+That is not bureaucracy. The timeout is a solvency guarantee and it is not an
+anonymity one: a batch of one gives its member an anonymity set of one, and the
+action becomes attributable to whoever submitted it. The program refuses an
+under-floor batch nobody asked for (error `26`), and the settlement that does
+land carries a log line naming the count it carried and the floor it missed — so
+the members can tell afterwards what crowd they were actually in.
+
+If your funds would otherwise stay escrowed, that is exactly what the flag is
+for. If you can wait for company, wait.
+
 `settle` executes plain transfers on its own. A pending CPI action is left alone
 and reported, because the record binds *how many* accounts the call takes and
 never *which*, so no tool can infer the account list its callee expects.
@@ -372,8 +394,8 @@ closed ia9oUXMgArZhGPWyETroygf6bvULHQWBodgpwB43gQ8
 
 **Do not set a crowd floor above what one settlement can carry.** `init-pool`
 refuses it now, because a pool whose floor exceeds the per-transaction ceiling
-can never meet it by crowd and can only settle through the hour-long timeout —
-and the floor is fixed at creation, so the fix is a different pool.
+can never meet it by crowd and can only settle through the timeout — and the
+floor is fixed at creation, so the fix is a different pool.
 
 For a legacy batch the limit is the packet in every row. Each spend brings
 accounts nobody else shares — its record, its beneficiary, its relay — so a

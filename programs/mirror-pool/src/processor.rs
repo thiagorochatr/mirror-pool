@@ -24,7 +24,15 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
             denomination,
             entry_fee,
             k_floor,
-        } => init_pool(program_id, accounts, denomination, entry_fee, k_floor),
+            settle_timeout_seconds,
+        } => init_pool(
+            program_id,
+            accounts,
+            denomination,
+            entry_fee,
+            k_floor,
+            settle_timeout_seconds,
+        ),
         Instruction::Deposit { commitment } => deposit(program_id, accounts, commitment),
         Instruction::SubmitSpend {
             proof_a,
@@ -55,7 +63,10 @@ pub fn process(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pr
                 payload,
             },
         ),
-        Instruction::SettleEpoch { count } => settle_epoch(program_id, accounts, count),
+        Instruction::SettleEpoch {
+            count,
+            allow_below_floor,
+        } => settle_epoch(program_id, accounts, count, allow_below_floor),
     }
 }
 
@@ -153,6 +164,7 @@ fn init_pool(
     denomination: u64,
     entry_fee: u64,
     k_floor: u32,
+    settle_timeout_seconds: u32,
 ) -> ProgramResult {
     let iter = &mut accounts.iter();
     let payer = next_account_info(iter)?;
@@ -203,7 +215,14 @@ fn init_pool(
 
     let mut data = pool_account.try_borrow_mut_data()?;
     let mut pool = Pool::load_uninitialised(&mut data)?;
-    pool.initialise(pool_bump, vault_bump, denomination, entry_fee, k_floor)?;
+    pool.initialise(
+        pool_bump,
+        vault_bump,
+        denomination,
+        entry_fee,
+        k_floor,
+        settle_timeout_seconds,
+    )?;
     Ok(())
 }
 
@@ -501,12 +520,19 @@ pub const SELECTOR_INVOKE: u64 = 1;
 /// change it.
 pub const SELECTOR_INVOKE_SIGNED: u64 = 2;
 
-/// How long a spend may wait before it can settle alone.
+/// How long a spend may wait before it can settle alone, when the pool did not
+/// pick a figure of its own.
 ///
 /// Below the crowd size, a batch must wait this out. It is the escape valve that
 /// makes the crowd requirement safe: without it, a quiet pool could hold a
 /// member's funds indefinitely because the crowd never arrives, and a privacy
 /// tool that can strand your money is not one anybody should use.
+///
+/// A pool may set its own at creation, within
+/// [`MIN_SETTLE_TIMEOUT_SECONDS`](crate::state::MIN_SETTLE_TIMEOUT_SECONDS) and
+/// [`MAX_SETTLE_TIMEOUT_SECONDS`](crate::state::MAX_SETTLE_TIMEOUT_SECONDS). An
+/// hour is what it gets if it does not, which is what every pool created before
+/// the field existed holds.
 pub const SETTLE_TIMEOUT_SECONDS: i64 = 3_600;
 
 /// Executes a batch of pending spends in one transaction.
@@ -528,13 +554,30 @@ pub const SETTLE_TIMEOUT_SECONDS: i64 = 3_600;
 ///
 /// **The timeout side has no floor, and a batch of one settles.** Settlement is
 /// permissionless, so an adversary may be the settler and may compose the batch;
-/// a spend becomes settleable alone an hour after it was submitted, whatever
+/// a spend becomes settleable alone once the pool's timeout has run, whatever
 /// else is pending. `k_floor` bounds a batch that settles by crowd and bounds
 /// nothing about one that settles by clock. That is a deliberate trade of
 /// anonymity for solvency — the alternative freezes a quiet pool's escrow with
 /// no authority able to release it — and `docs/THREAT_MODEL.md` argues it rather
 /// than leaving it to be discovered.
-fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> ProgramResult {
+///
+/// Two things make that trade visible rather than silent, and neither of them
+/// changes what is permitted:
+///
+/// - **It has to be asked for.** `allow_below_floor` is consent, not a bypass:
+///   the timeout still has to have run. Without the flag an under-floor batch is
+///   refused outright, so a settler cannot compose one by accident and cost a
+///   member the anonymity set they deposited for.
+/// - **It leaves a mark.** A settlement that lands below the floor logs the
+///   count it carried and the floor it missed, so the difference between a crowd
+///   settlement and a solo timeout settlement is readable from the chain instead
+///   of having to be inferred from a count of accounts.
+fn settle_epoch(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    count: u8,
+    allow_below_floor: bool,
+) -> ProgramResult {
     if count == 0 {
         return Err(MirrorProgramError::MalformedInstruction.into());
     }
@@ -554,14 +597,34 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
         return Err(MirrorProgramError::InvalidPda.into());
     }
 
-    let (denomination, k_floor) = {
+    let (denomination, k_floor, settle_timeout) = {
         let mut data = pool_account.try_borrow_mut_data()?;
         let pool = Pool::load(&mut data)?;
-        (pool.denomination(), pool.k_floor())
+        (
+            pool.denomination(),
+            pool.k_floor(),
+            // The pool's own timeout where it set one, the program's default
+            // where it did not. A pool created before the field existed holds
+            // zero, which is the absence of a choice rather than a choice of
+            // zero, and it keeps the hour it was created with.
+            pool.settle_timeout_seconds()
+                .map_or(SETTLE_TIMEOUT_SECONDS, i64::from),
+        )
     };
 
     let now = solana_program::clock::Clock::get()?.unix_timestamp;
     let crowd_satisfied = count as u32 >= k_floor;
+
+    // Consent, checked before a single record is read.
+    //
+    // The timeout below still governs whether an under-floor batch *may*
+    // settle; this governs whether anyone asked. Refusing here rather than
+    // deeper in means the rejection costs almost nothing and names itself: a
+    // settler who did not intend this gets a code that says so, instead of a
+    // settlement that quietly hands its members an anonymity set of one.
+    if !crowd_satisfied && !allow_below_floor {
+        return Err(MirrorProgramError::BelowFloorNotPermitted.into());
+    }
 
     // Every member in a batch must be paid the same amount, and the fee is the
     // only thing that can make them differ.
@@ -605,9 +668,7 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
             {
                 return Err(MirrorProgramError::InvalidPda.into());
             }
-            if !crowd_satisfied
-                && now.saturating_sub(record.submitted_at()) < SETTLE_TIMEOUT_SECONDS
-            {
+            if !crowd_satisfied && now.saturating_sub(record.submitted_at()) < settle_timeout {
                 return Err(MirrorProgramError::CrowdTooSmall.into());
             }
 
@@ -754,6 +815,32 @@ fn settle_epoch(program_id: &Pubkey, accounts: &[AccountInfo], count: u8) -> Pro
         .ok_or(MirrorProgramError::ArithmeticOverflow)?;
     if vault_account.lamports() < required {
         return Err(MirrorProgramError::InsolventVault.into());
+    }
+
+    // The mark, and it is the last thing this instruction does.
+    //
+    // Logged only when the batch came in under the floor, so the normal path
+    // pays nothing for it, and logged after the settlement has actually
+    // succeeded, so the line cannot appear on a transaction that failed.
+    //
+    // A log rather than return data because settlement makes CPIs and every CPI
+    // clears the return-data slot — anything written for an observer would have
+    // to be written after the last invoke to survive at all, and at that point
+    // the log is the version that shows up where the observer is already
+    // looking.
+    //
+    // What it says is the whole finding: this settlement was not the crowd it
+    // looks like. Without it, a batch of one and a batch of `k_floor` are told
+    // apart only by counting accounts in the transaction, and the floor it fell
+    // short of is not in the transaction at all.
+    if !crowd_satisfied {
+        solana_program::msg!(
+            "mirror-pool: settled {} spend(s) below the pool floor of {} on the {}s timeout; \
+             the effective anonymity set of this batch is its size, not the floor",
+            settled,
+            k_floor,
+            settle_timeout
+        );
     }
     Ok(())
 }
@@ -934,7 +1021,7 @@ mod tests {
         let mut data = vec![0u8; POOL_LEN];
         {
             let mut pool = Pool::load_uninitialised(&mut data).unwrap();
-            pool.initialise(255, 254, 1_000_000, 0, 2).unwrap();
+            pool.initialise(255, 254, 1_000_000, 0, 2, 0).unwrap();
         }
         let mut host = Frontier::new().unwrap();
         let mut pool_data = data;
@@ -961,7 +1048,7 @@ mod tests {
         let mut data = vec![0u8; POOL_LEN];
         {
             let mut pool = Pool::load_uninitialised(&mut data).unwrap();
-            pool.initialise(255, 254, 1, 0, 2).unwrap();
+            pool.initialise(255, 254, 1, 0, 2, 0).unwrap();
         }
         let mut roots = Vec::new();
         for i in 1..=20u64 {

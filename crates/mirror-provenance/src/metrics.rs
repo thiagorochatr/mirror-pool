@@ -234,6 +234,137 @@ impl Bracket {
     }
 }
 
+/// A figure in publishable form: the point estimate and, inseparably, the
+/// bracket it sits in.
+///
+/// This type exists because a bare effective-k is a different kind of number
+/// from the one this crate computes. `2^{H(X|C)}` over the *resolved* members
+/// answers "how much anonymity survives among the members we could trace", and
+/// a reader who lifts that figure out of its bracket has silently upgraded it to
+/// "how much anonymity this pool has" — a claim about members nobody traced.
+/// Run the tracer longer and the bare number moves; the bracket is what stops
+/// that from looking like a finding.
+///
+/// So the rendering lives here rather than at each call site. [`Anonymity`]
+/// deliberately has no `Display`: there is one way to print one of these
+/// figures, it takes a [`Bracket`] to construct, and a caller who wants to show
+/// an effective-k has to have the bracket in hand to do it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Quotation {
+    /// Computed over the members that reached a class.
+    pub point: Anonymity,
+    /// The two readings of the members that did not.
+    pub bracket: Bracket,
+    /// Sampling error over the draw, where a bootstrap was run. Distinct from
+    /// the bracket, which is about what was not resolved rather than about
+    /// which members happened to be drawn.
+    pub sampling: Option<crate::bootstrap::Interval>,
+}
+
+impl Quotation {
+    pub fn new(point: Anonymity, bracket: Bracket) -> Self {
+        Quotation {
+            point,
+            bracket,
+            sampling: None,
+        }
+    }
+
+    pub fn with_sampling(mut self, interval: Option<crate::bootstrap::Interval>) -> Self {
+        self.sampling = interval;
+        self
+    }
+
+    /// Whether the point estimate can carry the argument on its own.
+    ///
+    /// Delegates to [`Bracket::is_informative`]: the question is entirely about
+    /// how much of the set was resolved.
+    pub fn is_publishable(&self) -> bool {
+        self.bracket.is_informative()
+    }
+}
+
+impl std::fmt::Display for Quotation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let a = &self.point;
+        let b = &self.bracket;
+        writeln!(f, "resolved members     {}", a.nominal_k)?;
+        writeln!(f, "provenance classes   {}", a.classes)?;
+        writeln!(f)?;
+        // Every figure below carries its range on the same line as the point.
+        // Splitting them across a screen is how one of them gets quoted alone.
+        writeln!(
+            f,
+            "loss factor rho      {:.4}   in {:.4} .. {:.4}   <- headline, independent of k",
+            a.loss_factor, b.lower.loss_factor, b.upper.loss_factor
+        )?;
+        writeln!(
+            f,
+            "effective-k Shannon  {:.4}   in {:.4} .. {:.4}",
+            a.eff_k_shannon, b.lower.eff_k_shannon, b.upper.eff_k_shannon
+        )?;
+        writeln!(
+            f,
+            "effective-k min-ent  {:.4}   in {:.4} .. {:.4}",
+            a.eff_k_min_entropy, b.lower.eff_k_min_entropy, b.upper.eff_k_min_entropy
+        )?;
+        writeln!(
+            f,
+            "                     ^ point over the {} resolved; range spans the {} unresolved \
+             read as one class and as {} singletons",
+            b.resolved, b.unresolved, b.unresolved
+        )?;
+        writeln!(f)?;
+        writeln!(f, "leakage Shannon      {:.4} bits", a.leakage_shannon_bits)?;
+        writeln!(
+            f,
+            "leakage min-entropy  {:.4} bits",
+            a.leakage_min_entropy_bits
+        )?;
+        writeln!(f, "guessing entropy     {:.2}", a.guessing_entropy)?;
+        writeln!(f, "Good-Turing coverage {:.4}", a.good_turing_coverage)?;
+        writeln!(f, "Chao1 richness       {:.2}", a.chao1)?;
+        writeln!(
+            f,
+            "worst-case class     {}{}",
+            a.worst_case,
+            if a.worst_case_is_informative() {
+                ""
+            } else {
+                "   (not informative: under any heavy-tailed prior somebody is always alone)"
+            }
+        )?;
+
+        if let Some(i) = &self.sampling {
+            writeln!(f)?;
+            writeln!(
+                f,
+                "rho under resampling {:.4} .. {:.4}   (2.5-97.5%, {} replicates)",
+                i.lo, i.hi, i.replicates
+            )?;
+            writeln!(
+                f,
+                "  resampling bias    {:+.4}   (mean {:.4} against a point estimate of {:.4})",
+                i.resampling_bias(),
+                i.mean,
+                i.point
+            )?;
+        }
+
+        if !self.is_publishable() {
+            writeln!(f)?;
+            write!(
+                f,
+                "  NOT INFORMATIVE: fewer than half the members reached a class, so the two \
+                 readings\n  diverge and either one quoted alone would describe the sampling \
+                 budget rather than\n  the pool. The point estimates above are reported for \
+                 completeness, not as a result."
+            )?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,6 +567,54 @@ mod tests {
     fn an_empty_or_degenerate_partition_is_refused() {
         assert!(Anonymity::from_class_sizes(&[]).is_none());
         assert!(Anonymity::from_class_sizes(&[3, 0, 2]).is_none());
+    }
+
+    /// The rule R2 asks for, enforced by the only renderer there is: an
+    /// effective-k never appears without the range it sits in.
+    #[test]
+    fn a_quotation_never_shows_an_effective_k_without_its_bracket() {
+        let sizes = [19u64, 1, 1, 1, 1, 1, 1];
+        let point = Anonymity::from_class_sizes(&sizes).unwrap();
+        let bracket = Bracket::new(&sizes, 8).unwrap();
+        let rendered = Quotation::new(point.clone(), bracket.clone()).to_string();
+
+        for line in rendered.lines() {
+            if line.contains("effective-k") || line.contains("loss factor") {
+                assert!(
+                    line.contains(".."),
+                    "a figure was printed without its range: {line}"
+                );
+            }
+        }
+        // And the numbers on those lines are this partition's, rather than a
+        // range of something else that happens to be printed nearby.
+        for expected in [
+            format!("{:.4}", point.eff_k_shannon),
+            format!("{:.4}", bracket.lower.eff_k_shannon),
+            format!("{:.4}", bracket.upper.eff_k_shannon),
+        ] {
+            assert!(
+                rendered.contains(&expected),
+                "{expected} is missing from:\n{rendered}"
+            );
+        }
+        assert!(
+            rendered.contains("resolved") && rendered.contains("unresolved"),
+            "the rendering does not say what the range spans:\n{rendered}"
+        );
+    }
+
+    /// A thin sample renders the refusal rather than a quotable figure.
+    #[test]
+    fn a_quotation_over_a_thin_sample_says_so_in_the_output() {
+        let point = Anonymity::from_class_sizes(&[1, 1]).unwrap();
+        let bracket = Bracket::new(&[1, 1], 10).unwrap();
+        let q = Quotation::new(point, bracket);
+        assert!(!q.is_publishable());
+        assert!(
+            q.to_string().contains("NOT INFORMATIVE"),
+            "a thin sample rendered as if it were a result:\n{q}"
+        );
     }
 
     #[test]

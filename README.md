@@ -34,7 +34,7 @@ Every row is checkable in this repository, and the right-hand column says where.
 | what is asked | how this meets it | check it |
 |---|---|---|
 | **Rust, end to end** | **Zero** files of any other language are tracked here. No Circom, no snarkjs, no `ethers`, no TypeScript build step, no shell scripts doing real work. The circuit is an arkworks R1CS gadget in `crates/mirror-circuit`; the prover is Rust; the verifier is the on-chain program calling the `alt_bn128` syscall. | `git ls-files '*.js' '*.ts' '*.py' '*.sol' '*.circom'` returns nothing |
-| **Production-grade, tested, deployable** | 261 tests. The end-to-end suite loads the compiled `.so` into a real SVM and verifies real Groth16 proofs through the actual syscall. Negative cases assert the program's *own* error codes, not that something failed. `overflow-checks` on in release; `cargo-deny` over advisories, bans, licences and sources; CI actions pinned by commit SHA. | `make verify` |
+| **Production-grade, tested, deployable** | 275 tests. The end-to-end suite loads the compiled `.so` into a real SVM and verifies real Groth16 proofs through the actual syscall. Negative cases assert the program's *own* error codes, not that something failed. `overflow-checks` on in release; `cargo-deny` over advisories, bans, licences and sources; CI actions pinned by commit SHA. | `make verify` |
 | **Deployed and running** | Live on devnet, with every claim in this file linking to the transaction behind it. The full lifecycle — pool, deposits, proofs, batched settlement, and four rejections — is recorded with signatures. | [`docs/PROOF.md`](docs/PROOF.md) |
 | **Scalable & customizable** | Adding a protocol requires no change to the on-chain program — no redeploy, no new circuit, no governance. Selector 1 invokes any program with any payload; selector 2 additionally makes the pool *sign* as the member's authority, which is what a stake delegation or a governance vote needs. The whole procedure is four steps with a worked `DelegateStake` that runs on devnet. | [`docs/INTEGRATING.md`](docs/INTEGRATING.md) |
 | **Realistic** | The anonymity number is computed from live mainnet chain data, with the sample committed so the result reproduces without RPC access — and it is pointed at a pool this project neither controls nor funded, because measuring our own empty pool would be measuring nothing. | [`docs/MEASUREMENT_LOG.md`](docs/MEASUREMENT_LOG.md) |
@@ -119,7 +119,7 @@ Then:
 
 ```
 git clone https://github.com/solanabr/mirror-pool && cd mirror-pool
-make verify               # fmt, clippy -D warnings, build-sbf, 261 tests
+make verify               # fmt, clippy -D warnings, build-sbf, 275 tests
 ```
 
 Nothing in that command needs a network, an API key or an account with anybody,
@@ -287,7 +287,8 @@ repository publishes both and never quotes the first alone.
 
 **The incentives are structural, and one of them is missing.** Four are enforced
 by the program rather than recommended: you cannot act until a crowd exists
-(`k_floor`), waiting is never a hostage situation (the one-hour timeout), a relay
+(`k_floor`), waiting is never a hostage situation (a timeout the pool sets, an
+hour by default), a relay
 is paid out of the denomination to sign so that you never do, and a batch whose
 members paid different fees is refused outright — so converging on a common fee
 is a rule, not advice.
@@ -313,7 +314,7 @@ rather than half-present.
 | `crates/mirror-provenance` | The funding-provenance measurement. |
 | `crates/mirror-cli` | The tool. `init-pool`, `note-new`, `deposit`, `tree`, `spend`, `settle`, `disclose`, `disclose-verify` for members; `setup`, `verify-setup`, `soak`, `crowd`, `close-table` for operators; `check-endpoint`, `seeds`, `collect`, `analyze`, `compare`, `selection` for the measurement. |
 
-**261 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
+**275 tests.** The end-to-end suite loads the `.so` that `make build-sbf`
 produces into a real SVM, sends real transactions, and verifies a real Groth16
 proof through the actual syscall — so a divergence between what the host believes
 and what the chain does cannot pass unnoticed.
@@ -330,6 +331,12 @@ mirror spend    --program $P --note m1.json \
                 --to <addr> --relay relay.json         # the relay signs, never you
 mirror settle   --program $P --denomination D          # permissionless
 ```
+
+A batch below the pool's floor needs `--allow-below-floor`, and the settlement it
+produces is marked as such on chain. The timeout that lets an under-floor batch
+settle is a solvency guarantee and not an anonymity one, so asking for it is a
+decision rather than a default — see
+[the crowd rule](docs/THREAT_MODEL.md#the-crowd-rule-is-threshold-or-timeout-and-the-timeout-side-has-no-floor).
 
 `docs/USAGE.md` is the walkthrough, and every line of output in it was produced
 by running the command against devnet. It covers three more a member may want:
@@ -955,7 +962,9 @@ multi-party ceremony, not more SOL.
   publishing the entropy while withholding the proving key produces — nobody can
   verify the key, and nobody can regenerate it either.
 - The on-chain `k_floor` bounds **program-visible membership** only. That is all
-  a program can check.
+  a program can check. It also bounds only the batches that settle *by crowd*: a
+  batch that settles on the timeout can be smaller, which is why it has to be
+  asked for and why the program marks the settlement when it happens.
 - **Not that privacy pools attract more concentrated funding than ordinary
   users.** We measured a control to find out, the point estimates say they do,
   and the sample does not support saying it. `ρ`'s comparability across

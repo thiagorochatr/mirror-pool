@@ -37,6 +37,9 @@ pub struct PoolState {
     pub deposits: u64,
     pub spends: u64,
     pub root: [u8; 32],
+    /// The pool's own settlement timeout, already resolved against the
+    /// program's default for a pool that never set one.
+    pub settle_timeout: i64,
 }
 
 pub fn read_pool(chain: &Chain, program_id: &Pubkey, denomination: u64) -> Result<PoolState> {
@@ -61,6 +64,10 @@ pub fn read_pool(chain: &Chain, program_id: &Pubkey, denomination: u64) -> Resul
             .current_root()
             .map_err(|e| anyhow!("{e:?}"))?
             .to_bytes(),
+        settle_timeout: state.settle_timeout_seconds().map_or(
+            mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS,
+            i64::from,
+        ),
     })
 }
 
@@ -79,6 +86,7 @@ pub fn init_pool(
     program_id: &Pubkey,
     denomination: u64,
     k_floor: u32,
+    settle_timeout_seconds: u32,
     payer: &Keypair,
 ) -> Result<()> {
     let (pool, _) = pool_address(program_id, denomination);
@@ -88,12 +96,36 @@ pub fn init_pool(
         println!("nothing to do — one pool per denomination is the whole point");
         return Ok(());
     }
+    // Zero means the program's default, and anything else has to be a timeout
+    // somebody could live with. Refused here as well as on chain so the caller
+    // learns it before paying for a transaction, and refused rather than
+    // clamped because the value is immutable once the pool exists.
+    if settle_timeout_seconds != 0
+        && !(mirror_pool_program::state::MIN_SETTLE_TIMEOUT_SECONDS
+            ..=mirror_pool_program::state::MAX_SETTLE_TIMEOUT_SECONDS)
+            .contains(&settle_timeout_seconds)
+    {
+        return Err(anyhow!(
+            "a settlement timeout of {settle_timeout_seconds}s is outside the permitted \
+             range of {}s to {}s. A pool's timeout is fixed at creation and cannot be \
+             changed, so this is refused rather than adjusted. Pass 0 for the program's \
+             default of {}s.",
+            mirror_pool_program::state::MIN_SETTLE_TIMEOUT_SECONDS,
+            mirror_pool_program::state::MAX_SETTLE_TIMEOUT_SECONDS,
+            mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS,
+        ));
+    }
+    let effective_timeout = match settle_timeout_seconds {
+        0 => mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS,
+        v => i64::from(v),
+    };
+
     // A floor above what one settlement can carry is a floor no crowd can ever
     // satisfy. Settlement locks three accounts per member plus three for the
     // pool itself, so the largest batch a transaction can hold is fixed by the
     // runtime and not by this program — and a pool asking for more than that can
-    // only ever settle through the liveness timeout, an hour at a time, which is
-    // the opposite of what a high floor is chosen for.
+    // only ever settle through the liveness timeout, one wait at a time, which
+    // is the opposite of what a high floor is chosen for.
     //
     // Refused rather than warned about: a pool's floor is fixed at creation, so
     // by the time anyone notices, the fix is a different pool.
@@ -106,7 +138,7 @@ pub fn init_pool(
              crowd, and could only ever settle on the {}s timeout. Choose {settleable} \
              or fewer.",
             lookup::MAX_ACCOUNT_LOCKS,
-            mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS,
+            effective_timeout,
         ));
     }
     let ix = Instruction::new_with_bytes(
@@ -115,6 +147,7 @@ pub fn init_pool(
             denomination,
             entry_fee: 0,
             k_floor,
+            settle_timeout_seconds,
         }
         .pack(),
         vec![
@@ -127,6 +160,14 @@ pub fn init_pool(
     let sig = send(chain, ix, &[payer])?;
     println!("pool    {pool}");
     println!("vault   {vault}");
+    println!(
+        "timeout {effective_timeout}s{}",
+        if settle_timeout_seconds == 0 {
+            "   (the program's default: this pool set none)"
+        } else {
+            ""
+        }
+    );
     println!("signature {sig}");
     Ok(())
 }
@@ -211,12 +252,18 @@ pub fn tree(chain: &Chain, program_id: &Pubkey, denomination: u64) -> Result<His
     println!("vault         {}", state.vault);
     println!("denomination  {}", state.denomination);
     println!("k floor       {}", state.k_floor);
+    println!("timeout       {}s", state.settle_timeout);
     println!(
         "notes         {} deposited, {} settled, {} outstanding",
         state.deposits,
         state.spends,
         state.deposits.saturating_sub(state.spends)
     );
+    println!();
+    // The nominal figures above are the ones a reader walks away with, so the
+    // measured discount travels with them rather than living only in a
+    // document nobody has open.
+    println!("{}", mirror_provenance::PUBLISHED_HEADLINE.note());
     println!();
     println!("rebuilding the accumulator from chain history:");
 
@@ -449,6 +496,7 @@ pub fn settle(
     denomination: u64,
     settler: &Keypair,
     now: i64,
+    allow_below_floor: bool,
 ) -> Result<()> {
     let state = read_pool(chain, program_id, denomination)?;
     println!("looking for spends waiting to settle:");
@@ -582,7 +630,7 @@ pub fn settle(
     // refuses with a bare error code — which is exactly what this check exists
     // to spare a caller.
     let crowd = ready.len() as u32 >= state.k_floor;
-    let timeout = mirror_pool_program::processor::SETTLE_TIMEOUT_SECONDS;
+    let timeout = state.settle_timeout;
     if !crowd {
         let youngest = ready.iter().map(|(_, _, _, at, _)| *at).max().unwrap_or(0);
         let waited = now.saturating_sub(youngest);
@@ -635,12 +683,33 @@ pub fn settle(
                 state.k_floor
             );
         }
+
+        // The consent, and it is asked for here rather than assumed.
+        //
+        // Warning and then settling anyway is how a settler ends up publishing
+        // an under-floor batch they never meant to compose — the notice scrolls
+        // past and the transaction lands. The program refuses this without the
+        // flag; so does the tool, and for the same reason.
+        if !allow_below_floor {
+            println!();
+            println!("  Not settling. This is not a failure: the program refuses an under-floor");
+            println!("  batch that nobody asked for, and so does this command. If it is what you");
+            println!("  intend — usually because the members' funds would otherwise stay escrowed");
+            println!("  — re-run with --allow-below-floor.");
+            println!();
+            println!("  The settlement will be marked on chain as having landed below the floor,");
+            println!("  so the members can tell afterwards what crowd they actually got.");
+            return Ok(());
+        }
     }
 
     let ix = Instruction::new_with_bytes(
         *program_id,
         &MirrorIx::SettleEpoch {
             count: ready.len() as u8,
+            // Only ever true on the path that has already printed the warning
+            // and been told to go ahead: a crowd-sized batch never asks for it.
+            allow_below_floor: !crowd,
         }
         .pack(),
         metas,
@@ -681,6 +750,14 @@ pub fn settle(
     println!();
     println!("Every payout in that batch shares one timestamp and one ordering, which");
     println!("is what stops arrival time from telling the members apart.");
+    println!();
+    // The batch size is an anonymity set, and printing one without the measured
+    // discount is exactly the lift this guards against.
+    println!(
+        "The {} members above are that batch's nominal set.",
+        ready.len()
+    );
+    println!("{}", mirror_provenance::PUBLISHED_HEADLINE.note());
     Ok(())
 }
 

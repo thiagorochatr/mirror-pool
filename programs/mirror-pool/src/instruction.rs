@@ -48,6 +48,10 @@ pub enum Instruction {
         denomination: u64,
         entry_fee: u64,
         k_floor: u32,
+        /// How long a spend waits before it may settle below the floor. Zero
+        /// means the program's default, which is what every pool created before
+        /// this field existed holds.
+        settle_timeout_seconds: u32,
     },
     /// Escrows exactly `denomination + entry_fee` and appends `commitment` to
     /// the accumulator.
@@ -87,17 +91,27 @@ pub enum Instruction {
     /// `count` is the number of spend records that follow in the account list.
     /// Permissionless: anyone may settle, so no operator's absence can strand a
     /// member's funds.
-    SettleEpoch { count: u8 },
+    SettleEpoch {
+        count: u8,
+        /// Consent to settling a batch smaller than the pool's floor.
+        ///
+        /// The flag does not skip the timeout — an under-floor batch still has
+        /// to wait it out. What it does is stop that settlement from happening
+        /// by accident: a batch below the floor costs its members the anonymity
+        /// set they deposited for, and the program should hear somebody say so
+        /// rather than infer it from a count.
+        allow_below_floor: bool,
+    },
 }
 
-/// `InitPool`: tag + u64 + u64 + u32.
-pub const INIT_POOL_LEN: usize = 1 + 8 + 8 + 4;
+/// `InitPool`: tag + u64 + u64 + u32 + u32.
+pub const INIT_POOL_LEN: usize = 1 + 8 + 8 + 4 + 4;
 /// `Deposit`: tag + one field element.
 pub const DEPOSIT_LEN: usize = 1 + 32;
 /// `SubmitSpend` without its payload. The encoding is variable length.
 pub const SUBMIT_SPEND_BASE_LEN: usize = 1 + 64 + 128 + 64 + 32 + 32 + 8 + 32 + 32 + 8 + 1 + 2;
-/// `SettleEpoch`: tag + count.
-pub const SETTLE_EPOCH_LEN: usize = 1 + 1;
+/// `SettleEpoch`: tag + count + the below-floor flag.
+pub const SETTLE_EPOCH_LEN: usize = 1 + 1 + 1;
 
 fn read_u64(data: &[u8], at: usize) -> u64 {
     let mut b = [0u8; 8];
@@ -128,6 +142,7 @@ impl Instruction {
                     denomination: read_u64(data, 1),
                     entry_fee: read_u64(data, 9),
                     k_floor: read_u32(data, 17),
+                    settle_timeout_seconds: read_u32(data, 21),
                 })
             }
             Tag::Deposit => {
@@ -142,7 +157,20 @@ impl Instruction {
                 if data.len() != SETTLE_EPOCH_LEN {
                     return Err(MirrorProgramError::MalformedInstruction);
                 }
-                Ok(Instruction::SettleEpoch { count: data[1] })
+                // Exactly zero or one. A bool is one bit of meaning and the
+                // wire gives it eight, so seven of them have no defined value —
+                // and "anything nonzero is true" would let a caller send 0x02
+                // believing they had asked for something else. Refused for the
+                // same reason a trailing byte is.
+                let allow_below_floor = match data[2] {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(MirrorProgramError::MalformedInstruction),
+                };
+                Ok(Instruction::SettleEpoch {
+                    count: data[1],
+                    allow_below_floor,
+                })
             }
             Tag::SubmitSpend => {
                 if data.len() < SUBMIT_SPEND_BASE_LEN {
@@ -197,12 +225,14 @@ impl Instruction {
                 denomination,
                 entry_fee,
                 k_floor,
+                settle_timeout_seconds,
             } => {
                 let mut out = Vec::with_capacity(INIT_POOL_LEN);
                 out.push(Tag::InitPool as u8);
                 out.extend_from_slice(&denomination.to_le_bytes());
                 out.extend_from_slice(&entry_fee.to_le_bytes());
                 out.extend_from_slice(&k_floor.to_le_bytes());
+                out.extend_from_slice(&settle_timeout_seconds.to_le_bytes());
                 out
             }
             Instruction::Deposit { commitment } => {
@@ -240,8 +270,11 @@ impl Instruction {
                 out.extend_from_slice(payload);
                 out
             }
-            Instruction::SettleEpoch { count } => {
-                vec![Tag::SettleEpoch as u8, *count]
+            Instruction::SettleEpoch {
+                count,
+                allow_below_floor,
+            } => {
+                vec![Tag::SettleEpoch as u8, *count, *allow_below_floor as u8]
             }
         }
     }
@@ -256,6 +289,7 @@ mod tests {
             denomination: 100_000_000,
             entry_fee: 5_000,
             k_floor: 8,
+            settle_timeout_seconds: 900,
         }
     }
 
@@ -266,7 +300,10 @@ mod tests {
     }
 
     fn settle() -> Instruction {
-        Instruction::SettleEpoch { count: 7 }
+        Instruction::SettleEpoch {
+            count: 7,
+            allow_below_floor: true,
+        }
     }
 
     fn submit_spend() -> Instruction {
@@ -299,10 +336,11 @@ mod tests {
         assert_eq!(init().pack().len(), INIT_POOL_LEN);
         assert_eq!(deposit().pack().len(), DEPOSIT_LEN);
         assert_eq!(submit_spend().pack().len(), SUBMIT_SPEND_BASE_LEN + 5);
-        assert_eq!(INIT_POOL_LEN, 21);
+        assert_eq!(INIT_POOL_LEN, 25);
         assert_eq!(DEPOSIT_LEN, 33);
         assert_eq!(SUBMIT_SPEND_BASE_LEN, 404);
         assert_eq!(settle().pack().len(), SETTLE_EPOCH_LEN);
+        assert_eq!(SETTLE_EPOCH_LEN, 3);
     }
 
     #[test]
@@ -354,8 +392,38 @@ mod tests {
             denomination: 0x1122_3344_5566_7788,
             entry_fee: 0x99aa_bbcc_ddee_ff00,
             k_floor: 0xdead_beef,
+            settle_timeout_seconds: 0xcafe_f00d,
         };
         assert_eq!(Instruction::unpack(&ix.pack()).unwrap(), ix);
+    }
+
+    /// The flag is one bit of meaning in eight bits of wire, and the seven
+    /// spare ones have no defined value.
+    ///
+    /// "Anything nonzero is true" is the tolerant reading, and it is how a
+    /// caller who sent `2` meaning something of their own comes to settle a
+    /// batch below the floor believing they asked for no such thing.
+    #[test]
+    fn a_below_floor_flag_that_is_neither_zero_nor_one_is_refused() {
+        for byte in [2u8, 3, 0x80, 0xff] {
+            assert!(
+                matches!(
+                    Instruction::unpack(&[Tag::SettleEpoch as u8, 4, byte]),
+                    Err(MirrorProgramError::MalformedInstruction)
+                ),
+                "flag byte {byte:#x} was accepted"
+            );
+        }
+        // And the two that do mean something still decode.
+        for (byte, expected) in [(0u8, false), (1u8, true)] {
+            assert_eq!(
+                Instruction::unpack(&[Tag::SettleEpoch as u8, 4, byte]).unwrap(),
+                Instruction::SettleEpoch {
+                    count: 4,
+                    allow_below_floor: expected,
+                }
+            );
+        }
     }
 
     #[test]

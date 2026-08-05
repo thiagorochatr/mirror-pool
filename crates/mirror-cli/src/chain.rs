@@ -407,4 +407,26 @@ impl Chain {
             .and_then(|c| c.as_u64())
             .ok_or_else(|| anyhow!("getTransaction: {signature} reports no compute units"))
     }
+
+    /// The finalized slot a transaction landed in.
+    ///
+    /// Recorded beside every published signature because devnet history is
+    /// pruned. A signature whose `getTransaction` has aged out returns null, and
+    /// a reader checking the evidence months later cannot tell that from a
+    /// signature that never existed. The slot is what makes the difference
+    /// recoverable: `getSignatureStatuses --search-transaction-history` still
+    /// answers for a pruned transaction, and the slot is what its answer is
+    /// checked against.
+    pub fn slot(&self, signature: &str) -> Result<u64> {
+        let v = self.call(
+            "getTransaction",
+            serde_json::json!([
+                signature,
+                { "commitment": "confirmed", "maxSupportedTransactionVersion": 0 }
+            ]),
+        )?;
+        v.pointer("/slot")
+            .and_then(|s| s.as_u64())
+            .ok_or_else(|| anyhow!("getTransaction: {signature} reports no slot"))
+    }
 }

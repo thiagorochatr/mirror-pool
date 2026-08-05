@@ -38,7 +38,15 @@ mod offset {
     pub const SPEND_COUNT: usize = 32;
     pub const NEXT_INDEX: usize = 40;
     pub const ROOT_POS: usize = 48;
-    pub const _RESERVED: usize = 52;
+    /// Was reserved. Now the pool's own settlement timeout, in seconds.
+    ///
+    /// It lands in bytes that were already allocated and always zero, and zero
+    /// is read as "use the default" — so a pool created before this field
+    /// existed keeps the behaviour it was created with, and no account has to
+    /// be migrated. That is why [`POOL_VERSION`] does not move: bumping it
+    /// would make `Pool::load` refuse every live account, and the notes in
+    /// those pools are unspendable without it.
+    pub const SETTLE_TIMEOUT: usize = 52;
     pub const FILLED: usize = 56;
     pub const ROOTS: usize = FILLED + 32 * TREE_DEPTH;
     pub const END: usize = ROOTS + 32 * ROOT_HISTORY;
@@ -60,6 +68,24 @@ pub const MIN_K_FLOOR: u32 = 2;
 /// denomination and creation is permissionless, that would permanently deny the
 /// protocol that denomination.
 pub const MAX_K_FLOOR: u32 = 1 << TREE_DEPTH;
+
+/// Shortest settlement timeout a pool may choose.
+///
+/// The timeout is the escape valve that keeps a quiet pool solvent, and a very
+/// short one turns it into the ordinary path: every spend becomes settleable
+/// alone almost immediately, which leaves `k_floor` bounding nothing at all. A
+/// minute is short enough to be exercised in a test and long enough that
+/// reaching the valve is still an event.
+pub const MIN_SETTLE_TIMEOUT_SECONDS: u32 = 60;
+
+/// Longest settlement timeout a pool may choose.
+///
+/// Bounded for the same reason `k_floor` is: the value is fixed at creation,
+/// pool creation is permissionless, and a pool is unique per denomination
+/// forever. An unbounded timeout would let anyone deny a denomination by
+/// creating its pool with a valve that never opens — the deposits would be
+/// escrowed with no crowd and no clock able to release them.
+pub const MAX_SETTLE_TIMEOUT_SECONDS: u32 = 7 * 24 * 60 * 60;
 
 // Pin the layout. A field inserted in the middle would otherwise silently
 // reinterpret every deployed account.
@@ -145,6 +171,21 @@ impl<'a> Pool<'a> {
         b.copy_from_slice(&self.data[offset::K_FLOOR..offset::K_FLOOR + 4]);
         u32::from_le_bytes(b)
     }
+    /// The pool's own settlement timeout, or `None` when it never set one.
+    ///
+    /// `None` rather than a substituted default on purpose: the stored bytes
+    /// say what the pool holds, and what an absent value *means* is settlement
+    /// policy, which lives in the processor. A reader of this accessor can tell
+    /// "this pool chose an hour" from "this pool chose nothing", and those are
+    /// different facts even when they produce the same number.
+    pub fn settle_timeout_seconds(&self) -> Option<u32> {
+        let mut b = [0u8; 4];
+        b.copy_from_slice(&self.data[offset::SETTLE_TIMEOUT..offset::SETTLE_TIMEOUT + 4]);
+        match u32::from_le_bytes(b) {
+            0 => None,
+            v => Some(v),
+        }
+    }
     pub fn deposit_count(&self) -> u64 {
         read_u64!(self, offset::DEPOSIT_COUNT)
     }
@@ -170,8 +211,19 @@ impl<'a> Pool<'a> {
         denomination: u64,
         entry_fee: u64,
         k_floor: u32,
+        settle_timeout_seconds: u32,
     ) -> Result<(), MirrorProgramError> {
         if denomination == 0 {
+            return Err(MirrorProgramError::InvalidParameter);
+        }
+        // Zero is not a timeout, it is the absence of one, and the processor
+        // reads it as the default. Any other value has to be a timeout somebody
+        // could live with, for the same reason `k_floor` has to be reachable:
+        // the parameter is immutable and the pool is permanent.
+        if settle_timeout_seconds != 0
+            && !(MIN_SETTLE_TIMEOUT_SECONDS..=MAX_SETTLE_TIMEOUT_SECONDS)
+                .contains(&settle_timeout_seconds)
+        {
             return Err(MirrorProgramError::InvalidParameter);
         }
         // The floor must be reachable, and it must actually be a crowd.
@@ -216,6 +268,8 @@ impl<'a> Pool<'a> {
         write_u64!(self, offset::DENOMINATION, denomination);
         write_u64!(self, offset::ENTRY_FEE, entry_fee);
         self.data[offset::K_FLOOR..offset::K_FLOOR + 4].copy_from_slice(&k_floor.to_le_bytes());
+        self.data[offset::SETTLE_TIMEOUT..offset::SETTLE_TIMEOUT + 4]
+            .copy_from_slice(&settle_timeout_seconds.to_le_bytes());
 
         // An empty tree's frontier is the zero ladder, and its root is the top
         // of that ladder. Seeding from the shared constant is what keeps the
@@ -336,7 +390,7 @@ mod tests {
         let mut data = blank();
         {
             let mut pool = Pool::load_uninitialised(&mut data).unwrap();
-            pool.initialise(254, 253, denomination, 0, 4).unwrap();
+            pool.initialise(254, 253, denomination, 0, 4, 0).unwrap();
         }
         data
     }
@@ -353,6 +407,79 @@ mod tests {
         assert_eq!(pool.deposit_count(), 0);
         assert_eq!(pool.spend_count(), 0);
         assert_eq!(pool.next_index(), 0);
+        assert_eq!(pool.settle_timeout_seconds(), None);
+    }
+
+    /// Zero means "chose nothing", and that is the state of every pool created
+    /// before the field existed.
+    ///
+    /// This is the compatibility claim the layout rests on: the bytes at
+    /// `SETTLE_TIMEOUT` were reserved and therefore zero in every live account,
+    /// so a deployed pool reads back `None` and keeps the timeout it was created
+    /// with. If this test fails, upgrading the program silently changes the
+    /// settlement rules of pools that already hold other people's money.
+    #[test]
+    fn a_pool_that_predates_the_field_reads_back_no_timeout() {
+        let mut data = initialised(1_000);
+        assert_eq!(
+            Pool::load(&mut data).unwrap().settle_timeout_seconds(),
+            None
+        );
+        // And the bytes really are the reserved ones, untouched.
+        assert_eq!(
+            &data[offset::SETTLE_TIMEOUT..offset::SETTLE_TIMEOUT + 4],
+            &[0u8; 4]
+        );
+    }
+
+    #[test]
+    fn a_pool_reads_back_the_timeout_it_chose() {
+        let mut data = blank();
+        {
+            let mut pool = Pool::load_uninitialised(&mut data).unwrap();
+            pool.initialise(254, 253, 1_000, 0, 4, 900).unwrap();
+        }
+        let pool = Pool::load(&mut data).unwrap();
+        assert_eq!(pool.settle_timeout_seconds(), Some(900));
+        // The neighbouring fields must not have moved.
+        assert_eq!(pool.k_floor(), 4);
+        assert_eq!(pool.denomination(), 1_000);
+        assert_eq!(
+            pool.current_root().unwrap().to_bytes(),
+            ZERO_LADDER[TREE_DEPTH]
+        );
+    }
+
+    /// Bounded for the same reason the floor is: the value is immutable, pool
+    /// creation is permissionless, and a pool is unique per denomination
+    /// forever. A timeout that never elapses would escrow deposits with no crowd
+    /// and no clock able to release them.
+    #[test]
+    fn a_settlement_timeout_outside_its_bounds_is_refused() {
+        let mut data = blank();
+        let mut pool = Pool::load_uninitialised(&mut data).unwrap();
+        for bad in [
+            1,
+            MIN_SETTLE_TIMEOUT_SECONDS - 1,
+            MAX_SETTLE_TIMEOUT_SECONDS + 1,
+            u32::MAX,
+        ] {
+            assert!(
+                matches!(
+                    pool.initialise(1, 1, 1_000, 0, 4, bad),
+                    Err(MirrorProgramError::InvalidParameter)
+                ),
+                "a timeout of {bad}s must be refused"
+            );
+        }
+        for good in [0, MIN_SETTLE_TIMEOUT_SECONDS, MAX_SETTLE_TIMEOUT_SECONDS] {
+            let mut fresh = blank();
+            let mut pool = Pool::load_uninitialised(&mut fresh).unwrap();
+            assert!(
+                pool.initialise(1, 1, 1_000, 0, 4, good).is_ok(),
+                "a timeout of {good}s must be accepted"
+            );
+        }
     }
 
     /// The immutable reader must agree with the borrowing accessor, and must
@@ -440,11 +567,11 @@ mod tests {
         let mut data = blank();
         let mut pool = Pool::load_uninitialised(&mut data).unwrap();
         assert!(matches!(
-            pool.initialise(1, 1, 0, 0, 4),
+            pool.initialise(1, 1, 0, 0, 4, 0),
             Err(MirrorProgramError::InvalidParameter)
         ));
         assert!(matches!(
-            pool.initialise(1, 1, 100, 0, 0),
+            pool.initialise(1, 1, 100, 0, 0, 0),
             Err(MirrorProgramError::InvalidParameter)
         ));
     }
@@ -458,14 +585,14 @@ mod tests {
         let mut data = blank();
         let mut pool = Pool::load_uninitialised(&mut data).unwrap();
         assert!(matches!(
-            pool.initialise(1, 1, 1_000_000, 0, u32::MAX),
+            pool.initialise(1, 1, 1_000_000, 0, u32::MAX, 0),
             Err(MirrorProgramError::InvalidParameter)
         ));
         assert!(matches!(
-            pool.initialise(1, 1, 1_000_000, 0, MAX_K_FLOOR + 1),
+            pool.initialise(1, 1, 1_000_000, 0, MAX_K_FLOOR + 1, 0),
             Err(MirrorProgramError::InvalidParameter)
         ));
-        assert!(pool.initialise(1, 1, 1_000_000, 0, MAX_K_FLOOR).is_ok());
+        assert!(pool.initialise(1, 1, 1_000_000, 0, MAX_K_FLOOR, 0).is_ok());
     }
 
     #[test]
@@ -473,10 +600,10 @@ mod tests {
         let mut data = blank();
         let mut pool = Pool::load_uninitialised(&mut data).unwrap();
         assert!(matches!(
-            pool.initialise(1, 1, 1_000_000, 0, 1),
+            pool.initialise(1, 1, 1_000_000, 0, 1, 0),
             Err(MirrorProgramError::InvalidParameter)
         ));
-        assert!(pool.initialise(1, 1, 1_000_000, 0, MIN_K_FLOOR).is_ok());
+        assert!(pool.initialise(1, 1, 1_000_000, 0, MIN_K_FLOOR, 0).is_ok());
     }
 
     /// A nonzero entry fee is unrecoverable, so it is refused at creation
@@ -494,13 +621,13 @@ mod tests {
         for fee in [1, 999, 1_000, u64::MAX] {
             assert!(
                 matches!(
-                    pool.initialise(1, 1, 1_000, fee, 4),
+                    pool.initialise(1, 1, 1_000, fee, 4, 0),
                     Err(MirrorProgramError::InvalidParameter)
                 ),
                 "entry fee {fee} must be refused: nothing can pay it out"
             );
         }
-        assert!(pool.initialise(1, 1, 1_000, 0, 4).is_ok());
+        assert!(pool.initialise(1, 1, 1_000, 0, 4, 0).is_ok());
     }
 
     #[test]

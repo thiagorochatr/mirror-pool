@@ -50,8 +50,9 @@ reason to leave.
 
 The timeout has a cost and `THREAT_MODEL.md` argues it rather than hiding it: a
 batch that settles on the clock has no floor, so a batch of one is reachable by
-anyone willing to wait an hour. `mirror settle` warns when it is about to publish
-one.
+anyone willing to wait the pool's timeout out. `mirror settle` refuses to publish
+one unless told to with `--allow-below-floor`, and the program marks the
+settlement that results.
 
 ### Somebody else is paid to sign for you
 

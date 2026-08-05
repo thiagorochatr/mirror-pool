@@ -32,7 +32,7 @@
 //! program's real instruction encoding rather than from arithmetic, but no batch
 //! of that shape was run, so it is labelled `size only` and carries no compute
 //! figure. The transfer row is the control: `batch_ceiling.rs` already settles it
-//! against the same `.so`, so this file recomputing 10 spends / 1228 bytes is a
+//! against the same `.so`, so this file recomputing 10 spends / 1229 bytes is a
 //! check on the encoder rather than a new claim. If that row ever moves, the
 //! model of the wire here is wrong and every other number it prints is suspect.
 //!
@@ -121,19 +121,19 @@ const PRE_STAKED: u64 = 1_000_000_000;
 /// The plain-transfer ceiling, recomputed here from the encoder and cross-checked
 /// against the executed measurement in `batch_ceiling.rs`.
 const TRANSFER_CEILING: usize = 10;
-const TRANSFER_BYTES: usize = 1228;
+const TRANSFER_BYTES: usize = 1229;
 
 /// A batch of members all delegating to the **same** validator. Per spend the
 /// distinct keys are the record, the stake account and the relay; the vote
 /// account, the two sysvars, the config account, the stake program and the pool's
 /// vault are named once for the whole batch.
 const SAME_VALIDATOR_CEILING: usize = 7;
-const SAME_VALIDATOR_BYTES: usize = 1140;
+const SAME_VALIDATOR_BYTES: usize = 1141;
 
 /// The same delegation where every member picked their own validator. One more
 /// distinct key per spend, and the crowd loses a member.
 const DIFFERENT_VALIDATOR_CEILING: usize = 6;
-const DIFFERENT_VALIDATOR_BYTES: usize = 1194;
+const DIFFERENT_VALIDATOR_BYTES: usize = 1195;
 
 fn key(s: &str) -> Pubkey {
     s.parse().expect("a valid base58 address")
@@ -210,6 +210,11 @@ fn settle_ix(wire: &Wire, batch: &[Spend], settler: &Pubkey) -> Instruction {
         wire.program_id,
         &MirrorIx::SettleEpoch {
             count: batch.len() as u8,
+            // This file measures the wire and the lock limit, and the sweep
+            // starts below the pool's floor. Asking for the under-floor path
+            // keeps the crowd rule from being what stops a batch here, so the
+            // ceiling reported is the one the transaction imposes.
+            allow_below_floor: true,
         }
         .pack(),
         metas,
@@ -428,6 +433,7 @@ impl Env {
                 denomination: DENOMINATION,
                 entry_fee: ENTRY_FEE,
                 k_floor: K_FLOOR,
+                settle_timeout_seconds: 0,
             }
             .pack(),
             vec![

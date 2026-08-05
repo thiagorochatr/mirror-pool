@@ -79,6 +79,16 @@ pub enum MirrorProgramError {
     /// — which costs the members the exact property the batch exists to give
     /// them. Refused rather than documented.
     FeeNotUniform = 25,
+    /// The batch is below the crowd size and the settler did not ask for that.
+    ///
+    /// Distinct from [`MirrorProgramError::CrowdTooSmall`], and the distinction
+    /// is the whole point of the flag. `CrowdTooSmall` means the batch *cannot*
+    /// settle yet — the timeout has not run. This means it could, and nobody
+    /// said so: a settler who composes an under-floor batch by accident is
+    /// refused here rather than handed a settlement that costs somebody their
+    /// anonymity set. Two codes so that a rejection says which of the two
+    /// happened without anyone having to guess.
+    BelowFloorNotPermitted = 26,
 }
 
 impl From<MirrorProgramError> for ProgramError {

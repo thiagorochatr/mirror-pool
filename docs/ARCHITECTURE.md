@@ -209,9 +209,17 @@ settled in the same transaction as three plain transfers and a memo.
 timestamp and an ordering.
 
 The crowd rule is conditional: a batch needs `k_floor` spends, **or** every spend
-in it must have waited out an hour. Requiring the crowd unconditionally is a
-liveness hazard — a quiet pool could hold a member's funds until a crowd that
-never comes. Dropping it makes "synchronised" a word rather than a property.
+in it must have waited out the pool's timeout — set at creation, an hour by
+default. Requiring the crowd unconditionally is a liveness hazard — a quiet pool
+could hold a member's funds until a crowd that never comes. Dropping it makes
+"synchronised" a word rather than a property.
+
+The timeout half is opt-in and marked. A settler who wants an under-floor batch
+passes `allow_below_floor`, and without it the program refuses rather than
+settling; the settlement that does land logs the count it carried against the
+floor it missed. Neither closes the hole — `THREAT_MODEL.md` argues why it stays
+open — but a batch that costs its members their crowd is now something somebody
+asked for and something the chain records.
 
 ### The permissionless exit
 
