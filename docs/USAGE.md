@@ -34,10 +34,11 @@ set is worse for everyone in it.
 
 ```
 $ mirror init-pool --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa \
-                   --denomination 31000001 --k-floor 2
-pool    DQ17r5reCu5P4efUzHQZq7Ye6D6vt72ThxatNdLBqcKt
-vault   81odk482H6VpRQMk8tQaoThYr2ffJtugcJXjmKX2faco
-signature 3Tbf4zMGDHW89bi3F7yhaGMAB6RqveDi5WTJAYKEe3Zr2F8eTAeT8zSTp6V3B4kWE4ZSXmpMdxpx6UayvdsiNNiw
+                   --denomination 31000003 --k-floor 2
+pool    4754WzZxtuVat5RZLKkh6JNpGx5pGjz2F1gLjQGLkmnU
+vault   2VgGhVgfLuYqxdKMFcRtKwsrXiSjtpBn2y5bGFdFixkq
+timeout 3600s   (the program's default: this pool set none)
+signature 3UxVSDBCtJPyjdjispAKfJjbUD5272P4Yc6D3SdTrNDomLregNnpkGMJxWowyEH2o4K3MYj7MeEdh65o7UiAgCsV
 ```
 
 `--k-floor` is the number of notes the pool must hold before it will act at all.
@@ -53,10 +54,10 @@ so here.
 ## 2. A note
 
 ```
-$ mirror note-new --denomination 31000001 --out m1.json
+$ mirror note-new --denomination 31000003 --out m1.json
 wrote m1.json
-  denomination 31000001
-  commitment   1ca8f208a35a6327c7871ee6d38268527260f53299c21b25133b32178989701c
+  denomination 31000003
+  commitment   01400612e536431914d827909319e451e6539ab823d0496cd48f18655aab248e
 
 This file is the note. Treat it exactly as you would a keypair:
 anyone holding it can spend the deposit, and losing it loses the
@@ -76,9 +77,12 @@ overwrite here destroys a deposit.
 
 ```
 $ mirror deposit --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --note m1.json
-deposited 31000001 lamports into DQ17r5reCu5P4efUzHQZq7Ye6D6vt72ThxatNdLBqcKt
+deposited 31000003 lamports into 4754WzZxtuVat5RZLKkh6JNpGx5pGjz2F1gLjQGLkmnU
 leaf      0
-signature JpCxFU4ipaBap15AWRxNVFoy8rskWZnUTFoBTLx1JBs5V2TKDCx7HhhzQ4AtYxL46yvfS8U1yXzSVLNg2au89hS
+signature 4Mg3MhgrNdf583LtxGupULbuC66V1SizFx9qxc6npU4WU2AhnuB5FHQP5XaiBt5Utr3CVYvPoMrs9W3PpcUX7EAz
+
+Keep m1.json safe. It is the only way to spend this note,
+and nobody — including this pool's authors — can reissue it.
 ```
 
 The deposit is public and it is signed by you. That is fine and unavoidable —
@@ -90,20 +94,28 @@ deposit cannot claim a size the pool did not set.
 ## 4. Check the tree — optional, and worth doing once
 
 ```
-$ mirror tree --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --denomination 31000001
-pool          DQ17r5reCu5P4efUzHQZq7Ye6D6vt72ThxatNdLBqcKt
-vault         81odk482H6VpRQMk8tQaoThYr2ffJtugcJXjmKX2faco
-denomination  31000001
+$ mirror tree --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --denomination 31000003
+pool          4754WzZxtuVat5RZLKkh6JNpGx5pGjz2F1gLjQGLkmnU
+vault         2VgGhVgfLuYqxdKMFcRtKwsrXiSjtpBn2y5bGFdFixkq
+denomination  31000003
 k floor       2
+timeout       3600s
 notes         2 deposited, 0 settled, 2 outstanding
+
+  That k is program-visible membership only, and the effective set is smaller.
+  Measured against a live pool of comparable shape — Privacy Cash,
+  9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD — knowing a member's funding
+  class left ρ = 0.0955, inside an unresolved bracket of 0.0350 .. 0.1136. Roughly
+  an order of magnitude of the nominal figure.
+  Method, and what it does not cover: docs/PROVENANCE_METHOD.md.
 
 rebuilding the accumulator from chain history:
   3 transactions touched this pool
 
   leaves recovered  2
   pool reports      2
-  rebuilt root      0c77cb909067c1a57811be8c05237aff2715c65c6250fdde764ed768096cd732
-  on-chain root     0c77cb909067c1a57811be8c05237aff2715c65c6250fdde764ed768096cd732
+  rebuilt root      210e6d7fb10346b463f62d5e351442b6e09e9958c0699310c07ca0835580cea1
+  on-chain root     210e6d7fb10346b463f62d5e351442b6e09e9958c0699310c07ca0835580cea1
 
   the rebuilt tree matches the chain — proofs built from it will verify
 ```
@@ -145,9 +157,9 @@ deriving the proving key from the published seed (this takes a moment)
 proving membership
 
 submitted. The note is spent and the action is recorded.
-  nullifier 02218a1c2f8fe73a88e856ee9cf3c7e01508107490dca23a56af54166566d54e
-  record    59jcYijM67FYybt6MH36CU9YUMqQQ7Q5Lg6JiTXRXxfz
-  signature d5Y6CxbrNxu74u88AGT5NU1KqfLb4JgjtBXzT2TyXyvAGqJq2qgf5NftQwKoAH5TfHdh3fTQcbjkwudSDX8tj7U
+  nullifier 04db90736f4bf9005b79e9000c510804713ad9fe7f2688c22beed948d18d5883
+  record    9gPytZBVVcWDT5MecfkgQGNgo8TLrEeyLd9q44eTW4Vn
+  signature 3xmHiy1fLvCDJGRejgLvvKduhdNbajXLYBRjJvpaAfQHB7zz3SpccbK3wH4v63Pyv8136vHZd1A3a4BTx8JMRcQ2
 
 Nothing has been paid out yet — settlement executes the batch, which is
 what gives every member's action one timestamp. Run `mirror settle`, or
@@ -200,13 +212,13 @@ Below the crowd floor it tells you what it is waiting for rather than failing
 with an error code:
 
 ```
-$ mirror settle --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --denomination 31000001
+$ mirror settle --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --denomination 31000003
 looking for spends waiting to settle:
   4 transactions touched this pool
 
-  1 spend(s) pending, and this pool's floor is 2.
+  this batch carries 1 spend(s) and the pool's floor is 2.
   A batch below the floor may settle once every spend in it has waited 3600s;
-  the youngest has waited 16s, so 3584s remain.
+  the youngest has waited 14s, so 3586s remain.
 
   This is a liveness guarantee rather than a restriction: nobody can
   hold a member's funds waiting for a crowd that never arrives.
@@ -215,19 +227,34 @@ looking for spends waiting to settle:
 Once the crowd is there:
 
 ```
-$ mirror settle --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --denomination 31000001
+$ mirror settle --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --denomination 31000003
 looking for spends waiting to settle:
   5 transactions touched this pool
 
+settling 2 spends in one legacy transaction, 437 bytes
+
 settled 2 spends in one transaction
-  signature 4EA7SszoGBWC1EKzgGn8XdLWvhMiWxp6v6Gbcmd7czzn7LfiUmoBvKwAJsM3XPt4Y2abm5P85M7w939ftRTvi6XC
+  signature jes9YgrHzYvccsogn1ZGrtDWXtgHuTd2SgWPUucGVTGXMVbAuAnBeV4TGg1BYA1uCuLs1cp9YbgyonZwYqxRsA2
 
 Every payout in that batch shares one timestamp and one ordering, which
 is what stops arrival time from telling the members apart.
+
+The 2 members above are that batch's nominal set.
+  That k is program-visible membership only, and the effective set is smaller.
+  Measured against a live pool of comparable shape — Privacy Cash,
+  9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD — knowing a member's funding
+  class left ρ = 0.0955, inside an unresolved bracket of 0.0350 .. 0.1136. Roughly
+  an order of magnitude of the nominal figure.
+  Method, and what it does not cover: docs/PROVENANCE_METHOD.md.
 ```
 
-Both beneficiaries received `31000001 − 100000 = 30900001` lamports, in one
+Both beneficiaries received `31000003 − 100000 = 30900003` lamports, in one
 transaction, at one timestamp.
+
+That last paragraph is printed after **every** settlement, deliberately. The
+batch size is a nominal anonymity set and it is the number a member walks away
+with; the measured discount travels with it rather than living in a document
+nobody has open.
 
 ### Settling below the floor
 

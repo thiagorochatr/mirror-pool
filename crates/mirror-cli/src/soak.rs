@@ -26,7 +26,7 @@ use solana_transaction::Transaction;
 // pool. Changing it starts a clean one, which is how the evidence run gets to
 // record its own `init_pool` rather than reusing a pool an earlier run created
 // and leaving the creation step undocumented.
-const DENOMINATION: u64 = 20_000_023; // 0.02 SOL
+const DENOMINATION: u64 = 20_000_029; // 0.02 SOL
 const ENTRY_FEE: u64 = 0;
 const K_FLOOR: u32 = 4;
 /// Members in the evidence batch. Above `K_FLOOR` so the crowd rule is satisfied

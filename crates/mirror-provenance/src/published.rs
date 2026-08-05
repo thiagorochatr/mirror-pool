@@ -25,6 +25,8 @@ pub struct PublishedHeadline {
     pub sample: &'static str,
     /// The pool measured, which is not this project's.
     pub pool: &'static str,
+    /// Its address, so a reader can go and look rather than take the name.
+    pub pool_address: &'static str,
     pub attempted: u64,
     pub resolved: u64,
     /// `ρ = 2^{−H(C)}` over the resolved members.
@@ -37,7 +39,8 @@ pub struct PublishedHeadline {
 /// The measurement `README.md` and `docs/MEASUREMENT_LOG.md` publish.
 pub const PUBLISHED_HEADLINE: PublishedHeadline = PublishedHeadline {
     sample: "data/sample-privacycash-run6.json",
-    pool: "Privacy Cash (9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD)",
+    pool: "Privacy Cash",
+    pool_address: "9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD",
     attempted: 83,
     resolved: 54,
     loss_factor: 0.0955,
@@ -53,13 +56,17 @@ impl PublishedHeadline {
     /// being read as the anonymity set. The argument is in
     /// `docs/PROVENANCE_METHOD.md`; this is the pointer to it.
     pub fn note(&self) -> String {
+        // Hand-wrapped to about 78 columns. This lands in a terminal beside
+        // other output, and a paragraph that wraps raggedly reads as noise to
+        // scroll past — which is the one thing it must not be.
         format!(
-            "This k is program-visible membership only. Measured against a live pool of \
-             comparable\nshape ({}), knowing a member's funding class left ρ = {:.4} of \
-             it, inside an\nunresolved bracket of {:.4} .. {:.4} — so the effective set is \
-             smaller than the number\nabove, by roughly an order of magnitude. Method and \
-             limits: docs/PROVENANCE_METHOD.md.",
-            self.pool, self.loss_factor, self.bracket_low, self.bracket_high
+            "  That k is program-visible membership only, and the effective set is smaller.\n  \
+             Measured against a live pool of comparable shape — {},\n  \
+             {} — knowing a member's funding\n  \
+             class left ρ = {:.4}, inside an unresolved bracket of {:.4} .. {:.4}. Roughly\n  \
+             an order of magnitude of the nominal figure.\n  \
+             Method, and what it does not cover: docs/PROVENANCE_METHOD.md.",
+            self.pool, self.pool_address, self.loss_factor, self.bracket_low, self.bracket_high
         )
     }
 }

@@ -49,7 +49,7 @@ use solana_transaction::Transaction;
 /// A pool is unique per denomination, so this constant also selects the pool.
 /// Bump it for a clean run; the note ledger is keyed by it, so a new
 /// denomination starts a new ledger too.
-const DENOMINATION: u64 = 43_000_007; // 0.043 SOL
+const DENOMINATION: u64 = 47_000_011; // 0.047 SOL
 const ENTRY_FEE: u64 = 0;
 const RELAY_FEE: u64 = 200_000;
 
