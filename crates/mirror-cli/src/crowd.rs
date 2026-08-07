@@ -1147,7 +1147,7 @@ fn report(outcome: &Outcome) -> String {
          **A lookup table lifts that, and here is how far.** Naming accounts by one \
          byte each takes the packet out of the way — `mirror settle` does it \
          automatically, and a batch of twenty plain transfers settled that way on devnet \
-         at 332 bytes of 1232. What takes over for *delegations* is the 64-account lock \
+         at 333 bytes of 1232. What takes over for *delegations* is the 64-account lock \
          limit, and it is a different kind of limit: bytes are spent naming an account, \
          locks are held per **distinct** account.\n\n\
          | batch | legacy packet | through a lookup table |\n|---|---|---|\n\

@@ -452,14 +452,14 @@ a table automatically for any batch that will not fit legacy. Twenty members
 settled that way on devnet:
 
 ```
-20 spends do not fit a legacy transaction: 2218 bytes, 986 over the 1232-byte packet.
+20 spends do not fit a legacy transaction: 2219 bytes, 987 over the 1232-byte packet.
 Settling through a lookup table instead.
-  settlement is 332 bytes of 1232, one signature
+  settlement is 333 bytes of 1232, one signature
 ```
 
-[`enxa9fztmzEHM…`](https://explorer.solana.com/tx/enxa9fztmzEHMLsvhfzJwFVRsNWha7WiSEUEeNn7UPk8KAdpnWQDzEHarGL8d4ckyBvtWrEGCkuvgW7UFgFAHzp?cluster=devnet)
+[`4rKtNcZyAqxf5…`](https://explorer.solana.com/tx/4rKtNcZyAqxf5EAXNCtXpde9Zt3qqEEou4cG8GFV1vVA1kGGxFRBaBvZWNfsxVY9d9FgwTyYXYzz8dahaXenGM5C?cluster=devnet)
 — twenty payouts, `numRequiredSignatures: 1`, 2 static keys and 62 resolved
-through the table, 35,895 CU. Twenty recipients and twenty relays are named in
+through the table, 35,941 CU. Twenty recipients and twenty relays are named in
 that transaction and **not one of them signed it**.
 
 Nothing in the program changes for this. `settle_epoch` requires a signature from

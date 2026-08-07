@@ -51,7 +51,7 @@ Each member's Groth16 proof was verified earlier, in their own `submit_spend`, w
 
 The packet binds first — 6 members is where the bytes run out, and the budget is not exhausted there — but for a **legacy** transaction the two limits are barely independent, and that is worth stating plainly. The usual answer to a settlement that runs out of compute is to ask for more with a `SetComputeUnitLimit` instruction. Measured against this very batch, that instruction costs **40 bytes**, and a full legacy settlement has 37 to spare. In a legacy transaction, raising the budget means dropping a member.
 
-**A lookup table lifts that, and here is how far.** Naming accounts by one byte each takes the packet out of the way — `mirror settle` does it automatically, and a batch of twenty plain transfers settled that way on devnet at 332 bytes of 1232. What takes over for *delegations* is the 64-account lock limit, and it is a different kind of limit: bytes are spent naming an account, locks are held per **distinct** account.
+**A lookup table lifts that, and here is how far.** Naming accounts by one byte each takes the packet out of the way — `mirror settle` does it automatically, and a batch of twenty plain transfers settled that way on devnet at 333 bytes of 1232. What takes over for *delegations* is the 64-account lock limit, and it is a different kind of limit: bytes are spent naming an account, locks are held per **distinct** account.
 
 | batch | legacy packet | through a lookup table |
 |---|---|---|

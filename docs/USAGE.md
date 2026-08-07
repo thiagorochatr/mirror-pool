@@ -380,7 +380,7 @@ accounts, settles a v0 transaction that refers to them by one byte each, and
 takes the table back down:
 
 ```
-$ mirror settle --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --denomination 5000003
+$ mirror settle --program 8H3cYoiAA9LM36cyPr4UEv38dhHasSu2XPSdiBfyrLEa --denomination 5000011
 looking for spends waiting to settle:
   49 transactions touched this pool
 
@@ -388,20 +388,38 @@ looking for spends waiting to settle:
   64-account lock limit. Run this again for the rest — the cost is a
   second timestamp, which is a real cost to the anonymity of both halves.
 
-  20 spends do not fit a legacy transaction: 2218 bytes, 986 over the 1232-byte packet.
+  20 spends do not fit a legacy transaction: 2219 bytes, 987 over the 1232-byte packet.
   Settling through a lookup table instead.
-  lookup table ia9oUXMgArZhGPWyETroygf6bvULHQWBodgpwB43gQ8
+  lookup table A5FCt5jXPDpUsbfTwdkLvC9sMUPX1XYdFENPoAngsc3c
   62 addresses published
-  settlement is 332 bytes of 1232, one signature
+  settlement is 333 bytes of 1232, one signature
   table deactivated. Close it after ~513 slots to reclaim the rent and remove
   the published address list:
-    mirror close-table --table ia9oUXMgArZhGPWyETroygf6bvULHQWBodgpwB43gQ8
+    mirror close-table --table A5FCt5jXPDpUsbfTwdkLvC9sMUPX1XYdFENPoAngsc3c
 
 settled 20 spends in one transaction
-  signature enxa9fztmzEHMLsvhfzJwFVRsNWha7WiSEUEeNn7UPk8KAdpnWQDzEHarGL8d4ckyBvtWrEGCkuvgW7UFgFAHzp
+  signature 4rKtNcZyAqxf5EAXNCtXpde9Zt3qqEEou4cG8GFV1vVA1kGGxFRBaBvZWNfsxVY9d9FgwTyYXYzz8dahaXenGM5C
+
+Every payout in that batch shares one timestamp and one ordering, which
+is what stops arrival time from telling the members apart.
+
+The 20 members above are that batch's nominal set.
+  That k is program-visible membership only, and the effective set is smaller.
+  Measured against a live pool of comparable shape — Privacy Cash,
+  9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD — knowing a member's funding
+  class left ρ = 0.0955, inside an unresolved bracket of 0.0350 .. 0.1136. Roughly
+  an order of magnitude of the nominal figure.
+  Method, and what it does not cover: docs/PROVENANCE_METHOD.md.
 ```
 
-**The packet stops mattering entirely** — twenty members weigh 332 of 1232
+**Twenty is the ceiling because each member locks three distinct accounts** — its
+record, its beneficiary and its relay — and the transaction may lock 64 including
+the pool's own three. A member whose beneficiary *is* their relay costs two
+instead of three, and a batch of those settles 22 in 1713 bytes. That is a real
+measurement of a shape nobody uses: paying the relay is paying the one party who
+already knows which spend was yours.
+
+**The packet stops mattering entirely** — twenty members weigh 333 of 1232
 bytes. What binds instead is the number of accounts one transaction may lock:
 three per member plus three for the pool, so twenty members sit at exactly 64.
 `settle` counts them and defers the rest rather than building a transaction the
@@ -413,9 +431,9 @@ settlement touched, published before the settlement landed. Leaving one behind
 per batch builds a permanent on-chain index of who settled together.
 
 ```
-$ mirror close-table --table ia9oUXMgArZhGPWyETroygf6bvULHQWBodgpwB43gQ8
-closed ia9oUXMgArZhGPWyETroygf6bvULHQWBodgpwB43gQ8
-  signature 1x3Uv5k8j8MnfWsD6rTksUkV9Mcgwvg6PjfTDJXFHgQ9J6CQ7wih51ANeBtaNXCDktstjBvupR2b5aHZPnoYuFp
+$ mirror close-table --table A5FCt5jXPDpUsbfTwdkLvC9sMUPX1XYdFENPoAngsc3c
+closed A5FCt5jXPDpUsbfTwdkLvC9sMUPX1XYdFENPoAngsc3c
+  signature 5vZBtQmkphZv8RFu2b2LRWLQ864iFt5qFarhiD7UkCvJPGeYz8BpbAESU6jUyEhVHWTHE6A9WpasKJkcKWD4Ni5k
   reclaimed 15084280 lamports, and the published address list is gone
 ```
 
